@@ -1,40 +1,33 @@
 # Financial 项目指南
 
-## 当前状态
+个人财务管理，React SPA / TypeScript / Material UI / pnpm。Cloudflare Worker `financial`，域名 `financial.hasbai.xyz`；Neon hasbai / neondb / financial；Auth0 北极小站。
 
-本项目目前处于规划阶段，没有应用实现。`docs/PROGRESS.md` 是完成情况唯一入口；文件中的「拟新增」对象和接口均不是现有能力。用户本轮要求先出方案、文档与完成情况，后续开发按新的任务推进。
+## 用户确认的边界
 
-目标栈：React SPA、TypeScript、Vite、Material UI、pnpm、Cloudflare Workers Static Assets、Neon Data API、Auth0。数据位于 Neon `hasbai` 项目 / `neondb` / `financial` schema。
+- 单人使用，只允许本人 Auth0 subject，历史数据全部人民币。
+- 仅使用现有 `financial.account`、`financial.transaction`、`financial.entry` 三张表，禁止新增表字段（包括 is_active、is_cash_equivalent、version、退款关联字段等）。
+- 现金范围直接用资产下的“现金及等价物”子类。退款补在同一 transaction 内。视图不用 v_ 前缀。
+- 所有业务视图、函数、类型均在 `financial`。不新增业务 schema，不加 ledger、member、draft、audit 或其他扩展表。
+- 不为多用户、家庭共享、审计平台或草稿工作流做预设计。修改围绕总览、流水补录、科目匹配。
+- 原有记录和 ID 必须保留。迁移先在隔离 Neon 分支验证，不能用开发分支数据覆盖生产。
+- 浏览器只含公开配置和本人 Access Token；不保存数据库连接串、Auth0 密码/client secret、管理 API key。
+- 数据库授权保留：Auth0 JWT 的 subject/issuer/audience 必须匹配；读视图 security_invoker，写函数固定 search_path，客户端无基表 DML。
+- 金额使用 numeric 和十进制字符串。借贷、退款、报表计算放 SQL，前端仅做输入反馈。
 
-## 文档路由
+## 文档与代码路由
 
-只读当前任务相关文档，不默认加载全部文档，不重复读取已在上下文中的文件。
-
-| 任务 | 首先读取 |
+| 工作 | 入口 |
 | --- | --- |
-| 功能范围、阶段与交付 | `docs/PLAN.md`、`docs/PROGRESS.md` |
-| 页面、组件、动效 | `DESIGN.md` |
-| 记账规则、报表计算 | `docs/DOMAIN.md` |
-| 表结构、迁移、视图、RPC | `docs/DATABASE.md`、`docs/BASELINE.md` |
-| Auth0、Neon 接入、部署 | `docs/ARCHITECTURE.md` |
+| 当前完成情况 | docs/PROGRESS.md |
+| 范围与执行步骤 | docs/PLAN.md |
+| UI 与交互 | DESIGN.md、src/pages |
+| 数据与口径 | docs/DATABASE.md、docs/DOMAIN.md、database/migrations |
+| 接入与发布 | docs/ARCHITECTURE.md |
+| 历史基线快照 | docs/BASELINE.md |
 
-## 实施约束
+## 校验与提交
 
-- 保留现有 `financial.account`、`financial.transaction`、`financial.entry` 的记录和 ID，采用增量迁移。
-- 基线快照会过时，迁移前重新核查；开发写入先在 Neon 隔离分支验证。
-- 浏览器只能使用公开配置和当前用户 Access Token；不得放入数据库密码、Auth0 client secret、Neon 管理 API key。
-- 数据授权在数据库执行；不能依赖 React 路由守卫或请求中的账户 ID、用户 ID。
-- 交易及分录的持久化使用原子 RPC，实施幂等、版本冲突和服务端金额校验。
-- PostgreSQL `FUNCTION` 是 Data API RPC 的实现载体；不要把 `PROCEDURE/CALL` 当作兼容接口。
-- 金额用数据库 numeric；API 使用十进制字符串。前端不得用浮点累加形成权威报表。
-- 付款渠道不是会计科目；匹配分录使用稳定的 `account.id`，不依赖展示名称。
-- 补录不应自动改变付款状态；退款不应仅按状态排除。遵循 `docs/DOMAIN.md` 的口径。
-- UI 移动端优先，采用 MUI 免费开源组件，不引入 Pro/Premium 依赖；不得把 MUI 默认样式称为完整 Material 3 实现。
-- 不更改共用 Auth0 application、Neon Data API provider、`public` schema 或已有消费者配置，除非当前任务明确覆盖并完成影响核查。
-- 每个阶段更新完成情况，分别记录自动化、真实 API、浏览器和部署验收。未执行的检查必须明确标注。
+`pnpm typecheck`、`pnpm test`、`pnpm build`、`git diff --check`。
+数据库验证用 `scripts/test-database.mjs`，连接串从 stdin 传入，所有测试写入在事务中回滚。不得输出凭据。
 
-## 验证与 Git
-
-当前可用：`git status --short --branch`、`git diff --check`。应用命令尚不存在，建立脚手架后按实际 `package.json` 更新这里。
-
-仅暂存本次任务文件；实现与校验完成后提交并同步到用户指定的 GitHub 仓库。生产数据库变更和部署按当前任务授权执行，不把文档提交当作部署授权。
+独立区分自动化、真实 JWT/API、浏览器与部署验收。完成本次修改后仅暂存任务文件，提交、推送并核验远端。发布按当前用户授权执行。

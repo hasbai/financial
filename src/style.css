@@ -1,0 +1,56 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+a {
+  color: inherit;
+}
+.money {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid #7da8eb;
+  outline-offset: 3px;
+}
+.page {
+  animation: page-in 180ms ease-out;
+}
+@keyframes page-in {
+  from {
+    opacity: 0.65;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.transaction-card {
+  transition:
+    box-shadow 150ms ease,
+    border-color 150ms ease;
+}
+.transaction-card:hover {
+  box-shadow: 0 4px 16px #17203309;
+  border-color: #9db9df;
+}
+input {
+  min-width: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+html {
+  scroll-padding-bottom: 140px;
+}
+::selection {
+  background: #bdd5fb;
+}

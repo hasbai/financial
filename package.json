@@ -1,0 +1,46 @@
+{
+  "name": "financial",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "preview": "vite preview",
+    "deploy": "pnpm build && wrangler deploy",
+    "check:api": "NODE_USE_ENV_PROXY=1 node scripts/check-api.mjs"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^26.5.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "jsdom": "^30.0.1",
+    "pg": "^8.23.0",
+    "prettier": "^3.9.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0",
+    "wrangler": "^4.131.1"
+  },
+  "dependencies": {
+    "@auth0/auth0-react": "^2.24.1",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^9.4.0",
+    "@mui/material": "^9.4.0",
+    "@neondatabase/postgrest-js": "0.2.0-beta",
+    "@tanstack/react-query": "^5.102.8",
+    "decimal.js": "^10.6.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-hook-form": "^7.88.0",
+    "react-router-dom": "^7.18.3",
+    "recharts": "^3.10.1",
+    "zod": "^4.6.4"
+  }
+}
