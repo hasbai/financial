@@ -1,0 +1,16 @@
+.DS_Store
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.wrangler/
+.neon
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+*.log
+private/
+backups/
