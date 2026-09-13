@@ -1,6 +1,6 @@
 # 北极账本 · Financial
 
-单人个人财务系统：React SPA、Material UI、pnpm。Auth0 北极小站登录，浏览器直连 Neon Data API，Cloudflare Worker `financial` 托管。
+单人个人财务系统：Svelte 5 SPA、Bits UI、shadcn-svelte（preset `b6sUj31yy`）、Tailwind CSS 4、Lucide、pnpm。Auth0 北极小站登录，浏览器直连 Neon Data API，Cloudflare Worker `financial` 托管。
 
 目标地址：[financial.hasbai.xyz](https://financial.hasbai.xyz) · 私有仓库：[hasbai/financial](https://github.com/hasbai/financial)
 

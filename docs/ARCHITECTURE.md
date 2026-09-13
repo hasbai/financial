@@ -1,10 +1,10 @@
 # 技术架构
 
-React + TypeScript + Vite SPA，Material UI 免费开源组件，pnpm 管理依赖。Cloudflare Worker 只托管静态资源；业务数据直接调用 Neon Data API（PostgREST 兼容），业务保存与报表函数统一在 `financial`。
+Svelte 5 + TypeScript + Vite SPA，Bits UI + shadcn-svelte（preset `b6sUj31yy`）+ Tailwind CSS 4 + Lucide，pnpm 管理依赖。Cloudflare Worker 只托管静态资源；业务数据直接调用 Neon Data API（PostgREST 兼容），业务保存与报表函数统一在 `financial`。
 
 ```mermaid
 flowchart LR
- SPA[React SPA / Worker financial] -->|登录| AUTH[Auth0 北极小站]
+ SPA[Svelte 5 SPA / Worker financial] -->|登录| AUTH[Auth0 北极小站]
  SPA -->|Access Token| API[Neon Data API]
  API -->|验证 JWT| AUTH
  API --> DB[financial 三表 / RLS / 视图 / 函数]
@@ -17,7 +17,7 @@ flowchart LR
 - Audience：`https://financial.hasbai.xyz/api`，RS256，Access Token 有效期一小时。
 - Callback：`https://financial.hasbai.xyz/auth/callback`、`http://localhost:5173/auth/callback`。
 - Logout / Web Origins：上述两个 origin。
-- Auth0 SDK 使用 Authorization Code + PKCE，token 仅在内存；退出清除查询缓存。生产代码不处理密码。
+- `@auth0/auth0-spa-js` 官方 SPA SDK 使用 Authorization Code + PKCE，token 仅在内存；每次请求调用 getTokenSilently，退出清除查询缓存。生产代码不处理密码。
 - 单人身份由用户确认的 Auth0 sub 限定，数据库同时校验 issuer/audience。
 
 Neon 项目 `mute-king-39794724` / neondb。开发分支 `br-proud-bread-b3hl3asf`，production 分支 `br-billowing-violet-b3pkbm3s`。公开的前端配置见 src/lib/config.ts；默认使用生产 endpoint，测试可通过 VITE_DATA_API_URL 替换目标 endpoint。
@@ -27,11 +27,17 @@ Data API 的 JWT 校验发生在 Neon，PostgreSQL 再限制本人行访问。�
 ## 应用结构
 
 - `src/pages`：总览、流水、编辑、科目。
-- `src/lib/api.tsx`：集中封装 PostgREST 调用，自动取得 Auth0 token。
-- TanStack Query：查询缓存与保存后刷新。
-- React Hook Form：编辑状态与分录数组。
+- `src/lib/api.ts`：集中封装 PostgREST 调用，自动取得 Auth0 token。
+- `@tanstack/svelte-query`：通过 Svelte 5 accessor 查询缓存、游标分页与保存后刷新。
+- Svelte 5 runes：编辑状态与分录数组；快照提交，原分录 ID 和 updated_at 保留。
 - Decimal.js + SQL numeric：金额输入与计算。
-- Recharts：趋势展示；图形用 Number，仅用于呈现，权威金额来自 SQL。
+- Svelte SVG：趋势展示及逐日可访问明细；坐标用 Number，仅用于呈现，权威金额来自 SQL。
+
+- `src/lib/auth.svelte.ts`：Auth0 初始化、回调、登录/退出及取 Access Token，SDK 按需加载。
+- `src/lib/router.svelte.ts`：History API 路由、查询字符串、返回与未保存提醒；保持原 SPA 路径。
+- `src/lib/context.ts`：Svelte context 注入 Repository；测试注入替身，不加入生产绕过认证开关。
+- `src/lib/editor.ts`：表单初始化和退款分录输入；SQL 负责最终保存校验。
+- `svelte-check` 同时检查 Svelte 与 TypeScript；TypeScript 6 是当前 svelte-check 声明支持的主版本。
 
 ## 发布
 

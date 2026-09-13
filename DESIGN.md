@@ -1,6 +1,6 @@
 # 界面与交互
 
-移动端优先，React + Material UI 免费组件。浅色背景、蓝色主色、16px 圆角卡片、系统中文字体，金额使用等宽数字；支持深色和减少动效。
+移动端优先，Svelte 5 + Bits UI + shadcn-svelte + Tailwind CSS 4 + Lucide。官方 CLI 应用 preset `b6sUj31yy`：Maia 样式、Mist 基色/主题/图表色、Inter 字体、零圆角主题变量；中文使用系统字体回退。`components.json` 保存组件风格，`src/style.css` 保存完整浅/深色主题变量，金额使用等宽数字。
 
 ## 页面
 
@@ -10,7 +10,7 @@
 - `/accounts` 科目设置：只编辑原有类型、子类、名称、备注；现金范围自动识别。
 - `/auth/callback` Auth0 回调，返回合法站内路径。
 
-手机底部“总览 / 流水”导航和“记一笔”FAB；桌面侧栏。内容最大宽度约1280px，表单不超过640px。
+手机底部“总览 / 流水 / 科目设置”导航和“记一笔”FAB；桌面侧栏。内容最大宽度约1280px，表单不超过640px。
 
 ## 流水卡片
 
@@ -22,12 +22,20 @@
 
 “在本笔交易补记退款”将反向分录加入当前 transaction，保留原分录。简单收支自动选回款/支出科目，复杂交易直接在当前分录中编辑。没有退款子交易、草稿、审计或入账审批流程。
 
-保存期间禁用重复操作；失败保留输入。已有记录依据原 updated_at 提示冲突。关闭或返回有未保存内容时提示。网络断开导致新增结果不明确时，先核对流水，不自动重复提交。
+保存期间禁用重复操作；失败保留输入。已有记录依据原 updated_at 提示冲突。关闭、站内导航或历史返回有未保存内容时使用原生确认提示；刷新/关闭标签页使用 beforeunload 提醒。网络断开导致新增结果不明确时，先核对流水，不自动重复提交。
 
 ## 反馈与可访问性
 
-MUI Ripple、Dialog 240ms进入/180ms退出、轻量状态淡入；prefers-reduced-motion 关闭位移动效。安全区内边距、至少48px主要触控区域、清晰字段标签、错误摘要焦点、Dialog焦点归还、保存结果提示。
+shadcn/Bits UI 的焦点管理、键盘选择、Dialog 进入退出和轻量状态淡入；prefers-reduced-motion 关闭位移动效。安全区内边距、至少48px主要触控区域、清晰字段标签、错误摘要焦点、Dialog焦点归还、保存结果提示。
 
 金额隐藏同时隐藏报表金额和图表。编辑时需要看到金额，会明确提示。无数据、未知金额、数字0分开表达。
 
 自动化通过情况、真实浏览器是否执行，分别见 docs/PROGRESS.md；用户已要求后续验证不使用浏览器。
+
+## 组件维护
+
+基础组件位于 `src/lib/components/ui`，由 shadcn-svelte CLI 生成并纳入版本管理。业务包装组件位于 `src/components`，页面不直接耦合基础组件内部状态。科目选择由 Popover + Command 实现，状态、渠道、方向由 Select 实现。
+
+趋势使用 Svelte SVG 和可展开的逐日明细表，实线/虚线区分收入与支出；图形坐标可使用 Number，标签仍从 SQL 十进制字符串格式化。金额隐藏时不渲染 SVG、提示或趋势明细。
+
+复用主题：`pnpm exec shadcn-svelte apply b6sUj31yy --yes`。初始化需先有 Tailwind `@theme inline`、`:root` 和 `.dark` 声明；只变更主题时使用 `--only theme`。新增组件：`pnpm exec shadcn-svelte add <component>`。生成后保留本项目触控尺寸、中文标签及无障碍适配。

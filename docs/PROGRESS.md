@@ -1,6 +1,23 @@
 # 完成情况
 
-2026-09-13 更新。当前交付为可运行并已发布的单人个人财务系统。
+2026-09-14 更新。当前代码已完成 Svelte 5 前端重构；生产仍为下方记录的 2026-09-13 版本，本次未发布。
+
+## 2026-09-14 前端框架重构
+
+- 替换为 Svelte 5、Bits UI、shadcn-svelte、Tailwind CSS 4、Lucide。官方 CLI 应用 preset `b6sUj31yy`（Maia / Mist / Inter / Lucide / 零圆角），基础组件源码与主题变量纳入版本管理。
+- 总览、流水、交易编辑和科目设置全部迁移；保留原路径、筛选下钻、分页、金额隐藏、深浅主题及移动布局。
+- 同笔退款保留原分录 ID；保存失败保留输入，网络结果不明确时阻止重复提交。导航、后退、刷新保留未保存提醒。
+- Auth0 React 包替换为官方 SPA SDK，保留 PKCE、内存 token、本人 subject、原 audience/connection。数据库 API 封装与 SQL/表结构未变。
+- React、MUI、React Hook Form、React Router、Recharts 依赖与 TSX 全部移除。趋势使用 SVG，并增加可展开的逐日文本明细。
+- `pnpm typecheck`：svelte-check 0 errors / 0 warnings；`pnpm test`：6 文件、31 项通过；`pnpm build` 与 `git diff --check` 通过。
+- 自动化覆盖退款原 ID、失败输入保留、重复保存保护、下笔加载失败、科目搜索选择、查询筛选/分页、未知金额、报表下钻/隐私、科目保存、历史返回、Auth0 回调/安全返回路径/清缓存。
+- 构建按页面及 Auth0 SDK 分包，入口 JS 308.62 KB（gzip 96.02 KB），Auth0 SDK 205.95 KB（gzip 58.94 KB）；无大于 500 KB 的 chunk 提示。这里是静态构建体积，不是实际加载耗时。
+- **本次未运行真实 Auth0 JWT/API、数据库写入、浏览器/真机或生产部署验收。** SQL 与生产配置没有变更；遵照既有不使用浏览器的验证要求。
+- 交付分支：`refactor/svelte5-shadcn`。提交、远端核验结果见本次交付消息。
+
+## 2026-09-13 实现与发布记录
+
+以下是前一版本的历史验收与生产基线，不代表本次重构重新执行了这些步骤。
 
 ## 最终范围
 

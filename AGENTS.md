@@ -1,6 +1,6 @@
 # Financial 项目指南
 
-个人财务管理，React SPA / TypeScript / Material UI / pnpm。Cloudflare Worker `financial`，域名 `financial.hasbai.xyz`；Neon hasbai / neondb / financial；Auth0 北极小站。
+个人财务管理，Svelte 5 SPA / TypeScript / Bits UI / shadcn-svelte（preset b6sUj31yy）/ Tailwind CSS / Lucide / pnpm。Cloudflare Worker `financial`，域名 `financial.hasbai.xyz`；Neon hasbai / neondb / financial；Auth0 北极小站。
 
 ## 用户确认的边界
 

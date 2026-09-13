@@ -8,7 +8,7 @@
 2. 总览：资产负债、现金流、损益、趋势和待补录提示。
 3. 流水：手机卡片、搜索/筛选/分页、手工新增、补录、科目匹配和分录拆分。
 4. 科目设置：新增、编辑原有字段；现金范围直接按既有子类识别。
-5. React SPA 静态部署 Cloudflare Worker financial，域名 financial.hasbai.xyz，GitHub hasbai/financial。
+5. Svelte 5 SPA 静态部署 Cloudflare Worker financial，域名 financial.hasbai.xyz，GitHub hasbai/financial。
 
 ## 实现原则
 
