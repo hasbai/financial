@@ -7,7 +7,7 @@
 | 阶段 | 状态 | 证据/后续工作 |
 | --- | --- | --- |
 | P0 方案与文档 | 已完成 | README、AGENTS、PLAN、DESIGN、ARCHITECTURE、DOMAIN、DATABASE、BASELINE、本文及只读 SQL |
-| Git / GitHub | 已创建，待最终同步核验 | 本地 main；hasbai/financial 私有仓库；最终提交同步后更新此项 |
+| Git / GitHub | 已完成首次提交与同步核验 | 私有 hasbai/financial；规划提交 f251ffe 已推送 main，远端 SHA 与本地一致；本记录随最终文档更新提交 |
 | P1 接入验证 | 未完成；Auth0 管理核查受阻 | Neon API 已存在，Auth0 CLI 会话过期；尚无 JWT/RLS/RPC 贯通验收 |
 | P2 数据契约 | 未开发 | 未创建 migration、账本、RLS、视图或写入 RPC，旧数据未改 |
 | P3 React 基础 | 未开发 | 没有 package.json、React SPA、pnpm lockfile、主题或 CI |
@@ -19,6 +19,7 @@
 
 - [x] 检查空工作目录及上级指令，建立 Git 仓库和文档入口。
 - [x] 创建 GitHub 私有仓库 hasbai/financial。
+- [x] 提交规划文档并推送 main，以 git ls-remote 核实远端提交。
 - [x] 只读定位 Neon 项目、production 分支、neondb 与 financial schema。
 - [x] 精确核查 86 个科目、548 笔交易、1,012 条分录及主要缺失项。
 - [x] 检查 identity、外键、索引、RLS、角色读权限与现有 get_accounts 函数。
@@ -38,7 +39,7 @@
 | 目标域名 | 已执行 HEAD：HTTP 502，Server Caddy；不构成部署成功 |
 | 文档路径与结构 | 已通过：9 个 Markdown 文件、16 个本地链接、代码围栏配对；已复核阶段/对象的未实现标记 |
 | 只读核查 SQL | 已从仓库文件执行，计数与 BASELINE 一致 |
-| Git 空白与提交检查 | 最终暂存后检查并记录 |
+| Git 空白与提交检查 | 已通过 git diff --cached --check；首次提交已推送并核验 |
 | 单元/集成测试、typecheck、build | 未执行：应用尚未建立 |
 | 浏览器、截图、真机、可访问性 | 未执行：本轮为设计文档 |
 | 生产发布与回滚 | 未执行 |
