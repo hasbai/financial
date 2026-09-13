@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
   import { useQueryClient } from "@tanstack/svelte-query";
-  import { Plus, Trash2, X } from "@lucide/svelte";
+  import { Plus, Trash2, X, ReceiptText } from "@lucide/svelte";
   import * as Dialog from "$lib/components/ui/dialog";
   import { Button } from "$lib/components/ui/button";
   import { Label } from "$lib/components/ui/label";
@@ -209,8 +209,37 @@
       ></Dialog.Header
     >
     <div
-      class="min-h-0 space-y-5 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6"
+      class="min-h-0 space-y-5 overflow-y-auto overscroll-contain bg-background px-5 py-5 sm:px-6"
     >
+      {#if saved}<section class="finance-card p-5" aria-label="原交易摘要">
+          <div class="flex items-start gap-3">
+            <span class="icon-tile bg-asset/10 text-asset"
+              ><ReceiptText class="size-5" aria-hidden="true" /></span
+            >
+            <div class="min-w-0 flex-1">
+              <p class="font-semibold wrap-anywhere">
+                {saved.merchant || "未填写交易摘要"}
+              </p>
+              <p class="mt-2 text-sm text-muted-foreground">
+                {new Date(saved.occurred_at).toLocaleString("zh-CN", {
+                  timeZone: "Asia/Shanghai",
+                  month: "long",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })} · {saved.payment_method || "未填渠道"}
+              </p>
+            </div>
+            <p
+              class="money max-w-[45%] break-words text-right text-xl font-semibold"
+            >
+              {saved.amount === null ? "金额待补录" : money(saved.amount)}
+            </p>
+          </div>
+          <p class="mt-4 text-xs text-muted-foreground">
+            {saved.complete ? "已记录交易" : "待补录"} · 以下修改保存后更新
+          </p>
+        </section>{/if}
       {#if errors.length}<div
           bind:this={errorRef}
           tabindex="-1"
@@ -231,7 +260,10 @@
         >{/if}
       {#if success}<Notice variant="success">{success}</Notice>{/if}
       {#if hidden}<Notice>编辑时显示金额，关闭后恢复隐藏。</Notice>{/if}
-      <fieldset disabled={pending} class="min-w-0 space-y-5">
+      <fieldset
+        disabled={pending}
+        class="finance-card min-w-0 space-y-5 p-4 sm:p-5"
+      >
         <Field
           label="交易时间（北京时间）"
           type="datetime-local"

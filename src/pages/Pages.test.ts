@@ -49,9 +49,7 @@ it("applies search and review filters to the URL and repository", async () => {
   await fireEvent.input(screen.getByLabelText("搜索商户或摘要"), {
     target: { value: "午餐" },
   });
-  await fireEvent.click(
-    screen.getByRole("button", { name: "搜索" }),
-  );
+  await fireEvent.click(screen.getByRole("button", { name: "搜索" }));
   await fireEvent.click(screen.getByRole("button", { name: "待匹配" }));
   await waitFor(() =>
     expect(api.list).toHaveBeenLastCalledWith(
@@ -99,11 +97,13 @@ it("keeps unknown transaction amounts distinct from zero", async () => {
 it("passes the report period and cash scope through drilldown", async () => {
   const { api } = setup("overview");
   await screen.findByText("已记录净资产");
+  await fireEvent.click(screen.getByRole("button", { name: "所选月份" }));
   await fireEvent.click(screen.getByRole("button", { name: "查看流水" }));
   const params = new URLSearchParams(router.location.search);
   const range = monthRange(currentMonth());
   expect(Object.fromEntries(params)).toEqual({
-    ...range,
+    start: range.start,
+    end: overview.as_of,
     posted: "true",
     cash: "true",
   });
@@ -112,6 +112,57 @@ it("passes the report period and cash scope through drilldown", async () => {
     range.end,
     expect.any(String),
   );
+});
+it("defaults to recorded future cash flows and drills into exactly thirty days", async () => {
+  setup("overview");
+  await screen.findByText("未来 30 天净流入");
+  expect(
+    screen
+      .getByRole("button", { name: "未来 30 天" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  await screen.findByRole("img", { name: /现金流入与流出分组柱状图/ });
+  await fireEvent.click(screen.getByRole("button", { name: "查看流水" }));
+  const params = new URLSearchParams(router.location.search);
+  expect(
+    Date.parse(params.get("end")!) - Date.parse(params.get("start")!),
+  ).toBe(30 * 86400000);
+  expect(params.get("posted")).toBe("true");
+  expect(params.get("cash")).toBe("true");
+});
+it("shows an empty future period without inventing a forecast", async () => {
+  setup("overview", false, (api) => {
+    vi.mocked(api.overview).mockResolvedValue({
+      ...overview,
+      cash_in: "0",
+      cash_out: "0",
+      cash_net: "0",
+      cash_categories: [],
+    });
+  });
+  await screen.findByText("未来 30 天暂无已记录现金流量");
+  expect(
+    screen.queryByRole("img", { name: /现金流入与流出分组柱状图/ }),
+  ).toBeNull();
+});
+it("keeps a future query failure distinct from a zero cash flow", async () => {
+  setup("overview", false, (api) => {
+    vi.mocked(api.overview).mockImplementation(async (start, end, asOf) => {
+      if (end === asOf) throw new Error("未来现金流加载失败");
+      return overview;
+    });
+  });
+  await screen.findByText("未来现金流加载失败");
+  expect(screen.queryByText("未来 30 天暂无已记录现金流量")).toBeNull();
+  await fireEvent.click(screen.getByRole("button", { name: "所选月份" }));
+  await screen.findByText("本期净流入");
+});
+it("does not query future cash flow without cash accounts", async () => {
+  const { api } = setup("overview", false, (api) => {
+    vi.mocked(api.accounts).mockResolvedValue([accounts[0]]);
+  });
+  await screen.findByText(/现金流量待确认/);
+  expect(api.overview).toHaveBeenCalledTimes(1);
 });
 it("hides amounts in the report, trend and accessible data table", async () => {
   setup("overview", true);

@@ -1,6 +1,13 @@
 <script lang="ts">
   import { createInfiniteQuery } from "@tanstack/svelte-query";
-  import { ReceiptText, SlidersHorizontal, ArrowRight } from "@lucide/svelte";
+  import {
+    ReceiptText,
+    SlidersHorizontal,
+    ArrowRight,
+    ArrowDownLeft,
+    ArrowUpRight,
+    ArrowLeftRight,
+  } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
   import { Badge } from "$lib/components/ui/badge";
   import * as Card from "$lib/components/ui/card";
@@ -186,14 +193,33 @@
           </h2>{/if}
         <a
           href={"/transactions/" + t.id + (filterKey ? "?" + filterKey : "")}
-          class="block rounded-xl border bg-card p-5 transition-colors hover:border-ring hover:bg-muted/30"
+          class="finance-card block p-4 transition-colors hover:border-ring hover:bg-muted/30 sm:p-5"
         >
           <div class="flex justify-between gap-3">
             <div class="flex min-w-0 gap-3">
               <div
-                class="hidden size-11 shrink-0 place-items-center rounded-xl bg-muted text-primary min-[400px]:grid"
+                class={[
+                  "grid size-11 shrink-0 place-items-center rounded-2xl",
+                  t.kind === "income" || t.kind === "refund"
+                    ? "bg-cash-in/10 text-cash-in"
+                    : t.kind === "expense"
+                      ? "bg-cash-out/10 text-cash-out"
+                      : "bg-muted text-primary",
+                ]}
               >
-                <ReceiptText class="size-5" aria-hidden="true" />
+                {#if t.kind === "income" || t.kind === "refund"}<ArrowDownLeft
+                    class="size-5"
+                    aria-hidden="true"
+                  />{:else if t.kind === "expense"}<ArrowUpRight
+                    class="size-5"
+                    aria-hidden="true"
+                  />{:else if t.kind === "transfer"}<ArrowLeftRight
+                    class="size-5"
+                    aria-hidden="true"
+                  />{:else}<ReceiptText
+                    class="size-5"
+                    aria-hidden="true"
+                  />{/if}
               </div>
               <div class="min-w-0">
                 <p class="font-medium wrap-anywhere">
@@ -208,8 +234,8 @@
                 </p>
               </div>
             </div>
-            <div class="shrink-0 text-right">
-              <p class="money font-semibold">
+            <div class="max-w-[45%] text-right">
+              <p class="money break-words font-semibold">
                 {t.amount == null ? "金额待补录" : money(t.amount, hidden)}
               </p>
               <p class="mt-1 text-xs text-muted-foreground">
@@ -220,8 +246,11 @@
           <div class="mt-4 flex flex-wrap items-center gap-2">
             <Badge variant="outline"
               >{statusLabels[t.status] || "状态待确认"}</Badge
-            ><Badge variant={t.complete ? "secondary" : "outline"}
-              >{t.complete ? "信息完整" : "待补录"}</Badge
+            ><Badge
+              variant={t.complete ? "secondary" : "outline"}
+              class={!t.complete
+                ? "border-profit/20 bg-profit/10 text-profit"
+                : ""}>{t.complete ? "信息完整" : "待补录"}</Badge
             >{#if !t.complete && t.status !== "cancel"}<span
                 class="flex items-center gap-1 text-xs text-muted-foreground"
                 >{t.entry_count === 0
