@@ -38,7 +38,7 @@
   );
   const futureQuery = createQuery(() => ({
     queryKey: ["overview", "future-cash", future.start, future.end],
-    queryFn: () => api.overview(future.start, future.end, future.end),
+    queryFn: () => api.cashflow(future.start, future.end, future.end),
     enabled: configured,
     staleTime: 300_000,
   }));

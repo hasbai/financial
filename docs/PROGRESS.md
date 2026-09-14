@@ -1,6 +1,17 @@
 # 完成情况
 
-2026-09-14 更新。当前代码已完成 Svelte 5 前端重构、参考 UI 重排与解释性文案清理；本次未发布，生产版本记录见下方历史验收。
+2026-09-14 更新。当前代码已完成 Svelte 5 前端重构、参考 UI 重排、解释性文案清理及查询视图改造；本次未发布，生产版本记录见下方历史验收。
+
+## 2026-09-14 四类查询视图
+
+- 新增迁移 `003_read_views.sql`：`balance_sheet`、`income_statement`、`cashflow_statement` 三个 security_invoker 视图，扩展已有 `transactions` 视图的筛选/质量计算列。未新增或修改基表字段、原记录或 ID。
+- 前端流水列表、详情及报表全部改为 GET 视图；金额聚合通过 Data API 在 PostgreSQL 内进行，输出十进制字符串。RPC 仅用于 `save_transaction`、`save_account`。旧查询函数暂留兼容线上版本及数据库回归对照。
+- 流水保留全部筛选与时间戳/ID游标分页；分组结果超过1000行继续读取。现金流图和净资产曲线分别只取所需现金/余额合计。页面结构、文案、金额隐藏及查询失效入口沿用原实现。
+- 生产副本隔离分支 `financial-report-views-20260914` / `br-sweet-sky-b3qgf4h2` 已执行迁移。`scripts/test-database.mjs` 35项通过，覆盖新旧报表对照、空期/历史/日内半开边界、现金勾稽、同笔退款、原子保存、四类视图权限与非法身份隔离；测试写入均回滚。
+- 隔离分支与生产三表行数/行内容校验值一致：account 86行、transaction 548行、entry 1012行。
+- `pnpm test` 9文件59项通过；包括只读 GET 契约、筛选/游标精度、SQL金额字符串、空聚合、超过1000行的报表分组及单查询失败处理。`pnpm typecheck`（0错误/0警告）、`pnpm build`、`git diff --check` 通过。
+- **未完成真实 JWT/API 验收**：Auth0 CLI 登录已过期，程序化 token 获取被 `unauthorized_client` 拒绝；未变更 Auth0 配置。`scripts/check-api.mjs` 已增加四类视图、聚合转换、筛选、分页及错误 audience 检查，待登录恢复后执行。
+- **未执行生产迁移、Worker部署或浏览器/真机验收。** 发布新客户端前先执行生产迁移并完成真实 API 验收；本次隔离分支保留供复核。
 
 ## 2026-09-14 全页面文案与参考 UI 复核
 

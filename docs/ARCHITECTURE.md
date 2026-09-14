@@ -1,6 +1,6 @@
 # 技术架构
 
-Svelte 5 + TypeScript + Vite SPA，Bits UI + shadcn-svelte（preset `b6sUj31yy`）+ Tailwind CSS 4 + Lucide，pnpm 管理依赖。Cloudflare Worker 只托管静态资源；业务数据直接调用 Neon Data API（PostgREST 兼容），业务保存与报表函数统一在 `financial`。
+Svelte 5 + TypeScript + Vite SPA，Bits UI + shadcn-svelte（preset `b6sUj31yy`）+ Tailwind CSS 4 + Lucide，pnpm 管理依赖。Cloudflare Worker 只托管静态资源；业务数据直接调用 Neon Data API（PostgREST 兼容），业务读取视图与保存函数统一在 `financial`。
 
 ```mermaid
 flowchart LR
@@ -27,7 +27,7 @@ Data API 的 JWT 校验发生在 Neon，PostgreSQL 再限制本人行访问。�
 ## 应用结构
 
 - `src/pages`：总览、流水、编辑、科目。
-- `src/lib/api.ts`：集中封装 PostgREST 调用，自动取得 Auth0 token。
+- `src/lib/api.ts`：集中封装 PostgREST 调用，自动取得 Auth0 token。流水及三类报表直接 GET 视图，筛选、分组、金额求和均在 PostgreSQL；只有保存交易/科目使用 RPC。
 - `@tanstack/svelte-query`：通过 Svelte 5 accessor 查询缓存、游标分页与保存后刷新。
 - Svelte 5 runes：编辑状态与分录数组；快照提交，原分录 ID 和 updated_at 保留。
 - Decimal.js + SQL numeric：金额输入与计算。
@@ -43,7 +43,7 @@ Data API 的 JWT 校验发生在 Neon，PostgreSQL 再限制本人行访问。�
 
 `wrangler.jsonc` 配置 Worker financial、dist 静态目录、single-page-application 回退与 financial.hasbai.xyz 自定义域名。`public/_headers` 配置缓存、安全头。`pnpm build` 后用 Wrangler 发布。
 
-GitHub Actions 进行 frozen-lockfile 安装、typecheck、test、build。未设置自动生产数据库迁移。生产发布状态单独记录在 [PROGRESS](PROGRESS.md)。
+GitHub Actions 进行 frozen-lockfile 安装、typecheck、test、build。未设置自动生产数据库迁移。视图客户端发布前必须先在生产执行 `003_read_views.sql`；该迁移兼容旧客户端，可按数据库迁移、API验收、Worker发布的顺序交付。生产发布状态单独记录在 [PROGRESS](PROGRESS.md)。
 
 回滚优先退回 Worker 版本；数据库不新增字段、不删除原数据。共享 Neon endpoint 的 provider 配置修改前必须核查原消费者；不调整其他 Auth0 application。
 

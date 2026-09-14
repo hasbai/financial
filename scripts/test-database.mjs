@@ -38,6 +38,124 @@ const rpc = async (name, args) =>
       args,
     )
   ).rows[0].result;
+// Compare view aggregates against the unchanged legacy SQL report as an oracle.
+async function compareReports(start, end, asOf) {
+  const legacy = await rpc("overview", [start, end, asOf]);
+  const params = [start, end, asOf];
+  const run = async (sql) => (await db.query(sql, params)).rows;
+  const bounds =
+    "WITH bounds AS (SELECT $1::timestamptz start, least($2::timestamptz,$3::timestamptz) cutoff) ";
+  const before = " CROSS JOIN bounds WHERE occurred_at<cutoff";
+  const period = before + " AND occurred_at>=start";
+  const totals = {
+    ...(
+      await run(
+        bounds +
+          "SELECT sum(assets::numeric)::text assets,sum(liabilities::numeric)::text liabilities,sum(net_assets::numeric)::text net_assets,sum(cash_balance::numeric)::text cash_closing FROM financial.balance_sheet" +
+          before,
+      )
+    )[0],
+    ...(
+      await run(
+        bounds +
+          "SELECT sum(income::numeric)::text income,sum(expense::numeric)::text expense,sum(profit::numeric)::text profit FROM financial.income_statement" +
+          period,
+      )
+    )[0],
+    ...(
+      await run(
+        bounds +
+          "SELECT sum(inflow::numeric)::text cash_in,sum(outflow::numeric)::text cash_out,sum(net::numeric)::text cash_net FROM financial.cashflow_statement" +
+          period,
+      )
+    )[0],
+    ...(
+      await run(
+        bounds +
+          "SELECT sum(cash_balance::numeric)::text cash_opening FROM financial.balance_sheet" +
+          before +
+          " AND occurred_at<start",
+      )
+    )[0],
+  };
+  // PostgreSQL numeric may retain a different zero scale after grouping.
+  for (const [key, value] of Object.entries(totals)) {
+    assert.equal(
+      (
+        await db.query("SELECT $1::numeric=$2::numeric ok", [
+          value ?? "0",
+          legacy[key],
+        ])
+      ).rows[0].ok,
+      true,
+      key,
+    );
+  }
+  assert.equal(
+    (
+      await db.query("SELECT $1::numeric-$2::numeric=$3::numeric ok", [
+        totals.cash_closing ?? "0",
+        totals.cash_opening ?? "0",
+        totals.cash_net ?? "0",
+      ])
+    ).rows[0].ok,
+    true,
+  );
+  const accounts = await run(
+    bounds +
+      "SELECT account_id id,name,type,subtype,sum(balance::numeric)::text balance FROM financial.balance_sheet" +
+      before +
+      " GROUP BY account_id,name,type,subtype ORDER BY type,subtype,name,account_id",
+  );
+  assert.deepEqual(
+    accounts,
+    [...legacy.accounts].sort(
+      (a, b) =>
+        accounts.findIndex((r) => r.id === a.id) -
+        accounts.findIndex((r) => r.id === b.id),
+    ),
+  );
+  const categories = await run(
+    bounds +
+      "SELECT subtype name,type,sum(amount::numeric)::text amount FROM financial.income_statement" +
+      period +
+      " AND type IN ('收入','支出') GROUP BY subtype,type ORDER BY type,subtype",
+  );
+  const normalize = (rows) =>
+    [...rows].sort((a, b) =>
+      JSON.stringify([a.type, a.name]).localeCompare(
+        JSON.stringify([b.type, b.name]),
+      ),
+    );
+  assert.deepEqual(normalize(categories), normalize(legacy.categories));
+  const cashCategories = await run(
+    bounds +
+      "SELECT category name,sum(inflow::numeric)::text inflow,sum(outflow::numeric)::text outflow FROM financial.cashflow_statement" +
+      period +
+      " GROUP BY category",
+  );
+  assert.deepEqual(
+    normalize(cashCategories),
+    normalize(legacy.cash_categories),
+  );
+  const trend = await run(
+    bounds +
+      "SELECT date::text date,sum(income::numeric)::text income,sum(expense::numeric)::text expense FROM financial.income_statement" +
+      period +
+      " GROUP BY date ORDER BY date",
+  );
+  assert.deepEqual(trend, legacy.trend);
+  const quality = (
+    await run(
+      bounds +
+        "SELECT coalesce(sum(pending_count),0)::int pending,coalesce(sum(pending_count) FILTER(WHERE occurred_at>=start),0)::int period_pending,coalesce(sum(missing_entry_count),0)::int missing_entries,coalesce(sum(missing_account_count),0)::int missing_accounts,coalesce(sum(posted_count),0)::int posted FROM financial.transactions" +
+        before,
+    )
+  )[0];
+  for (const [key, value] of Object.entries(quality))
+    assert.equal(value, legacy.quality[key], key);
+  checks++;
+}
 const payload = (entries, extra = {}) => ({
   occurred_at: "2090-01-10T12:00:00+08:00",
   status: "success",
@@ -146,6 +264,53 @@ try {
     "0.00",
   );
   checks++;
+  for (const dates of [
+    ["1900-01-01", "1900-02-01", "1900-02-01"],
+    ["2020-01-01", "2026-10-01", "2026-09-14T02:00:00Z"],
+    ["2090-01-01", "2090-02-01", "2090-02-01"],
+    ["2090-01-10T12:00:00+08:00", "2090-01-11", "2090-01-11"],
+    ["2090-01-01", "2090-01-10T12:00:00+08:00", "2090-02-01"],
+    ["2090-01-10T12:00:00.000001+08:00", "2090-01-11", "2090-01-11"],
+    ["2090-01-15", "2090-02-01", "2090-01-01"],
+  ])
+    await compareReports(...dates);
+  const direct = (
+    await db.query(
+      "SELECT id FROM financial.transactions WHERE account_ids @> ARRAY[$1]::integer[] AND account_types @> ARRAY['资产']::text[] AND has_cash_flow ORDER BY occurred_at DESC,id DESC",
+      [bank.id],
+    )
+  ).rows.map((r) => r.id);
+  const oldPage = await rpc("transactions_page", [
+    { account_id: String(bank.id), account_type: "资产", cash: "true" },
+    null,
+    100,
+  ]);
+  assert.deepEqual(
+    direct,
+    oldPage.items.map((r) => r.id),
+  );
+  assert.ok(!direct.includes(transfer.id));
+  checks++;
+  const views = [
+    "transactions",
+    "balance_sheet",
+    "income_statement",
+    "cashflow_statement",
+  ];
+  for (const view of views) {
+    assert.ok(
+      (
+        await db.query(
+          "SELECT reloptions FROM pg_class WHERE oid=$1::regclass",
+          ["financial." + view],
+        )
+      ).rows[0].reloptions.includes("security_invoker=true"),
+    );
+    await denied(
+      () => db.query(`DELETE FROM financial.${view}`),
+      /permission denied|cannot delete/,
+    );
+  }
   const count = (await db.query("SELECT count(*) n FROM financial.transaction"))
     .rows[0].n;
   await denied(
@@ -193,6 +358,20 @@ try {
   );
   assert.equal(unfinished.complete, false);
   checks++;
+  await save(payload(entries(bank, income, "77.00"), { status: "pending" }));
+  await save(payload([], { status: "cancel" }));
+  const literal = await save(payload([], { merchant: "a.*(商户),%_" }));
+  assert.equal(
+    (
+      await db.query(
+        "SELECT id FROM financial.transactions WHERE search_text ~* $1 AND id=$2",
+        [String.raw`a\.\*\(商户\),%_`, literal.id],
+      )
+    ).rows[0].id,
+    literal.id,
+  );
+  checks++;
+  await compareReports("2090-01-01", "2090-02-01", "2090-02-01");
   await denied(
     () =>
       db.query("UPDATE financial.transaction SET notes=$1 WHERE id=$2", [
@@ -218,10 +397,16 @@ try {
       (await db.query("SELECT financial.is_owner() allowed")).rows[0].allowed,
       false,
     );
+    for (const view of views) {
+      assert.equal(
+        (await db.query(`SELECT count(*) n FROM financial.${view}`)).rows[0].n,
+        "0",
+      );
+    }
     checks++;
   }
   console.log(
-    `PASS ${checks} database checks. Original columns only, 3 tables, same-transaction refund, cash netting, precision, atomic saves, owner access. All test data rolled back.`,
+    `PASS ${checks} database checks. Original columns only, 3 tables, same-transaction refund, cash netting, precision, atomic saves, owner access, read-view parity and isolation. All test data rolled back.`,
   );
 } catch (e) {
   console.error(e.code ?? "", e.message, e.where ?? "");

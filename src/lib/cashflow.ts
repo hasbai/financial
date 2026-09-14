@@ -23,13 +23,13 @@ export function cashPeriods(range: CashPeriod): CashPeriod[] {
 }
 
 export async function loadCashBars(
-  api: Pick<Repository, "overview">,
+  api: Pick<Repository, "cashflow">,
   range: CashPeriod,
   asOf: string,
 ): Promise<CashBar[]> {
   return Promise.all(
     cashPeriods(range).map(async (period) => {
-      const report = await api.overview(period.start, period.end, asOf);
+      const report = await api.cashflow(period.start, period.end, asOf);
       return { ...period, inflow: report.cash_in, outflow: report.cash_out };
     }),
   );

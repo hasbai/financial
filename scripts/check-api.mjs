@@ -55,22 +55,77 @@ await withUserToken(async (token, tokenData) => {
   assert.equal(accounts.status, 200);
   assert.equal(accounts.data.length, 86);
   console.log("PASS real JWT account read: 86 records");
-  const list = await req("/rpc/transactions_page", {
-    p_filters: {},
-    p_cursor: null,
-    p_limit: 30,
+  const query = async (view, params) => {
+    const response = await req("/" + view + "?" + new URLSearchParams(params));
+    assert.equal(
+      response.status,
+      200,
+      `${view}: ${JSON.stringify(response.data)}`,
+    );
+    return response.data;
+  };
+  const list = await query("transactions", {
+    select: "id,occurred_at,entries,amount",
+    order: "occurred_at.desc,id.desc",
+    limit: "31",
   });
-  assert.equal(list.status, 200);
-  assert.equal(list.data.items.length, 30);
-  console.log("PASS real JWT transaction pagination");
-  const overview = await req("/rpc/overview", {
-    p_start: "2026-09-01T00:00:00+08:00",
-    p_end: "2026-10-01T00:00:00+08:00",
-    p_as_of: new Date().toISOString(),
+  assert.ok(list.length > 0);
+  const last = list[Math.min(29, list.length - 1)];
+  const next = await query("transactions", {
+    select: "id,occurred_at",
+    order: "occurred_at.desc,id.desc",
+    limit: "31",
+    or: `(occurred_at.lt.${JSON.stringify(last.occurred_at)},and(occurred_at.eq.${JSON.stringify(last.occurred_at)},id.lt.${last.id}))`,
   });
-  assert.equal(overview.status, 200);
-  assert.equal(overview.data.quality.posted, 439);
-  console.log("PASS real JWT overview");
+  assert.ok(!next.some((r) => list.slice(0, 30).some((t) => t.id === r.id)));
+  const detail = await query("transactions", {
+    select: "id,entries,amount",
+    id: "eq." + list[0].id,
+  });
+  assert.equal(detail.length, 1);
+  assert.ok(detail[0].amount === null || typeof detail[0].amount === "string");
+  await query("transactions", {
+    select: "id",
+    search_text: String.raw`imatch.a\.\*\(商户\),%_`,
+    account_types: "cs.{资产}",
+    has_cash_flow: "eq.true",
+    limit: "1",
+  });
+  console.log(
+    "PASS real JWT transaction view, detail, cursor, regex and array filters",
+  );
+  const cutoff = new Date().toISOString();
+  const sum = (name) => `${name}:${name}::numeric.sum()::text`;
+  const balance = await query("balance_sheet", {
+    select: ["assets", "liabilities", "net_assets"].map(sum).join(","),
+    occurred_at: "lt." + cutoff,
+  });
+  const period = [
+    ["occurred_at", "gte.2026-09-01T00:00:00+08:00"],
+    ["occurred_at", "lt." + cutoff],
+  ];
+  const income = await query("income_statement", [
+    ["select", ["income", "expense", "profit"].map(sum).join(",")],
+    ...period,
+  ]);
+  const cash = await query("cashflow_statement", [
+    ["select", ["inflow", "outflow", "net"].map(sum).join(",")],
+    ...period,
+  ]);
+  const trend = await query("income_statement", [
+    ["select", "date," + sum("income") + "," + sum("expense")],
+    ["order", "date.asc"],
+    ...period,
+  ]);
+  for (const rows of [balance, income, cash]) {
+    assert.equal(rows.length, 1);
+    for (const amount of Object.values(rows[0]))
+      assert.ok(amount === null || typeof amount === "string");
+  }
+  assert.ok(Array.isArray(trend));
+  console.log(
+    "PASS real JWT three report views: SQL aggregates, decimal strings, date grouping",
+  );
   const invalid = await req("/rpc/save_transaction", {
     p_id: null,
     p_updated_at: null,
@@ -157,16 +212,26 @@ await withUserToken(async (token, tokenData) => {
   const bad = token.slice(0, -12) + "AAAAAAAAAAAA";
   assert.ok((await req("/account?select=id", undefined, bad)).status >= 400);
   console.log("PASS invalid signature rejected");
-  const wrongAudience = await req(
-    "/account?select=id",
-    undefined,
-    tokenData.id_token,
+  for (const view of [
+    "account",
+    "transactions",
+    "balance_sheet",
+    "income_statement",
+    "cashflow_statement",
+  ]) {
+    const wrongAudience = await req(
+      `/${view}?select=*&limit=1`,
+      undefined,
+      tokenData.id_token,
+    );
+    assert.ok(
+      wrongAudience.status >= 400 ||
+        (Array.isArray(wrongAudience.data) && wrongAudience.data.length === 0),
+    );
+  }
+  console.log(
+    "PASS wrong-audience ID token cannot read accounts or any report view (RLS)",
   );
-  assert.ok(
-    wrongAudience.status >= 400 ||
-      (Array.isArray(wrongAudience.data) && wrongAudience.data.length === 0),
-  );
-  console.log("PASS wrong-audience ID token cannot read financial data (RLS)");
   const absent = await fetch(url + "/account?select=id", {
     headers: { "Accept-Profile": "financial" },
   });

@@ -3,6 +3,7 @@ import {
   fetchWithToken,
 } from "@neondatabase/postgrest-js";
 
+import Decimal from "decimal.js";
 import { config } from "./config";
 import type {
   Account,
@@ -23,10 +24,8 @@ export class ApiError extends Error {
 }
 export function errorMessage(e: unknown) {
   const message = e instanceof Error ? e.message : "请求失败";
-  if (message.includes("CONFLICT"))
-    return "记录已更新";
-  if (message.includes("IDEMPOTENCY_CONFLICT"))
-    return "保存待核对";
+  if (message.includes("CONFLICT")) return "记录已更新";
+  if (message.includes("IDEMPOTENCY_CONFLICT")) return "保存待核对";
   if (message.includes("FORBIDDEN") || message.includes("permission denied"))
     return "无操作权限";
   if (/login_required|consent_required|Missing Refresh Token/.test(message))
@@ -49,6 +48,73 @@ export function createRepository(getToken: () => Promise<string>) {
     if (error) throw new ApiError(error.code, error.message);
     return data as T;
   }
+  async function read<T>(
+    query: PromiseLike<{
+      data: unknown;
+      error: { code: string; message: string } | null;
+    }>,
+  ): Promise<T> {
+    const { data, error } = await query;
+    if (error) throw new ApiError(error.code, error.message);
+    return data as T;
+  }
+  async function allRows<T>(
+    query: () => {
+      range(
+        from: number,
+        to: number,
+      ): PromiseLike<{
+        data: unknown;
+        error: { code: string; message: string } | null;
+      }>;
+    },
+  ): Promise<T[]> {
+    const result: T[] = [];
+    for (let offset = 0; ; offset += 1000) {
+      const page = await read<T[]>(query().range(offset, offset + 999));
+      result.push(...page);
+      if (page.length < 1000) return result;
+    }
+  }
+  async function balanceTotals(asOf: string) {
+    const row = await read<Record<string, string | null>>(
+      db
+        .from("balance_sheet")
+        .select(
+          sums("assets", "liabilities", "net_assets") +
+            ",cash_closing:cash_balance::numeric.sum()::text",
+        )
+        .lt("occurred_at", asOf)
+        .single(),
+    );
+    return {
+      assets: row.assets ?? "0",
+      liabilities: row.liabilities ?? "0",
+      net_assets: row.net_assets ?? "0",
+      cash_closing: row.cash_closing ?? "0",
+    };
+  }
+  async function cashTotals(start: string, end: string, asOf: string) {
+    const row = await read<{
+      cash_in: string | null;
+      cash_out: string | null;
+      cash_net: string | null;
+    }>(
+      db
+        .from("cashflow_statement")
+        .select(
+          "cash_in:inflow::numeric.sum()::text,cash_out:outflow::numeric.sum()::text,cash_net:net::numeric.sum()::text",
+        )
+        .gte("occurred_at", start)
+        .lt("occurred_at", effectiveEnd(end, asOf))
+        .single(),
+    );
+    return {
+      cash_in: row.cash_in ?? "0",
+      cash_out: row.cash_out ?? "0",
+      cash_net: row.cash_net ?? "0",
+    };
+  }
   return {
     async accounts() {
       const { data, error } = await db
@@ -61,20 +127,169 @@ export function createRepository(getToken: () => Promise<string>) {
       if (error) throw new ApiError(error.code, error.message);
       return data as Account[];
     },
-    list: (filters: Filters, cursor: Cursor) =>
-      rpc<Page>("transactions_page", {
-        p_filters: filters,
-        p_cursor: cursor,
-        p_limit: 30,
-      }),
-    transaction: (id: number) =>
-      rpc<Transaction | null>("transaction_detail", { p_id: id }),
-    overview: (start: string, end: string, asOf: string) =>
-      rpc<Overview>("overview", {
-        p_start: start,
-        p_end: end,
-        p_as_of: asOf,
-      }),
+    async list(filters: Filters, cursor: Cursor): Promise<Page> {
+      let query = db.from("transactions").select(transactionColumns);
+      if (filters.start) query = query.gte("occurred_at", filters.start);
+      if (filters.end) query = query.lt("occurred_at", filters.end);
+      // A literal, case-insensitive substring; regex escaping prevents search operators.
+      if (filters.search)
+        query = query.filter(
+          "search_text",
+          "imatch",
+          escapeRegex(filters.search),
+        );
+      if (filters.review === "needed") query = query.eq("needs_review", true);
+      if (filters.review === "unmatched")
+        query = query.gt("missing_accounts", 0);
+      if (filters.status) query = query.eq("status", filters.status);
+      if (filters.payment_method)
+        query = query.eq("payment_method", filters.payment_method);
+      if (filters.posted === "true") query = query.eq("posted_count", 1);
+      if (filters.account_id)
+        query = query.contains("account_ids", [Number(filters.account_id)]);
+      if (filters.account_type)
+        query = query.contains("account_types", [filters.account_type]);
+      if (filters.cash === "true") query = query.eq("has_cash_flow", true);
+      if (cursor) {
+        if (
+          !Number.isSafeInteger(cursor.id) ||
+          !Number.isFinite(Date.parse(cursor.occurred_at))
+        )
+          throw new ApiError("VALIDATION", "分页位置无效");
+        const at = quoteFilter(cursor.occurred_at);
+        query = query.or(
+          `occurred_at.lt.${at},and(occurred_at.eq.${at},id.lt.${cursor.id})`,
+        );
+      }
+      const rows = await read<Transaction[]>(
+        query
+          .order("occurred_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(31),
+      );
+      const items = rows.slice(0, 30);
+      const last = items.at(-1);
+      return {
+        items,
+        next_cursor:
+          rows.length > 30 && last
+            ? { occurred_at: last.occurred_at, id: last.id }
+            : null,
+      };
+    },
+    async transaction(id: number) {
+      return read<Transaction | null>(
+        db
+          .from("transactions")
+          .select(transactionColumns)
+          .eq("id", id)
+          .maybeSingle(),
+      );
+    },
+    cashflow: cashTotals,
+    balance: balanceTotals,
+    async overview(
+      start: string,
+      end: string,
+      asOf: string,
+    ): Promise<Overview> {
+      const cutoff = effectiveEnd(end, asOf);
+      const before = (view: string, select: string) =>
+        db.from(view).select(select).lt("occurred_at", cutoff);
+      const period = (view: string, select: string) =>
+        before(view, select).gte("occurred_at", start);
+      const [
+        balance,
+        accounts,
+        pnl,
+        categories,
+        trend,
+        cash,
+        cashCategories,
+        opening,
+        quality,
+        periodQuality,
+      ] = await Promise.all([
+        balanceTotals(cutoff),
+        allRows<Overview["accounts"][number]>(() =>
+          before(
+            "balance_sheet",
+            "id:account_id,name,type,subtype," + sums("balance"),
+          )
+            .order("type")
+            .order("subtype")
+            .order("name")
+            .order("account_id"),
+        ),
+        read<Record<string, string | null>>(
+          period(
+            "income_statement",
+            sums("income", "expense", "profit"),
+          ).single(),
+        ),
+        allRows<Overview["categories"][number]>(() =>
+          period("income_statement", "name:subtype,type," + sums("amount"))
+            .in("type", ["收入", "支出"])
+            .order("type")
+            .order("subtype"),
+        ),
+        allRows<Overview["trend"][number]>(() =>
+          period("income_statement", "date," + sums("income", "expense")).order(
+            "date",
+          ),
+        ),
+        cashTotals(start, end, asOf),
+        allRows<Overview["cash_categories"][number]>(() =>
+          period(
+            "cashflow_statement",
+            "name:category," + sums("inflow", "outflow"),
+          ).order("category"),
+        ),
+        read<{ cash_opening: string | null }>(
+          db
+            .from("balance_sheet")
+            .select("cash_opening:cash_balance::numeric.sum()::text")
+            .lt("occurred_at", effectiveEnd(start, cutoff))
+            .single(),
+        ),
+        read<Overview["quality"]>(
+          before(
+            "transactions",
+            "pending:pending_count.sum(),missing_entries:missing_entry_count.sum(),missing_accounts:missing_account_count.sum(),posted:posted_count.sum(),coverage_start:occurred_at.min()",
+          ).single(),
+        ),
+        read<{ pending: number | null }>(
+          period("transactions", "pending:pending_count.sum()").single(),
+        ),
+      ]);
+      return {
+        as_of: cutoff,
+        assets: balance.assets ?? "0",
+        liabilities: balance.liabilities ?? "0",
+        net_assets: balance.net_assets ?? "0",
+        income: pnl.income ?? "0",
+        expense: pnl.expense ?? "0",
+        profit: pnl.profit ?? "0",
+        ...cash,
+        cash_opening: opening.cash_opening ?? "0",
+        cash_closing: balance.cash_closing ?? "0",
+        accounts,
+        categories: categories.sort((a, b) =>
+          new Decimal(b.amount).comparedTo(a.amount),
+        ),
+        cash_categories: cashCategories,
+        trend,
+        quality: {
+          pending: quality.pending ?? 0,
+          period_pending: periodQuality.pending ?? 0,
+          missing_entries: quality.missing_entries ?? 0,
+          missing_accounts: quality.missing_accounts ?? 0,
+          posted: quality.posted ?? 0,
+          coverage_start: quality.coverage_start,
+          generated_at: new Date().toISOString(),
+        },
+      };
+    },
     save: (id: number | null, updatedAt: string | null, payload: Payload) =>
       rpc<Transaction>("save_transaction", {
         p_id: id,
@@ -86,3 +301,31 @@ export function createRepository(getToken: () => Promise<string>) {
   };
 }
 export type Repository = ReturnType<typeof createRepository>;
+
+// These helpers only shape queries. SQL computes all authoritative report amounts.
+function sums(...columns: string[]) {
+  return columns
+    .map((column) => `${column}:${column}::numeric.sum()::text`)
+    .join(",");
+}
+function effectiveEnd(end: string, asOf: string) {
+  // Preserve PostgreSQL microseconds even when both boundaries share one JS millisecond.
+  const micros = (value: string) => {
+    const fraction = value.match(/\.(\d+)(?:Z|[+-]\d{2}:?\d{2})$/i)?.[1] ?? "";
+    return (
+      BigInt(Date.parse(value)) * 1000n +
+      BigInt(fraction.slice(3, 6).padEnd(3, "0"))
+    );
+  };
+  return micros(end) <= micros(asOf) ? end : asOf;
+}
+function quoteFilter(value: string) {
+  return JSON.stringify(value);
+}
+function escapeRegex(value: string) {
+  return [...value]
+    .map((char) => ("\\^$.*+?()[]{}|".includes(char) ? "\\" + char : char))
+    .join("");
+}
+const transactionColumns =
+  "id,occurred_at,created_at,updated_at,status,payment_method,payment_id,notes,merchant,entry_count,missing_accounts,complete,amount,kind,entries";

@@ -11,7 +11,7 @@
           const at = new Date(
             Date.parse(start) + ((Date.parse(end) - Date.parse(start)) * i) / 5,
           ).toISOString();
-          return api.overview(start, at, at).then((r) => r.net_assets);
+          return api.balance(at).then((r) => r.net_assets);
         }),
       ),
     staleTime: 300_000,

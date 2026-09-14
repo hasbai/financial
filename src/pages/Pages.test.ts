@@ -88,6 +88,15 @@ function setup(
     list: vi
       .fn()
       .mockResolvedValue({ items: [transaction], next_cursor: null }),
+    balance: vi
+      .fn()
+      .mockResolvedValue({
+        assets: "100",
+        liabilities: "0",
+        net_assets: "100",
+        cash_closing: "100",
+      }),
+    cashflow: vi.fn().mockResolvedValue(overview),
     overview: vi.fn().mockResolvedValue(overview),
     transaction: vi.fn().mockResolvedValue(transaction),
     save: vi.fn(),
@@ -190,12 +199,10 @@ it("defaults to recorded future cash flows and drills into exactly thirty days",
 });
 it("shows an empty future period without inventing a forecast", async () => {
   setup("overview", false, (api) => {
-    vi.mocked(api.overview).mockResolvedValue({
-      ...overview,
+    vi.mocked(api.cashflow).mockResolvedValue({
       cash_in: "0",
       cash_out: "0",
       cash_net: "0",
-      cash_categories: [],
     });
   });
   await screen.findByText("暂无现金流");
@@ -205,7 +212,7 @@ it("shows an empty future period without inventing a forecast", async () => {
 });
 it("keeps a future query failure distinct from a zero cash flow", async () => {
   setup("overview", false, (api) => {
-    vi.mocked(api.overview).mockImplementation(async (start, end, asOf) => {
+    vi.mocked(api.cashflow).mockImplementation(async (start, end, asOf) => {
       if (end === asOf) throw new Error("未来现金流加载失败");
       return overview;
     });
@@ -222,7 +229,7 @@ it("does not query future cash flow without cash accounts", async () => {
   await screen.findByRole("link", { name: "设置账户" });
   expect(
     vi
-      .mocked(api.overview)
+      .mocked(api.cashflow)
       .mock.calls.some(
         ([start, end]) =>
           Date.parse(end) - Date.parse(start) === 30 * 86400000 &&

@@ -26,15 +26,13 @@ it("clips a monthly final bucket and handles an empty period", () => {
 });
 it("uses SQL cash totals, not profit-and-loss amounts or client sums", async () => {
   const api = {
-    overview: vi
-      .fn()
-      .mockResolvedValue({
-        ...overview,
-        cash_in: "123.45",
-        cash_out: "67.89",
-        income: "9999",
-        expense: "8888",
-      }),
+    cashflow: vi.fn().mockResolvedValue({
+      ...overview,
+      cash_in: "123.45",
+      cash_out: "67.89",
+      income: "9999",
+      expense: "8888",
+    }),
   };
   const range = nextThirtyDays("2026-09-14T02:00:00.000Z");
   const bars = await loadCashBars(api, range, range.end);
@@ -42,8 +40,8 @@ it("uses SQL cash totals, not profit-and-loss amounts or client sums", async () 
   expect(
     bars.every((b) => b.inflow === "123.45" && b.outflow === "67.89"),
   ).toBe(true);
-  expect(api.overview).toHaveBeenCalledTimes(5);
-  expect(api.overview).toHaveBeenLastCalledWith(
+  expect(api.cashflow).toHaveBeenCalledTimes(5);
+  expect(api.cashflow).toHaveBeenLastCalledWith(
     bars[4].start,
     range.end,
     range.end,
@@ -51,7 +49,7 @@ it("uses SQL cash totals, not profit-and-loss amounts or client sums", async () 
 });
 it("rejects incomplete chart results rather than presenting failed buckets as zero", async () => {
   const api = {
-    overview: vi
+    cashflow: vi
       .fn()
       .mockResolvedValue(overview)
       .mockRejectedValueOnce(new Error("offline")),

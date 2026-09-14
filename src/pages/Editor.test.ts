@@ -30,6 +30,17 @@ function setup(
     transaction: vi.fn().mockResolvedValue(t),
     save: vi.fn(async (_id, _at, p: Payload) => ({ ...t, ...p })),
     list: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
+    balance: vi
+      .fn()
+      .mockResolvedValue({
+        assets: "100",
+        liabilities: "0",
+        net_assets: "100",
+        cash_closing: "100",
+      }),
+    cashflow: vi
+      .fn()
+      .mockResolvedValue({ cash_in: "0", cash_out: "0", cash_net: "0" }),
     overview: vi.fn(),
     saveAccount: vi.fn(),
   };
