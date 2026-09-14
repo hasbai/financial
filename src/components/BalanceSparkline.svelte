@@ -1,8 +1,17 @@
 <script lang="ts">
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { useApi } from "$lib/context";
-  let { start, end, closing }: { start: string; end: string; closing: string } =
-    $props();
+  let {
+    start,
+    end,
+    closing,
+    values: supplied,
+  }: {
+    start: string;
+    end: string;
+    closing: string;
+    values?: string[];
+  } = $props();
   const api = useApi();
   const cache = useQueryClient();
   const query = createQuery(() => ({
@@ -22,10 +31,13 @@
             .then((r) => r.net_assets);
         }),
       ),
-    enabled: Date.parse(end) > Date.parse(start),
+    enabled: !supplied && Date.parse(end) > Date.parse(start),
     staleTime: 300_000,
   }));
-  let values = $derived(query.data ? [...query.data, closing].map(Number) : []);
+  let values = $derived(
+    supplied?.map(Number) ??
+      (query.data ? [...query.data, closing].map(Number) : []),
+  );
   let low = $derived(Math.min(...values));
   let span = $derived(Math.max(1, Math.max(...values) - low));
   let points = $derived(
@@ -33,7 +45,7 @@
   );
 </script>
 
-{#if query.data && !query.error}
+{#if supplied || (query.data && !query.error)}
   <svg
     viewBox="0 0 300 100"
     preserveAspectRatio="none"

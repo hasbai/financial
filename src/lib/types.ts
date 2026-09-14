@@ -67,3 +67,26 @@ export type Overview = {
 export type Cursor = { occurred_at: string; id: number } | null;
 export type Page = { items: Transaction[]; next_cursor: Cursor };
 export type Filters = Record<string, string>;
+
+export type HomeSnapshot = Pick<
+  Overview,
+  | "as_of"
+  | "assets"
+  | "liabilities"
+  | "net_assets"
+  | "income"
+  | "expense"
+  | "profit"
+> & {
+  start: string;
+  future_end: string;
+  pending: number;
+  cash_configured: boolean;
+  cash: Pick<Overview, "cash_in" | "cash_out" | "cash_net">;
+  balance_trend?: string[];
+  cash_bars?: import("./cashflow").CashBar[];
+  recent: (Pick<
+    Transaction,
+    "id" | "occurred_at" | "merchant" | "notes" | "amount" | "kind"
+  > & { category: string })[];
+};

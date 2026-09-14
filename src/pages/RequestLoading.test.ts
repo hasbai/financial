@@ -10,7 +10,12 @@ import { QueryClient } from "@tanstack/svelte-query";
 import Harness from "../test/Harness.svelte";
 import { createRepository } from "../lib/api";
 import { router } from "../lib/router.svelte";
-import { accounts, transaction, overview } from "../test/fixtures";
+import {
+  accounts,
+  transaction,
+  overview,
+  homeSnapshot,
+} from "../test/fixtures";
 
 const clients: QueryClient[] = [];
 afterEach(() => {
@@ -26,32 +31,54 @@ function setup(
 ) {
   const requests: URL[] = [];
   let failCategories = false;
+  let nonempty = false;
+  let failHome = false;
   vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     requests.push(url);
     const view = url.pathname.split("/").at(-1);
     const select = url.searchParams.get("select") ?? "";
+    if (failHome && view === "home")
+      return new Response(
+        JSON.stringify({ code: "503", message: "首页加载失败" }),
+        { status: 503 },
+      );
     if (failCategories && select.startsWith("name:subtype"))
       return new Response(
         JSON.stringify({ code: "503", message: "分类加载失败" }),
         { status: 503 },
       );
     const data =
-      view === "account"
-        ? accounts
-        : view === "transactions"
-          ? select.startsWith("id,")
-            ? [transaction]
-            : overview.quality
-          : select.startsWith("id:account_id")
-            ? overview.accounts
-            : select.startsWith("name:subtype")
-              ? overview.categories
-              : select.startsWith("date,")
-                ? overview.trend
-                : view === "cashflow_statement"
-                  ? { cash_in: "0", cash_out: "0", cash_net: "0" }
-                  : overview;
+      view === "home"
+        ? {
+            ...homeSnapshot(),
+            cash: nonempty
+              ? overview
+              : { cash_in: "0", cash_out: "0", cash_net: "0" },
+            balance_trend: select.includes("balance_trend")
+              ? homeSnapshot().balance_trend
+              : undefined,
+            cash_bars: select.includes("cash_bars")
+              ? nonempty
+                ? homeSnapshot().cash_bars
+                : []
+              : undefined,
+          }
+        : view === "account"
+          ? accounts
+          : view === "transactions"
+            ? select.startsWith("id,")
+              ? [transaction]
+              : overview.quality
+            : select.startsWith("id:account_id")
+              ? overview.accounts
+              : select.startsWith("name:subtype")
+                ? overview.categories
+                : select.startsWith("date,")
+                  ? overview.trend
+                  : view === "cashflow_statement"
+                    ? { cash_in: "0", cash_out: "0", cash_net: "0" }
+                    : overview;
     return new Response(JSON.stringify(data), {
       headers: { "content-type": "application/json" },
     });
@@ -71,6 +98,12 @@ function setup(
     ...rendered,
     requests,
     cache,
+    setFailHome: () => {
+      failHome = true;
+    },
+    setNonempty: () => {
+      nonempty = true;
+    },
     failCategories: (value: boolean) => {
       failCategories = value;
     },
@@ -85,18 +118,15 @@ it("loads only home data, reuses the closing balance, and fetches panel details 
   await waitFor(() =>
     expect(document.querySelector("svg polyline")).toBeTruthy(),
   );
-  expect(requests).toHaveLength(11);
+  expect(requests).toHaveLength(1);
+  expect(requests[0].pathname).toMatch(/\/home$/);
   expect(new Set(requests.map(String)).size).toBe(requests.length);
   expect(
     selects(requests).some((s) =>
       /^(id:account_id|name:subtype|date,|name:category|cash_opening)/.test(s),
     ),
   ).toBe(false);
-  expect(
-    requests
-      .find((r) => r.searchParams.get("select")?.startsWith("id,occurred_at"))
-      ?.searchParams.get("limit"),
-  ).toBe("4");
+  expect(selects(requests)[0]).not.toContain("entries");
 
   const before = requests.length;
   await fireEvent.click(screen.getByRole("button", { name: "资产负债" }));
@@ -122,7 +152,9 @@ it("loads only home data, reuses the closing balance, and fetches panel details 
 it("does not request charts when amounts are hidden", async () => {
   const { requests } = setup("overview", true);
   await screen.findByText("未来 30 天净流入");
-  expect(requests).toHaveLength(6);
+  expect(requests).toHaveLength(1);
+  expect(selects(requests)[0]).not.toContain("balance_trend");
+  expect(selects(requests)[0]).not.toContain("cash_bars");
   expect(document.body.textContent).not.toContain("¥");
   await fireEvent.click(screen.getByRole("button", { name: "损益" }));
   await screen.findByRole("region", { name: "损益明细" });
@@ -159,8 +191,8 @@ it("shares fresh reports across pages and refreshes visible reports after invali
   await rerender({ page: "transactions" });
   await screen.findByRole("region", { name: "月度收支" });
   await screen.findByText("示例消费");
-  // Shared accounts and income are fresh. Only list, monthly cash and trend load.
-  expect(requests).toHaveLength(before + 3);
+  // Home seeds income; list, account labels, monthly cash and trend load.
+  expect(requests).toHaveLength(before + 4);
   const start = requests.length;
   await cache.invalidateQueries({
     predicate: (q) =>
@@ -206,4 +238,36 @@ it("changing a month loads only the selected panel and preserves the cash period
       .getByRole("button", { name: "所选月份" })
       .getAttribute("aria-pressed"),
   ).toBe("true");
+});
+
+it("unhides through one home request without the ten legacy chart requests", async () => {
+  const { requests, setNonempty, rerender } = setup("overview", true);
+  await screen.findByText("未来 30 天净流入");
+  setNonempty();
+  await rerender({ hidden: false });
+  await screen.findByRole("img", { name: /现金流入与流出分组柱状图/ });
+  expect(requests).toHaveLength(2);
+  expect(requests.every((r) => r.pathname.endsWith("/home"))).toBe(true);
+  await fireEvent.click(screen.getByRole("button", { name: "隐藏金额" }));
+  expect(requests).toHaveLength(2);
+});
+it("refreshes the current homepage with exactly one snapshot after saving", async () => {
+  const { requests, cache } = setup();
+  await screen.findByText("暂无现金流");
+  await cache.invalidateQueries({ queryKey: ["overview"] });
+  expect(requests).toHaveLength(2);
+  expect(requests.every((r) => r.pathname.endsWith("/home"))).toBe(true);
+});
+
+it("does not hide a failed snapshot behind disabled historical queries", async () => {
+  const { setFailHome, cache, requests } = setup();
+  await screen.findByText("暂无现金流");
+  setFailHome();
+  await cache.invalidateQueries({ queryKey: ["overview", "home"] });
+  await screen.findByText("首页加载失败");
+  await fireEvent.change(screen.getAllByLabelText("报表月份")[0], {
+    target: { value: "2025-01" },
+  });
+  await screen.findByText("首页加载失败");
+  expect(requests.filter((r) => r.pathname.endsWith("/home"))).toHaveLength(2);
 });

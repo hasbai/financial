@@ -1,7 +1,8 @@
 <script lang="ts">
   import { useReport, useReportTime, reportStaleTime } from "$lib/reports";
   import { effectiveEnd } from "$lib/api";
-  import { createQuery } from "@tanstack/svelte-query";
+  import { untrack } from "svelte";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import {
     Bell,
     Search,
@@ -15,9 +16,9 @@
     EyeOff,
   } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
-  import { useApi, useAccounts } from "$lib/context";
+  import { useApi } from "$lib/context";
   import { currentMonth, money, monthRange } from "$lib/finance";
-  import { transactionMoney, transactionCategory } from "$lib/presentation";
+  import { transactionMoney } from "$lib/presentation";
   import { router } from "$lib/router.svelte";
   import Field from "../components/Field.svelte";
   import Loading from "../components/Loading.svelte";
@@ -37,57 +38,87 @@
   let view = $state("overview");
   let cashMode = $state<"future" | "month">("future");
   const api = useApi();
-  const accounts = useAccounts();
-  const now = useReportTime();
+  const openedAt = useReportTime();
+  const cache = useQueryClient();
+  let charts = $state(!untrack(() => hidden));
+  $effect(() => {
+    if (!masked) charts = true;
+  });
+  const home = createQuery(() => ({
+    queryKey: ["overview", "home", charts],
+    queryFn: async () => {
+      const snapshot = await api.home(charts);
+      cache.setQueryData(["overview", "snapshot"], snapshot.as_of);
+      cache.setQueryData(
+        ["overview", "income", snapshot.start, snapshot.as_of],
+        {
+          income: snapshot.income,
+          expense: snapshot.expense,
+          profit: snapshot.profit,
+        },
+      );
+      return snapshot;
+    },
+    staleTime: reportStaleTime,
+  }));
+  let now = $derived(home.data?.as_of ?? openedAt);
+  let current = $derived(month === currentMonth());
   let range = $derived(monthRange(month));
   let cutoff = $derived(effectiveEnd(range.end, now));
   const period = () => ({ ...range, asOf: now });
   const balance = useReport(
     "balance",
     period,
-    () => view === "overview" || view === "assets",
+    () => !current && !!home.data && (view === "overview" || view === "assets"),
   );
   const income = useReport(
     "income",
     period,
-    () => view === "overview" || view === "profit",
+    () => !current && !!home.data && (view === "overview" || view === "profit"),
   );
-  const quality = useReport("quality", period);
+  const quality = useReport("quality", period, () => !current && !!home.data);
   const balances = useReport("accounts", period, () => view === "assets");
   const categories = useReport("categories", period, () => view === "profit");
   const trend = useReport("trend", period, () => view === "profit" && !masked);
   let active = $derived([
-    quality,
-    ...(view === "overview" || view === "assets" ? [balance] : []),
-    ...(view === "overview" || view === "profit" ? [income] : []),
+    home,
+    ...(!current ? [quality] : []),
+    ...(!current && (view === "overview" || view === "assets")
+      ? [balance]
+      : []),
+    ...(!current && (view === "overview" || view === "profit") ? [income] : []),
     ...(view === "assets" ? [balances] : []),
     ...(view === "profit" ? [categories, ...(!masked ? [trend] : [])] : []),
   ]);
   let query = $derived({
-    isPending: active.some((q) => q.isPending),
+    isPending: !active.some((q) => q.error) && active.some((q) => q.isPending),
     error: active.find((q) => q.error)?.error,
     refetch: () =>
       Promise.all(active.filter((q) => q.isError).map((q) => q.refetch())),
   });
   let data = $derived({
     as_of: cutoff,
-    net_assets: balance.data?.net_assets ?? "0",
-    assets: balance.data?.assets ?? "0",
-    liabilities: balance.data?.liabilities ?? "0",
-    income: income.data?.income ?? "0",
-    expense: income.data?.expense ?? "0",
-    profit: income.data?.profit ?? "0",
-    quality: { pending: quality.data?.pending ?? 0 },
+    net_assets:
+      (current ? home.data?.net_assets : balance.data?.net_assets) ?? "0",
+    assets: (current ? home.data?.assets : balance.data?.assets) ?? "0",
+    liabilities:
+      (current ? home.data?.liabilities : balance.data?.liabilities) ?? "0",
+    income: (current ? home.data?.income : income.data?.income) ?? "0",
+    expense: (current ? home.data?.expense : income.data?.expense) ?? "0",
+    profit: (current ? home.data?.profit : income.data?.profit) ?? "0",
+    quality: {
+      pending: (current ? home.data?.pending : quality.data?.pending) ?? 0,
+    },
     accounts: balances.data ?? [],
     categories: categories.data ?? [],
     trend: trend.data ?? [],
   });
-  const recent = createQuery(() => ({
-    queryKey: ["transactions", "recent", 3],
-    queryFn: () => api.list({}, null, 3),
-    enabled: view === "overview",
-    staleTime: reportStaleTime,
-  }));
+  let recent = $derived({
+    isPending: home.isPending,
+    error: home.error,
+    refetch: () => home.refetch(),
+    data: { items: home.data?.recent ?? [] },
+  });
   function down(filters: Record<string, string>) {
     router.navigate(
       "/transactions?" +
@@ -121,9 +152,7 @@
         variant="ghost"
         size="icon"
         class="relative"
-        aria-label={quality.data
-          ? `待补录 ${data.quality.pending} 笔`
-          : "待补录"}
+        aria-label={home.data ? `待补录 ${data.quality.pending} 笔` : "待补录"}
         ><Bell
           class="size-6"
           aria-hidden="true"
@@ -196,6 +225,7 @@
               start={range.start}
               end={data.as_of}
               closing={data.net_assets}
+              values={current ? (home.data?.balance_trend ?? []) : undefined}
             />
           </div>{/if}
         <div class="relative">
@@ -241,6 +271,7 @@
     {/if}
     {#if view === "overview" || view === "cash"}<Cashflow
         hidden={masked}
+        snapshot={home.data}
         asOf={data.as_of}
         bind:mode={cashMode}
         {range}
@@ -312,10 +343,8 @@
             {#each recent.data.items.slice(0, 3) as t}<a
                 href={`/transactions/${t.id}`}
                 class="flex min-w-0 items-center gap-3 py-4"
-                ><TransactionIcon
-                  category={transactionCategory(t, accounts.data ?? [])}
-                  kind={t.kind}
-                /><span class="min-w-0 flex-1"
+                ><TransactionIcon category={t.category} kind={t.kind} /><span
+                  class="min-w-0 flex-1"
                   ><span class="block truncate font-medium"
                     >{t.merchant || t.notes || "未命名交易"}</span
                   ><span class="mt-1 block text-sm text-muted-foreground"

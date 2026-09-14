@@ -9,7 +9,13 @@ import {
 } from "@testing-library/svelte";
 import { QueryClient } from "@tanstack/svelte-query";
 import Harness from "../test/Harness.svelte";
-import { accounts, transaction, overview, reportParts } from "../test/fixtures";
+import {
+  accounts,
+  transaction,
+  overview,
+  reportParts,
+  homeSnapshot,
+} from "../test/fixtures";
 import { router } from "../lib/router.svelte";
 import { currentMonth, monthRange } from "../lib/finance";
 import type { Repository } from "../lib/api";
@@ -84,6 +90,19 @@ function setup(
 ) {
   router.navigate(page === "overview" ? "/" : "/" + page, true, true);
   const api: Repository = {
+    home: vi.fn(async () => {
+      const snapshot = homeSnapshot();
+      snapshot.cash_configured = (await api.accounts()).some(
+        (a) => a.type === "资产" && a.subtype === "现金及等价物",
+      );
+      if (snapshot.cash_configured)
+        snapshot.cash = await api.cashflow(
+          snapshot.as_of,
+          snapshot.future_end,
+          snapshot.future_end,
+        );
+      return snapshot;
+    }),
     accounts: vi.fn().mockResolvedValue(accounts),
     list: vi
       .fn()
@@ -213,16 +232,14 @@ it("shows an empty future period without inventing a forecast", async () => {
   ).toBeNull();
 });
 it("keeps a future query failure distinct from a zero cash flow", async () => {
-  setup("overview", false, (api) => {
-    vi.mocked(api.cashflow).mockImplementation(async (start, end, asOf) => {
-      if (end === asOf) throw new Error("未来现金流加载失败");
-      return overview;
-    });
+  const { api } = setup("overview", false, (api) => {
+    vi.mocked(api.home).mockRejectedValueOnce(new Error("未来现金流加载失败"));
   });
   await screen.findByText("未来现金流加载失败");
   expect(screen.queryByText("暂无现金流")).toBeNull();
-  await fireEvent.click(screen.getByRole("button", { name: "所选月份" }));
-  await screen.findByText("本期净流入");
+  await fireEvent.click(screen.getByRole("button", { name: "重试" }));
+  await screen.findByText("未来 30 天净流入");
+  expect(api.home).toHaveBeenCalledTimes(2);
 });
 it("does not query future cash flow without cash accounts", async () => {
   const { api } = setup("overview", false, (api) => {

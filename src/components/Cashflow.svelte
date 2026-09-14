@@ -11,6 +11,7 @@
   import { useApi, useAccounts } from "$lib/context";
   import { money } from "$lib/finance";
   import { loadCashBars, nextThirtyDays, type CashPeriod } from "$lib/cashflow";
+  import type { HomeSnapshot } from "$lib/types";
   import { useReport, reportStaleTime } from "$lib/reports";
   import { router } from "$lib/router.svelte";
   import CashBars from "./CashBars.svelte";
@@ -19,12 +20,14 @@
   import Empty from "./Empty.svelte";
   let {
     hidden,
+    snapshot,
     asOf,
     range,
     now,
     mode = $bindable<"future" | "month">("future"),
   }: {
     hidden: boolean;
+    snapshot?: HomeSnapshot;
     asOf: string;
     range: CashPeriod;
     now: string;
@@ -32,20 +35,25 @@
   } = $props();
   const api = useApi();
   const cache = useQueryClient();
-  const accounts = useAccounts();
+  const accounts = useAccounts(() => !snapshot);
   let configured = $derived(
-    !!accounts.data?.some(
-      (a) => a.type === "资产" && a.subtype === "现金及等价物",
-    ),
+    snapshot?.cash_configured ??
+      !!accounts.data?.some(
+        (a) => a.type === "资产" && a.subtype === "现金及等价物",
+      ),
   );
-  let future = $derived(nextThirtyDays(now));
+  let future = $derived(
+    snapshot
+      ? { start: snapshot.as_of, end: snapshot.future_end }
+      : nextThirtyDays(now),
+  );
   let selected = $derived(
     mode === "future" ? future : { start: range.start, end: asOf },
   );
   const futureQuery = createQuery(() => ({
     queryKey: ["overview", "cash", future.start, future.end],
     queryFn: () => api.cashflow(future.start, future.end, future.end),
-    enabled: configured && mode === "future",
+    enabled: !snapshot && configured && mode === "future",
     staleTime: reportStaleTime,
   }));
   const monthQuery = useReport(
@@ -54,7 +62,12 @@
     () => configured && mode === "month",
   );
   let selectedQuery = $derived(mode === "future" ? futureQuery : monthQuery);
-  let summary = $derived(selectedQuery.data);
+  let summary = $derived(
+    mode === "future" && snapshot ? snapshot.cash : selectedQuery.data,
+  );
+  let suppliedBars = $derived(
+    mode === "future" ? snapshot?.cash_bars : undefined,
+  );
   let empty = $derived(
     summary && Number(summary.cash_in) === 0 && Number(summary.cash_out) === 0,
   );
@@ -73,7 +86,13 @@
         selected,
         selected.end,
       ),
-    enabled: configured && !!summary && !empty && !hidden,
+    enabled:
+      !(mode === "future" && snapshot) &&
+      !suppliedBars &&
+      configured &&
+      !!summary &&
+      !empty &&
+      !hidden,
     staleTime: reportStaleTime,
   }));
   function drilldown() {
@@ -110,15 +129,15 @@
       >
     </div>
   </div>
-  {#if accounts.error}<Failure
+  {#if !snapshot && accounts.error}<Failure
       error={accounts.error}
       retry={() => accounts.refetch()}
     />
-  {:else if accounts.isPending}<Loading />
+  {:else if !snapshot && accounts.isPending}<Loading />
   {:else if !configured}<Empty title="未设置现金账户"
       ><Button href="/accounts">设置账户</Button></Empty
     >
-  {:else if selectedQuery.error}<Failure
+  {:else if !(mode === "future" && snapshot) && selectedQuery.error}<Failure
       error={selectedQuery.error}
       retry={() => selectedQuery.refetch()}
     />
@@ -185,6 +204,7 @@
             <p class="font-medium">暂无现金流</p>
             <Button href="/transactions/new" variant="outline">记一笔</Button>
           </div>
+        {:else if suppliedBars}<CashBars data={suppliedBars} />
         {:else if bars.error}<Failure
             error={bars.error}
             retry={() => bars.refetch()}

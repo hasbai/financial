@@ -13,6 +13,7 @@ import type {
   Cursor,
   Page,
   Overview,
+  HomeSnapshot,
 } from "./types";
 export class ApiError extends Error {
   constructor(
@@ -198,6 +199,23 @@ export function createRepository(getToken: () => Promise<string>) {
   }
   return {
     report,
+    async home(charts = true) {
+      const snapshot = await read<HomeSnapshot>(
+        db
+          .from("home")
+          .select(
+            "as_of,start,future_end,assets,liabilities,net_assets,income,expense,profit,pending,cash_configured,cash,recent" +
+              (charts ? ",balance_trend,cash_bars" : ""),
+          )
+          .single(),
+      );
+      return {
+        ...snapshot,
+        as_of: new Date(snapshot.as_of).toISOString(),
+        start: new Date(snapshot.start).toISOString(),
+        future_end: new Date(snapshot.future_end).toISOString(),
+      };
+    },
     async accounts() {
       const { data, error } = await db
         .from("account")

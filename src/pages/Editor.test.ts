@@ -43,6 +43,7 @@ function setup(
       .mockResolvedValue({ cash_in: "0", cash_out: "0", cash_net: "0" }),
     overview: vi.fn(),
     report: vi.fn(),
+    home: vi.fn(),
     saveAccount: vi.fn(),
   };
   const cache = new QueryClient({

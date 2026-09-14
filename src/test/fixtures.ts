@@ -71,3 +71,32 @@ export const reportParts = {
   quality: overview.quality,
   periodQuality: { pending: overview.quality.period_pending },
 };
+
+export function homeSnapshot(): import("../lib/types").HomeSnapshot {
+  const as_of = new Date().toISOString();
+  return {
+    ...overview,
+    as_of,
+    start: new Date(
+      new Date().toLocaleDateString("sv-SE", {
+        timeZone: "Asia/Shanghai",
+        year: "numeric",
+        month: "2-digit",
+      }) + "-01T00:00:00+08:00",
+    ).toISOString(),
+    future_end: new Date(Date.parse(as_of) + 30 * 86400000).toISOString(),
+    pending: overview.quality.pending,
+    cash_configured: true,
+    cash: overview,
+    balance_trend: ["100", "200", "300", "400", "500", overview.net_assets],
+    cash_bars: [
+      {
+        start: as_of,
+        end: new Date(Date.parse(as_of) + 30 * 86400000).toISOString(),
+        inflow: overview.cash_in,
+        outflow: overview.cash_out,
+      },
+    ],
+    recent: [{ ...transaction, category: "餐饮" }],
+  };
+}
