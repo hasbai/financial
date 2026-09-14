@@ -49,6 +49,6 @@ GitHub Actions 进行 frozen-lockfile 安装、typecheck、test、build。未设
 
 ## 程序化验证
 
-按用户要求，本地 `.env` 保存 AUTH0_TEST_EMAIL / AUTH0_TEST_PASSWORD，权限600且被Git忽略，不进入浏览器。scripts/auth0-token.mjs 只供本机检查：临时添加 password/password-realm grant，使用 eastmoney-email 连接获取令牌，finally 恢复原 grant。该连接已为北极小站启用，原有应用连接不变。
+按用户要求，本地 `.env` 保存 AUTH0_TEST_EMAIL / AUTH0_TEST_PASSWORD，权限600且被Git忽略，不进入构建。`scripts/auth0-token.mjs` 只供本机检查：通过 Auth0 Universal Login 正常账号页/密码页、Cookie 会话、Authorization Code + PKCE 获取本人 Access Token。无需 Auth0 CLI 管理登录、client secret 或临时修改 grant；不改写 `.env`。授权回调严格校验 state，凭据仅提交同一 Auth0 origin，遇 MFA/CAPTCHA 等额外验证时明确停止。生产 SPA 继续使用官方 SDK，测试脚本不进入浏览器。
 
 实测 Neon 对错误 audience 的签名有效令牌未直接返回HTTP错误，因此由 financial.is_owner() 的 audience 检查与 RLS 拒绝业务数据访问；不能把配置 jwt_audience 当作已生效的网关校验。正式应用仍使用 Auth0 SDK 的 PKCE。

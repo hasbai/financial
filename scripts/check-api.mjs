@@ -239,5 +239,5 @@ await withUserToken(async (token, tokenData) => {
   console.log("PASS missing token rejected");
 });
 console.log(
-  "Original Auth0 grant types restored. No credentials or tokens printed.",
+  "Auth0 normal Authorization Code + PKCE flow completed. No credentials or tokens printed; the access token remained in memory and Auth0 configuration was not modified.",
 );
