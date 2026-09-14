@@ -17,14 +17,14 @@
   <div
     class="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground"
   >
-    <span>人民币 · 每 6 天一组</span>
+    <span>¥</span>
     <div class="flex gap-4">
       <span class="flex items-center gap-2"
-        ><span class="size-2.5 rounded-sm bg-cash-in"></span>流入 · 左柱</span
+        ><span class="size-2.5 rounded-sm bg-cash-in"></span>流入</span
       >
       <span class="flex items-center gap-2"
         ><span class="size-2.5 rounded-sm border border-cash-out bg-cash-out/65"
-        ></span>流出 · 右柱</span
+        ></span>流出</span
       >
     </div>
   </div>
@@ -81,12 +81,10 @@
     >
     <div class="overflow-x-auto">
       <table class="w-full text-left text-xs sm:text-sm">
-        <caption class="pb-3 text-left text-muted-foreground"
-          >北京时间；各区间含起始、不含结束。</caption
-        >
+        <caption class="sr-only">现金流明细</caption>
         <thead
           ><tr
-            ><th class="py-3">期间</th><th class="px-2">流入</th><th
+            ><th class="py-3">起止时间</th><th class="px-2">流入</th><th
               class="px-2">流出</th
             ></tr
           ></thead

@@ -22,15 +22,15 @@ export class ApiError extends Error {
   }
 }
 export function errorMessage(e: unknown) {
-  const message = e instanceof Error ? e.message : "请求失败，请重试";
+  const message = e instanceof Error ? e.message : "请求失败";
   if (message.includes("CONFLICT"))
-    return "这笔记录已在其他设备更新。你的输入已保留，请查看最新版本后重新编辑。";
+    return "记录已更新";
   if (message.includes("IDEMPOTENCY_CONFLICT"))
-    return "同一请求的内容发生变化，请刷新后核对是否已保存。";
+    return "保存待核对";
   if (message.includes("FORBIDDEN") || message.includes("permission denied"))
-    return "当前账号没有该账本的操作权限。";
+    return "无操作权限";
   if (/login_required|consent_required|Missing Refresh Token/.test(message))
-    return "登录已过期，请先保存输入或复制内容，再重新登录。";
+    return "登录已过期";
   return message.replace(/^VALIDATION: /, "");
 }
 export function createRepository(getToken: () => Promise<string>) {

@@ -43,6 +43,6 @@ describe("Data API contract", () => {
     );
     const repo = createRepository(async () => "test");
     await expect(repo.transaction(7)).rejects.toBeInstanceOf(ApiError);
-    expect(errorMessage(new Error("CONFLICT"))).toContain("输入已保留");
+    expect(errorMessage(new Error("CONFLICT"))).toBe("记录已更新");
   });
 });

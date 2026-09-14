@@ -1,29 +1,40 @@
 <script lang="ts">
   import { createQuery } from "@tanstack/svelte-query";
   import {
+    Bell,
+    Search,
     ChevronRight,
     Database,
     Landmark,
     TrendingUp,
     Wallet,
     ReceiptText,
+    Eye,
+    EyeOff,
   } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
-  import { Badge } from "$lib/components/ui/badge";
-  import * as Card from "$lib/components/ui/card";
-  import { useApi } from "$lib/context";
+  import { useApi, useAccounts } from "$lib/context";
   import { currentMonth, money, monthRange } from "$lib/finance";
+  import { transactionMoney, transactionCategory } from "$lib/presentation";
   import { router } from "$lib/router.svelte";
   import Field from "../components/Field.svelte";
   import Loading from "../components/Loading.svelte";
   import Failure from "../components/Failure.svelte";
   import Empty from "../components/Empty.svelte";
-  import Notice from "../components/Notice.svelte";
   import Trend from "../components/Trend.svelte";
   import Cashflow from "../components/Cashflow.svelte";
-  let { hidden }: { hidden: boolean } = $props();
+  import TransactionIcon from "../components/TransactionIcon.svelte";
+  import BalanceSparkline from "../components/BalanceSparkline.svelte";
+  let {
+    hidden,
+    onToggleAmounts,
+  }: { hidden: boolean; onToggleAmounts?: () => void } = $props();
+  let localHidden = $state(false);
+  let masked = $derived(hidden || localHidden);
   let month = $state(currentMonth());
+  let view = $state("overview");
   const api = useApi();
+  const accounts = useAccounts();
   const now = new Date().toISOString();
   let range = $derived(monthRange(month));
   const query = createQuery(() => ({
@@ -46,18 +57,57 @@
         }),
     );
   }
+  function toggleAmounts() {
+    if (onToggleAmounts) onToggleAmounts();
+    else localHidden = !localHidden;
+  }
 </script>
 
 <div class="page">
-  <div class="page-heading">
-    <div>
-      <h1>财务总览</h1>
-      <p class="mt-2 text-muted-foreground">收支有迹，生活有序。</p>
+  <div class="page-heading pr-12">
+    <h1>个人财务</h1>
+    <div class="flex items-center gap-1">
+      <Button
+        href="/transactions"
+        variant="ghost"
+        size="icon"
+        aria-label="搜索流水"
+        ><Search class="size-6" aria-hidden="true" /></Button
+      >
+      <Button
+        href="/transactions?review=needed"
+        variant="ghost"
+        size="icon"
+        class="relative"
+        aria-label={data ? `待补录 ${data.quality.pending} 笔` : "待补录"}
+        ><Bell
+          class="size-6"
+          aria-hidden="true"
+        />{#if data && data.quality.pending > 0}<span
+            class="absolute top-1 right-1 size-2 rounded-full bg-cash-out"
+            aria-hidden="true"
+          ></span>{/if}</Button
+      >
     </div>
-    <div class="max-w-44">
+  </div>
+  <div class="flex items-center justify-between gap-3">
+    <div
+      class="flex min-w-0 flex-1 rounded-full bg-card/80 p-1"
+      role="group"
+      aria-label="报表视图"
+    >
+      {#each [["overview", "总览"], ["assets", "资产负债"], ["cash", "现金流量"], ["profit", "损益"]] as [key, label]}<Button
+          class="min-w-0 flex-1 rounded-full px-2"
+          variant={view === key ? "default" : "ghost"}
+          aria-pressed={view === key}
+          onclick={() => (view = key)}>{label}</Button
+        >{/each}
+    </div>
+    <div class="hidden max-w-40 sm:block">
       <Field
         label="报表月份"
         type="month"
+        compact
         max={currentMonth()}
         value={month}
         onchange={(e) => {
@@ -74,214 +124,211 @@
       error={query.error}
       retry={() => query.refetch()}
     />{:else if data}
-    <Notice
-      >{data.quality.pending} 笔交易待补录。以下仅反映完整交易的已记录范围，请核对期初覆盖情况。<Button
-        href="/transactions?review=needed"
-        variant="link">去核对</Button
-      ></Notice
-    >
-    <section
-      class="finance-card relative overflow-hidden p-6 sm:p-8"
-      aria-label="净资产"
-    >
-      <div
-        class="pointer-events-none absolute -top-16 -right-12 size-72 rounded-full bg-cash-in/5 blur-3xl"
-        aria-hidden="true"
-      ></div>
-      <div class="relative">
-        <div class="flex items-center gap-3">
-          <span class="icon-tile bg-asset/10 text-asset"
-            ><Database class="size-5" aria-hidden="true" /></span
-          >
-          <h2>已记录净资产</h2>
-        </div>
-        <p class="money mt-5 break-words text-4xl font-semibold sm:text-5xl">
-          {money(data.net_assets, hidden)}
-        </p>
-        <p class="mt-4 text-xs leading-6 text-muted-foreground">
-          截至 {new Date(data.as_of).toLocaleDateString("zh-CN", {
-            timeZone: "Asia/Shanghai",
-          })} · 人民币 · 账面余额
-        </p>
-      </div>
-    </section>
-    <div class="grid grid-cols-2 gap-3 sm:gap-5">
-      <button
-        class="finance-card min-w-0 p-4 text-left transition-colors hover:bg-accent sm:p-6"
-        onclick={() => down({ account_type: "资产", start: "" })}
-      >
-        <span class="flex items-center gap-2 sm:gap-3"
-          ><span class="icon-tile bg-asset/10 text-asset"
-            ><Wallet class="size-5" aria-hidden="true" /></span
-          ><span class="font-medium">总资产</span><ChevronRight
-            class="ml-auto size-4 text-muted-foreground"
-            aria-hidden="true"
-          /></span
-        >
-        <span
-          class="money mt-4 block break-words text-xl font-semibold sm:text-2xl"
-          >{money(data.assets, hidden)}</span
-        ><span class="mt-2 block text-xs text-muted-foreground"
-          >已记录资产余额</span
-        >
-      </button>
-      <button
-        class="finance-card min-w-0 p-4 text-left transition-colors hover:bg-accent sm:p-6"
-        onclick={() => down({ account_type: "负债", start: "" })}
-      >
-        <span class="flex items-center gap-2 sm:gap-3"
-          ><span class="icon-tile bg-cash-out/10 text-cash-out"
-            ><Landmark class="size-5" aria-hidden="true" /></span
-          ><span class="font-medium">总负债</span><ChevronRight
-            class="ml-auto size-4 text-muted-foreground"
-            aria-hidden="true"
-          /></span
-        >
-        <span
-          class="money mt-4 block break-words text-xl font-semibold sm:text-2xl"
-          >{money(data.liabilities, hidden)}</span
-        ><span class="mt-2 block text-xs text-muted-foreground"
-          >已记录负债余额</span
-        >
-      </button>
+    <div class="flex justify-end sm:hidden">
+      <Field
+        label="报表月份"
+        type="month"
+        compact
+        max={currentMonth()}
+        value={month}
+        onchange={(e) => {
+          if (
+            /^\d{4}-\d{2}$/.test(e.currentTarget.value) &&
+            e.currentTarget.value <= currentMonth()
+          )
+            month = e.currentTarget.value;
+        }}
+      />
     </div>
-    <Cashflow {hidden} report={data} {range} {now} />
-    <section class="finance-card p-5 sm:p-7" aria-label="本期损益">
-      <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h2 class="flex items-center gap-3">
-          <span class="icon-tile bg-profit/10 text-profit"
-            ><TrendingUp class="size-5" aria-hidden="true" /></span
-          >本期损益
-        </h2>
-        <Badge variant="secondary">完整记录口径</Badge>
-      </div>
-      <div class="grid grid-cols-3 divide-x">
-        <div class="min-w-0 pr-3 sm:pr-6">
-          <p class="text-xs text-muted-foreground sm:text-sm">本期收入</p>
-          <button
-            class="money mt-2 min-h-12 break-words text-left font-semibold sm:text-2xl"
-            onclick={() => down({ account_type: "收入" })}
-            >{money(data.income, hidden)}</button
+    {#if view === "overview" || view === "assets"}
+      <section
+        class="finance-card relative overflow-hidden p-5 sm:p-7"
+        aria-label="净资产"
+      >
+        {#if !masked}<div
+            class="pointer-events-none absolute right-0 bottom-0 w-1/2 opacity-65"
           >
-        </div>
-        <div class="min-w-0 px-3 sm:px-6">
-          <p class="text-xs text-muted-foreground sm:text-sm">本期支出</p>
-          <button
-            class="money mt-2 min-h-12 break-words text-left font-semibold sm:text-2xl"
-            onclick={() => down({ account_type: "支出" })}
-            >{money(data.expense, hidden)}</button
-          >
-        </div>
-        <div class="min-w-0 pl-3 sm:pl-6">
-          <p class="text-xs text-muted-foreground sm:text-sm">净收益</p>
-          <p
-            class="money mt-2 content-center min-h-12 break-words font-semibold sm:text-2xl"
-          >
-            {money(data.profit, hidden)}
+            <BalanceSparkline start={range.start} end={data.as_of} />
+          </div>{/if}
+        <div class="relative">
+          <div class="flex items-center gap-3">
+            <span class="icon-tile bg-asset/10 text-asset"
+              ><Database class="size-5" aria-hidden="true" /></span
+            >
+            <h2>净资产</h2>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={masked ? "显示金额" : "隐藏金额"}
+              onclick={toggleAmounts}
+              >{#if masked}<EyeOff aria-hidden="true" />{:else}<Eye
+                  aria-hidden="true"
+                />{/if}</Button
+            >
+          </div>
+          <p class="money mt-4 break-words text-4xl font-semibold sm:text-5xl">
+            {money(data.net_assets, masked)}
           </p>
         </div>
+      </section>
+      <div class="grid grid-cols-2 gap-3 sm:gap-4">
+        {#each [{ type: "资产", title: "总资产", value: data.assets, icon: Wallet, color: "bg-asset/10 text-asset" }, { type: "负债", title: "总负债", value: data.liabilities, icon: Landmark, color: "bg-cash-out/10 text-cash-out" }] as item}
+          <button
+            class="finance-card min-w-0 p-4 text-left transition-colors hover:bg-accent sm:p-5"
+            onclick={() => down({ account_type: item.type, start: "" })}
+            ><span class="flex items-center gap-2"
+              ><span class={`icon-tile ${item.color}`}
+                ><item.icon class="size-5" aria-hidden="true" /></span
+              ><span class="font-medium">{item.title}</span><ChevronRight
+                class="ml-auto size-4 text-muted-foreground"
+                aria-hidden="true"
+              /></span
+            ><span
+              class="money mt-3 block break-words text-xl font-semibold sm:text-2xl"
+              >{money(item.value, masked)}</span
+            ></button
+          >
+        {/each}
       </div>
-      <p class="mt-4 text-xs leading-5 text-muted-foreground">
-        信用卡消费计入支出，还款不重复计入损益。
-      </p>
-    </section>
-    <section class="finance-card p-5 sm:p-7" aria-label="最近交易">
-      <div class="flex items-center justify-between gap-2">
-        <h2 class="flex items-center gap-3">
-          <span class="icon-tile bg-muted text-muted-foreground"
-            ><ReceiptText class="size-5" aria-hidden="true" /></span
-          >最近交易
-        </h2>
-        <Button href="/transactions" variant="ghost"
-          >查看全部<ChevronRight aria-hidden="true" /></Button
-        >
-      </div>
-      {#if recent.isPending}<Loading />{:else if recent.error}<Failure
-          error={recent.error}
-          retry={() => recent.refetch()}
-        />{:else if !recent.data?.items.length}<p
-          class="py-8 text-center text-sm text-muted-foreground"
-        >
-          暂无交易，记下第一笔收支。
-        </p>{:else}
-        <div class="mt-3 divide-y">
-          {#each recent.data.items.slice(0, 3) as transaction}<a
-              href={`/transactions/${transaction.id}`}
-              class="flex min-w-0 items-center gap-3 py-4 transition-colors hover:text-primary"
-              ><span class="icon-tile bg-muted text-muted-foreground"
-                ><ReceiptText class="size-5" aria-hidden="true" /></span
-              ><span class="min-w-0 flex-1"
-                ><span class="block truncate font-medium"
-                  >{transaction.merchant ||
-                    transaction.notes ||
-                    "未填写交易摘要"}</span
-                ><span class="mt-1 block text-xs text-muted-foreground"
-                  >{new Date(transaction.occurred_at).toLocaleDateString(
-                    "zh-CN",
-                    {
+    {/if}
+    {#if view === "overview" || view === "cash"}<Cashflow
+        hidden={masked}
+        report={data}
+        {range}
+        {now}
+      />{/if}
+    {#if view === "overview" || view === "profit"}
+      <section class="finance-card p-5 sm:p-6" aria-label="本期损益">
+        <div class="mb-5 flex items-center justify-between">
+          <h2 class="flex items-center gap-3">
+            <span class="icon-tile bg-profit/10 text-profit"
+              ><TrendingUp class="size-5" aria-hidden="true" /></span
+            >损益
+          </h2>
+          {#if view === "overview"}<Button
+              variant="ghost"
+              size="icon"
+              aria-label="查看损益明细"
+              onclick={() => (view = "profit")}
+              ><ChevronRight aria-hidden="true" /></Button
+            >{/if}
+        </div>
+        <div class="grid grid-cols-3 divide-x">
+          <div class="min-w-0 pr-3">
+            <p class="text-sm text-muted-foreground">本月收入</p>
+            <button
+              class="money mt-1 min-h-12 break-words text-left font-semibold sm:text-2xl"
+              onclick={() => down({ account_type: "收入" })}
+              >{money(data.income, masked)}</button
+            >
+          </div>
+          <div class="min-w-0 px-3">
+            <p class="text-sm text-muted-foreground">本月支出</p>
+            <button
+              class="money mt-1 min-h-12 break-words text-left font-semibold sm:text-2xl"
+              onclick={() => down({ account_type: "支出" })}
+              >{money(data.expense, masked)}</button
+            >
+          </div>
+          <div class="min-w-0 pl-3">
+            <p class="text-sm text-muted-foreground">本月利润</p>
+            <p
+              class="money mt-1 min-h-12 content-center break-words font-semibold sm:text-2xl"
+            >
+              {money(data.profit, masked)}
+            </p>
+          </div>
+        </div>
+      </section>
+    {/if}
+    {#if view === "overview"}
+      <section class="finance-card p-5 sm:p-6" aria-label="最近交易">
+        <div class="flex items-center justify-between">
+          <h2 class="flex items-center gap-3">
+            <span class="icon-tile bg-muted text-muted-foreground"
+              ><ReceiptText class="size-5" aria-hidden="true" /></span
+            >最近交易
+          </h2>
+          <Button href="/transactions" variant="ghost"
+            >查看全部<ChevronRight aria-hidden="true" /></Button
+          >
+        </div>
+        {#if recent.isPending}<Loading />{:else if recent.error}<Failure
+            error={recent.error}
+            retry={() => recent.refetch()}
+          />{:else if !recent.data?.items.length}<Empty title="暂无交易"
+            ><Button href="/transactions/new">记一笔</Button></Empty
+          >{:else}
+          <div class="mt-2 divide-y">
+            {#each recent.data.items.slice(0, 3) as t}<a
+                href={`/transactions/${t.id}`}
+                class="flex min-w-0 items-center gap-3 py-4"
+                ><TransactionIcon
+                  category={transactionCategory(t, accounts.data ?? [])}
+                  kind={t.kind}
+                /><span class="min-w-0 flex-1"
+                  ><span class="block truncate font-medium"
+                    >{t.merchant || t.notes || "未命名交易"}</span
+                  ><span class="mt-1 block text-sm text-muted-foreground"
+                    >{new Date(t.occurred_at).toLocaleDateString("zh-CN", {
                       timeZone: "Asia/Shanghai",
                       month: "long",
                       day: "numeric",
-                    },
-                  )} · {transaction.complete
-                    ? transaction.payment_method || "未填渠道"
-                    : "待补录"}</span
-                ></span
-              ><span
-                class="money max-w-[45%] break-words text-right font-semibold"
-                >{transaction.amount === null
-                  ? "金额待补录"
-                  : money(transaction.amount, hidden)}</span
-              ><ChevronRight
-                class="size-4 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-              /></a
-            >{/each}
-        </div>
-      {/if}
-    </section>
-    <Card.Root class="finance-card py-0"
-      ><Card.Content class="space-y-5 p-6"
-        ><h2>本月收支趋势</h2>
-        {#if hidden}<div
-            class="grid h-52 place-items-center text-muted-foreground"
-          >
-            金额已隐藏
-          </div>{:else if data.trend.length === 0}<p
-            class="py-10 text-center text-muted-foreground"
-          >
-            本月暂无完整记录交易。先去核对流水。
-          </p>{:else}<Trend data={data.trend} />{/if}
-        {#each data.categories as c}<div
-            class="flex justify-between gap-4 border-t pt-3 text-sm"
-          >
-            <span>{c.type} · {c.name}</span><span class="money"
-              >{money(c.amount, hidden)}</span
-            >
-          </div>{/each}
-      </Card.Content></Card.Root
-    >
-    <section class="space-y-3">
-      <h2>科目余额</h2>
-      {#if data.accounts.length === 0}<Empty
-          title="等待第一笔正式入账"
-          description="补全历史流水后，资产负债与损益会按统一口径自动更新。"
-        />{:else}
+                    })}</span
+                  ></span
+                ><span
+                  class="money max-w-[45%] break-words text-right font-semibold"
+                  class:text-cash-in={t.kind === "income" ||
+                    t.kind === "refund"}
+                  >{t.amount === null
+                    ? "待补录"
+                    : transactionMoney(t, masked)}</span
+                ><ChevronRight
+                  class="size-4 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                /></a
+              >{/each}
+          </div>
+        {/if}
+      </section>
+    {/if}
+    {#if view === "profit"}<section
+        class="finance-card space-y-4 p-5"
+        aria-label="损益明细"
+      >
+        {#if masked}<div class="grid h-40 place-items-center">
+            <EyeOff
+              class="size-8 text-muted-foreground"
+              aria-label="金额已隐藏"
+            />
+          </div>{:else if data.trend.length}<Trend
+            data={data.trend}
+          />{:else}<Empty
+            title="暂无收支"
+          />{/if}{#each data.categories as c}<button
+            class="flex min-h-12 w-full justify-between gap-3 border-t py-3 text-left"
+            onclick={() => down({ account_type: c.type })}
+            ><span>{c.type} · {c.name}</span><span class="money"
+              >{money(c.amount, masked)}</span
+            ></button
+          >{/each}
+      </section>{/if}
+    {#if view === "assets"}<section
+        class="finance-card divide-y p-5"
+        aria-label="科目余额"
+      >
         {#each data.accounts.filter( (a) => ["资产", "负债"].includes(a.type) ) as a}<button
-            class="flex w-full items-center justify-between gap-4 rounded-xl border bg-card p-5 text-left transition-colors hover:bg-muted"
+            class="flex min-h-16 w-full items-center justify-between gap-3 py-3 text-left"
             onclick={() => down({ account_id: String(a.id), start: "" })}
             ><span
               ><span class="block font-medium">{a.name}</span><span
                 class="text-sm text-muted-foreground"
-                >{a.type} / {a.subtype}</span
+                >{a.type} · {a.subtype}</span
               ></span
-            ><span class="money">{money(a.balance, hidden)}</span></button
+            ><span class="money">{money(a.balance, masked)}</span></button
+          >{:else}<Empty title="暂无余额"
+            ><Button href="/transactions/new">记一笔</Button></Empty
           >{/each}
-      {/if}
-    </section>
-    <p class="text-xs text-muted-foreground">
-      完整记录 {data.quality.posted} 笔 · 缺少分录 {data.quality
-        .missing_entries} 笔 · 缺少科目 {data.quality.missing_accounts} 笔
-    </p>
+      </section>{/if}
   {/if}
 </div>

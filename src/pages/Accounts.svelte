@@ -42,26 +42,18 @@
 </script>
 
 <div class="page">
-  <div class="page-heading">
+  <div class="page-heading pr-12">
     <h1>科目设置</h1>
     <Button
       onclick={() => edit({ type: "资产", name: "", subtype: "", notes: "" })}
       ><Plus aria-hidden="true" />新增科目</Button
     >
   </div>
-  <Notice
-    >“资产 / 现金及等价物”自动计入现金流，当前共有 {query.data?.filter(
-      (a) => a.type === "资产" && a.subtype === "现金及等价物",
-    ).length ?? 0} 个科目。金额统一为人民币。</Notice
-  >
   <Field label="搜索科目" type="search" bind:value={search} />
   {#if query.isPending}<Loading />{:else if query.error}<Failure
       error={query.error}
       retry={() => query.refetch()}
-    />{:else if accounts.length === 0}<Empty
-      title="没有匹配的科目"
-      description="调整搜索条件或新增一个科目。"
-    />{:else}
+    />{:else if accounts.length === 0}<Empty title="没有匹配的科目" />{:else}
     <div class="space-y-3">
       {#each accounts as account (account.id)}<button
           class="flex w-full items-center justify-between gap-4 rounded-xl border bg-card p-5 text-left transition-colors hover:bg-muted"
@@ -96,7 +88,7 @@
   >
     <Dialog.Header
       ><Dialog.Title>{editing?.id ? "编辑科目" : "新增科目"}</Dialog.Title
-      ><Dialog.Description>维护名称、类型、子类与说明。</Dialog.Description
+      ><Dialog.Description class="sr-only">科目</Dialog.Description
       ></Dialog.Header
     >
     {#if editing}<form

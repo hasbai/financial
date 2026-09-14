@@ -1,7 +1,24 @@
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
-  import { useQueryClient } from "@tanstack/svelte-query";
-  import { Plus, Trash2, X, ReceiptText } from "@lucide/svelte";
+  import { useQueryClient, createQuery } from "@tanstack/svelte-query";
+  import {
+    Plus,
+    Trash2,
+    ArrowLeft,
+    ReceiptText,
+    MoreHorizontal,
+    Grid2X2,
+    Wallet,
+    UserRound,
+    CalendarDays,
+    NotebookPen,
+    ArrowLeftRight,
+    Banknote,
+    Check,
+    CircleAlert,
+    Sparkles,
+  } from "@lucide/svelte";
+  import * as Popover from "$lib/components/ui/popover";
   import * as Dialog from "$lib/components/ui/dialog";
   import { Button } from "$lib/components/ui/button";
   import { Label } from "$lib/components/ui/label";
@@ -9,7 +26,7 @@
   import { useApi, useAccounts } from "$lib/context";
   import { errorMessage } from "$lib/api";
   import { router } from "$lib/router.svelte";
-  import { editorPayload, appendRefund } from "$lib/editor";
+  import { editorPayload, appendRefund, simpleEntrySlots } from "$lib/editor";
   import {
     localDateTime,
     fromLocalDateTime,
@@ -18,6 +35,8 @@
     statusLabels,
     validatePost,
   } from "$lib/finance";
+  import { transactionMoney } from "$lib/presentation";
+  import TransactionIcon from "../components/TransactionIcon.svelte";
   import type { Transaction } from "$lib/types";
   import Field from "../components/Field.svelte";
   import SelectField from "../components/SelectField.svelte";
@@ -33,6 +52,10 @@
   let baseline = $state(untrack(() => JSON.stringify(values)));
   let dirty = $derived(JSON.stringify(values) !== baseline);
   let pending = $state(false);
+  let advanced = $state(false);
+  let moreOpen = $state(false);
+  let sourceOpen = $state(false);
+  let preferred = $state<"支出" | "收入">("支出");
   let errors = $state<string[]>([]);
   let success = $state("");
   let uncertain = $state(false);
@@ -45,6 +68,60 @@
   const accounts = useAccounts();
   const cache = useQueryClient();
   let sum = $derived(totals(values.entries));
+  let slots = $derived(
+    simpleEntrySlots(values, accounts.data ?? [], preferred),
+  );
+  const suggestions = createQuery(() => ({
+    queryKey: ["transactions", "suggestions", saved?.merchant],
+    queryFn: () => api.list({ search: saved!.merchant, posted: "true" }, null),
+    enabled: !!saved?.merchant && !!accounts.data,
+    staleTime: 300_000,
+  }));
+  let suggestion = $derived(
+    suggestions.data?.items.find(
+      (t) =>
+        t.id !== saved?.id &&
+        values.merchant === saved?.merchant &&
+        t.merchant === saved?.merchant &&
+        t.complete &&
+        simpleEntrySlots(t, accounts.data ?? [])?.type === slots?.type,
+    ),
+  );
+  let suggestionSlots = $derived(
+    suggestion ? simpleEntrySlots(suggestion, accounts.data ?? []) : null,
+  );
+  function ensurePair() {
+    if (!values.entries.length)
+      values.entries = [
+        { account_id: null, direction: "借", amount: "" },
+        { account_id: null, direction: "贷", amount: "" },
+      ];
+  }
+  function setSimpleAccount(which: "category" | "account", id: number | null) {
+    ensurePair();
+    if (slots) values.entries[slots[which]].account_id = id;
+  }
+  function setSimpleAmount(amount: string) {
+    ensurePair();
+    values.entries.forEach((e) => (e.amount = amount));
+  }
+  function setType(type: "支出" | "收入") {
+    if (!slots || slots.type === type) return;
+    ensurePair();
+    const c = slots.category;
+    const a = slots.account;
+    values.entries[c].direction = type === "支出" ? "借" : "贷";
+    values.entries[c].account_id = null;
+    values.entries[a].direction = type === "支出" ? "贷" : "借";
+    preferred = type;
+  }
+  function applySuggestion() {
+    if (!suggestion || !suggestionSlots || !slots) return;
+    const category = suggestion.entries[suggestionSlots.category].account_id;
+    const account = suggestion.entries[suggestionSlots.account].account_id;
+    setSimpleAccount("category", category);
+    setSimpleAccount("account", account);
+  }
   const statuses = Object.entries(statusLabels).map(([value, label]) => ({
     value,
     label,
@@ -57,12 +134,7 @@
   };
   onMount(() => {
     const unguard = router.guard(
-      () =>
-        !pending &&
-        (!dirty ||
-          window.confirm(
-            "有尚未保存的修改。离开会丢失当前修改，是否放弃并离开？",
-          )),
+      () => !pending && (!dirty || window.confirm("放弃未保存修改？")),
     );
     const unload = (e: BeforeUnloadEvent) => {
       if (dirty || pending) {
@@ -92,8 +164,7 @@
     try {
       const latest = await api.transaction(saved.id);
       if (!latest) errors = ["记录不存在或没有访问权限。"];
-      else if (window.confirm("重新载入会替换当前输入，是否继续？"))
-        reset(latest);
+      else if (window.confirm("重新载入？")) reset(latest);
     } catch (e) {
       errors = [errorMessage(e)];
     } finally {
@@ -152,7 +223,7 @@
           true,
         );
     } catch (e) {
-      errors = ["本笔已保存，刷新或加载下一笔失败：" + errorMessage(e)];
+      errors = ["已保存，下一笔加载失败"];
     } finally {
       pending = false;
     }
@@ -182,7 +253,7 @@
 >
   <Dialog.Content
     showCloseButton={false}
-    class="flex max-h-dvh max-w-full flex-col gap-0 rounded-none p-0 sm:max-h-[92dvh] sm:max-w-2xl sm:rounded-4xl"
+    class="flex h-dvh max-h-dvh max-w-full flex-col gap-0 rounded-none p-0 sm:h-auto sm:max-h-[92dvh] sm:max-w-2xl sm:rounded-4xl"
     onEscapeKeydown={(e) => {
       e.preventDefault();
       close();
@@ -192,33 +263,71 @@
       close();
     }}
   >
-    <Dialog.Header
-      class="flex-row items-center justify-between border-b px-5 py-4 text-left"
-      ><div>
-        <Dialog.Title>{saved ? "补全交易 #" + saved.id : "记一笔"}</Dialog.Title
-        ><Dialog.Description class="sr-only"
-          >编辑交易信息与借贷分录，保存后更新账本。</Dialog.Description
-        >
-      </div>
+    <Dialog.Header class="flex-row items-center gap-3 px-5 py-4 text-left">
       <Button
         variant="ghost"
         size="icon"
         aria-label="关闭编辑"
         disabled={pending}
-        onclick={close}><X aria-hidden="true" /></Button
-      ></Dialog.Header
-    >
+        onclick={close}><ArrowLeft class="size-6" aria-hidden="true" /></Button
+      >
+      <Dialog.Title class="flex-1 text-xl"
+        >{saved ? "补录交易信息" : "新增交易"}</Dialog.Title
+      ><Dialog.Description class="sr-only">交易</Dialog.Description>
+      <Popover.Root bind:open={moreOpen}
+        ><Popover.Trigger
+          >{#snippet child({ props })}<Button
+              {...props}
+              variant="ghost"
+              size="icon"
+              aria-label="交易操作"
+              ><MoreHorizontal aria-hidden="true" /></Button
+            >{/snippet}</Popover.Trigger
+        ><Popover.Content class="w-48 p-2"
+          ><Button
+            class="w-full justify-start"
+            variant="ghost"
+            onclick={() => {
+              advanced = !advanced;
+              moreOpen = false;
+            }}>分录明细</Button
+          ><Button
+            class="w-full justify-start"
+            variant="ghost"
+            onclick={() => {
+              sourceOpen = !sourceOpen;
+              moreOpen = false;
+            }}>交易来源</Button
+          >{#if saved}<Button
+              class="w-full justify-start"
+              variant="ghost"
+              disabled={pending}
+              onclick={() => {
+                refundOpen = true;
+                refundError = "";
+                moreOpen = false;
+              }}>补记退款</Button
+            ><Button
+              class="w-full justify-start"
+              variant="ghost"
+              disabled={pending || uncertain}
+              onclick={() => {
+                moreOpen = false;
+                submit(true);
+              }}>保存并下一笔</Button
+            >{/if}</Popover.Content
+        ></Popover.Root
+      >
+    </Dialog.Header>
     <div
       class="min-h-0 space-y-5 overflow-y-auto overscroll-contain bg-background px-5 py-5 sm:px-6"
     >
       {#if saved}<section class="finance-card p-5" aria-label="原交易摘要">
           <div class="flex items-start gap-3">
-            <span class="icon-tile bg-asset/10 text-asset"
-              ><ReceiptText class="size-5" aria-hidden="true" /></span
-            >
+            <TransactionIcon kind={saved.kind} />
             <div class="min-w-0 flex-1">
               <p class="font-semibold wrap-anywhere">
-                {saved.merchant || "未填写交易摘要"}
+                {saved.merchant || "未命名交易"}
               </p>
               <p class="mt-2 text-sm text-muted-foreground">
                 {new Date(saved.occurred_at).toLocaleString("zh-CN", {
@@ -227,18 +336,27 @@
                   day: "numeric",
                   hour: "2-digit",
                   minute: "2-digit",
-                })} · {saved.payment_method || "未填渠道"}
+                })}
+              </p>
+              <p class="mt-1 text-sm text-muted-foreground">
+                {saved.payment_method || "未填渠道"}
               </p>
             </div>
-            <p
-              class="money max-w-[45%] break-words text-right text-xl font-semibold"
-            >
-              {saved.amount === null ? "金额待补录" : money(saved.amount)}
-            </p>
+            <div class="max-w-[45%] text-right">
+              <p class="money break-words text-xl font-semibold">
+                {saved.amount === null ? "待补录" : transactionMoney(saved)}
+              </p>
+              {#if !saved.complete || saved.status !== "success"}<span
+                  class="mt-3 inline-block rounded-full bg-profit/10 px-3 py-1 text-sm text-profit"
+                  >{!saved.complete
+                    ? "待补录"
+                    : statusLabels[saved.status] || "待核对"}</span
+                >{/if}
+            </div>
           </div>
-          <p class="mt-4 text-xs text-muted-foreground">
-            {saved.complete ? "已记录交易" : "待补录"} · 以下修改保存后更新
-          </p>
+          {#if saved.notes}<blockquote class="mt-4 text-muted-foreground">
+              “{saved.notes}”
+            </blockquote>{/if}
         </section>{/if}
       {#if errors.length}<div
           bind:this={errorRef}
@@ -256,138 +374,250 @@
           >
         </div>{/if}
       {#if uncertain}<Notice variant="warning"
-          >网络中断，保存结果尚未确认。请先在流水中核对，避免重复新增。</Notice
+          >保存待核对<Button variant="link" onclick={close}>查看流水</Button
+          ></Notice
         >{/if}
       {#if success}<Notice variant="success">{success}</Notice>{/if}
-      {#if hidden}<Notice>编辑时显示金额，关闭后恢复隐藏。</Notice>{/if}
+
+      {#if suggestion && suggestionSlots && slots && !advanced}<section
+          class="finance-card bg-asset/5 p-4"
+          aria-label="科目建议"
+        >
+          <div class="mb-3 flex items-center justify-between">
+            <h2 class="flex items-center gap-2">
+              <Sparkles class="size-5 text-asset" aria-hidden="true" />科目建议
+            </h2>
+            <Button
+              variant="outline"
+              disabled={pending}
+              onclick={applySuggestion}>一键应用</Button
+            >
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <span class="rounded-xl bg-card p-3"
+              >{accounts.data?.find(
+                (a) =>
+                  a.id ===
+                  suggestion!.entries[suggestionSlots!.category].account_id,
+              )?.name}</span
+            ><span class="rounded-xl bg-card p-3"
+              >{accounts.data?.find(
+                (a) =>
+                  a.id ===
+                  suggestion!.entries[suggestionSlots!.account].account_id,
+              )?.name}</span
+            >
+          </div>
+        </section>{/if}
       <fieldset
         disabled={pending}
-        class="finance-card min-w-0 space-y-5 p-4 sm:p-5"
+        class="finance-card min-w-0 divide-y px-4 sm:px-5"
       >
-        <Field
-          label="交易时间（北京时间）"
-          type="datetime-local"
-          value={values.occurred_at ? localDateTime(values.occurred_at) : ""}
-          onchange={(e) => {
-            try {
-              values.occurred_at = fromLocalDateTime(e.currentTarget.value);
-            } catch {
-              values.occurred_at = "";
-            }
-          }}
-        />
-        <Field label="商户 / 交易摘要" bind:value={values.merchant} />
-        <div class="space-y-2">
-          <Label for={notesId}>备注</Label><Textarea
-            id={notesId}
-            rows={2}
-            bind:value={values.notes}
-          />
-        </div>
-        <div class="grid grid-cols-2 gap-4">
-          <SelectField
-            label="交易状态"
-            bind:value={values.status}
-            options={statuses}
-            disabled={pending}
-          /><SelectField
-            label="支付渠道"
-            bind:value={values.payment_method}
-            options={channels}
-            disabled={pending}
-          />
-        </div>
-        <Field label="支付流水号（可选）" bind:value={values.payment_id} />
-        <div class="border-t pt-5">
-          <h2>分录与科目</h2>
-          <p class="mt-1 text-sm leading-6 text-muted-foreground">
-            支出：借记支出科目，贷记付款账户；收入则借记收款账户，贷记收入科目。
-          </p>
-        </div>
-        {#if accounts.isPending}<Loading />{:else if accounts.error}<Failure
-            error={accounts.error}
-            retry={() => accounts.refetch()}
-          />{:else}
-          {#each values.entries as entry, i}
-            <section
-              class="space-y-4 rounded-xl border p-4"
-              aria-label={`分录 ${i + 1}`}
+        {#if slots && !advanced}
+          <div class="editor-row">
+            <span class="editor-label"
+              ><ArrowLeftRight aria-hidden="true" />交易类型</span
             >
-              <div class="flex items-end gap-2">
-                <h3 class="mb-3 flex-1 text-sm text-muted-foreground">
-                  分录 {i + 1}
-                </h3>
-                <div class="w-24">
-                  <SelectField
-                    label={`方向 ${i + 1}`}
-                    value={entry.direction}
-                    options={[
-                      { value: "借", label: "借" },
-                      { value: "贷", label: "贷" },
-                    ]}
-                    disabled={pending}
-                    onchange={(v) => (entry.direction = v as "借" | "贷")}
-                  />
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`删除分录 ${i + 1}`}
-                  onclick={() => values.entries.splice(i, 1)}
-                  ><Trash2 aria-hidden="true" /></Button
-                >
-              </div>
-              <AccountPicker
-                accounts={accounts.data || []}
-                bind:value={entry.account_id}
-                disabled={pending}
-              />
-              <Field
-                label="金额（人民币）"
-                bind:value={entry.amount}
-                inputmode="decimal"
-              />
-              {#if i === 0 && values.entries.length === 2}<Button
-                  variant="ghost"
-                  onclick={() =>
-                    (values.entries[1].amount = values.entries[0].amount)}
-                  >同步金额到另一条分录</Button
-                >{/if}
-            </section>
-          {/each}
+            <div class="flex rounded-xl bg-muted p-1">
+              {#each ["支出", "收入"] as type}<Button
+                  variant={slots.type === type ? "default" : "ghost"}
+                  class="flex-1 rounded-lg"
+                  aria-pressed={slots.type === type}
+                  onclick={() => setType(type as "支出" | "收入")}
+                  >{type}</Button
+                >{/each}
+            </div>
+          </div>
+          <div class="editor-row">
+            <span class="editor-label"><Grid2X2 aria-hidden="true" />分类</span
+            ><AccountPicker
+              compact
+              label="分类"
+              placeholder="待分类"
+              accounts={(accounts.data ?? []).filter(
+                (a) => a.type === slots!.type,
+              )}
+              value={values.entries[slots.category]?.account_id ?? null}
+              onChange={(id) => setSimpleAccount("category", id)}
+              disabled={pending}
+            />
+          </div>
+          <div class="editor-row">
+            <span class="editor-label"><Wallet aria-hidden="true" />账户</span
+            ><AccountPicker
+              compact
+              label="账户"
+              placeholder="待补录账户"
+              accounts={(accounts.data ?? []).filter((a) =>
+                ["资产", "负债"].includes(a.type),
+              )}
+              value={values.entries[slots.account]?.account_id ?? null}
+              onChange={(id) => setSimpleAccount("account", id)}
+              disabled={pending}
+            />
+          </div>
+          <div class="editor-row">
+            <span class="editor-label"><Banknote aria-hidden="true" />金额</span
+            ><Field
+              compact
+              label="金额（人民币）"
+              inputmode="decimal"
+              value={values.entries[0]?.amount ?? ""}
+              placeholder="0.00"
+              oninput={(e) => setSimpleAmount(e.currentTarget.value)}
+            />
+          </div>
         {/if}
-        <Button
-          variant="outline"
-          class="w-full"
-          onclick={() =>
-            values.entries.push({
-              direction: "借",
-              account_id: null,
-              amount: "",
-            })}><Plus aria-hidden="true" />添加分录</Button
-        >
-        <Notice variant={sum["借"].eq(sum["贷"]) ? "info" : "warning"}
-          >借方 {money(sum["借"].toString())} / 贷方 {money(
-            sum["贷"].toString(),
-          )}<br />差额 {money(sum["借"].minus(sum["贷"]).toString())}</Notice
-        >
-        {#if saved}<Button
-            variant="outline"
-            onclick={() => {
-              refundError = "";
-              refundOpen = true;
-            }}>在本笔交易补记退款</Button
-          >{/if}
+        <div class="editor-row">
+          <span class="editor-label"><UserRound aria-hidden="true" />对方</span
+          ><Field
+            compact
+            label="商户 / 交易摘要"
+            placeholder="添加对方"
+            bind:value={values.merchant}
+          />
+        </div>
+        <div class="editor-row">
+          <span class="editor-label"
+            ><CalendarDays aria-hidden="true" />时间</span
+          ><Field
+            compact
+            label="交易时间（北京时间）"
+            type="datetime-local"
+            value={values.occurred_at ? localDateTime(values.occurred_at) : ""}
+            onchange={(e) => {
+              try {
+                values.occurred_at = fromLocalDateTime(e.currentTarget.value);
+              } catch {
+                values.occurred_at = "";
+              }
+            }}
+          />
+        </div>
+        <div class="editor-row">
+          <span class="editor-label"
+            ><NotebookPen aria-hidden="true" />备注</span
+          ><Label for={notesId} class="sr-only">备注</Label><Textarea
+            class="col-start-2 min-h-12 rounded-xl border-transparent bg-transparent shadow-none"
+            id={notesId}
+            rows={1}
+            bind:value={values.notes}
+            placeholder="添加备注"
+          />
+        </div>
+        {#if sourceOpen}<div class="space-y-4 py-4">
+            <SelectField
+              label="交易状态"
+              bind:value={values.status}
+              options={statuses}
+              disabled={pending}
+            /><SelectField
+              label="支付渠道"
+              bind:value={values.payment_method}
+              options={channels}
+              disabled={pending}
+            /><Field label="支付流水号" bind:value={values.payment_id} />
+          </div>{/if}
       </fieldset>
+      {#if advanced || !slots}<fieldset
+          disabled={pending}
+          class="finance-card min-w-0 space-y-5 p-4 sm:p-5"
+        >
+          <h2>分录明细</h2>
+          {#if accounts.isPending}<Loading />{:else if accounts.error}<Failure
+              error={accounts.error}
+              retry={() => accounts.refetch()}
+            />{:else}
+            {#each values.entries as entry, i}
+              <section
+                class="space-y-4 rounded-xl border p-4"
+                aria-label={`分录 ${i + 1}`}
+              >
+                <div class="flex items-end gap-2">
+                  <h3 class="mb-3 flex-1 text-sm text-muted-foreground">
+                    分录 {i + 1}
+                  </h3>
+                  <div class="w-24">
+                    <SelectField
+                      label={`方向 ${i + 1}`}
+                      value={entry.direction}
+                      options={[
+                        { value: "借", label: "借" },
+                        { value: "贷", label: "贷" },
+                      ]}
+                      disabled={pending}
+                      onchange={(v) => (entry.direction = v as "借" | "贷")}
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`删除分录 ${i + 1}`}
+                    onclick={() => values.entries.splice(i, 1)}
+                    ><Trash2 aria-hidden="true" /></Button
+                  >
+                </div>
+                <AccountPicker
+                  accounts={accounts.data || []}
+                  bind:value={entry.account_id}
+                  disabled={pending}
+                />
+                <Field
+                  label="金额（人民币）"
+                  bind:value={entry.amount}
+                  inputmode="decimal"
+                />
+                {#if i === 0 && values.entries.length === 2}<Button
+                    variant="ghost"
+                    onclick={() =>
+                      (values.entries[1].amount = values.entries[0].amount)}
+                    >同步金额到另一条分录</Button
+                  >{/if}
+              </section>
+            {/each}
+          {/if}
+          <Button
+            variant="outline"
+            class="w-full"
+            onclick={() =>
+              values.entries.push({
+                direction: "借",
+                account_id: null,
+                amount: "",
+              })}><Plus aria-hidden="true" />添加分录</Button
+          >
+          <div
+            class="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted p-3"
+            role="status"
+          >
+            <span>借 {money(sum["借"].toString())}</span><span
+              >贷 {money(sum["贷"].toString())}</span
+            ><span
+              class="flex items-center gap-2"
+              class:text-profit={!sum["借"].eq(sum["贷"])}
+              >{#if sum["借"].eq(sum["贷"])}<Check
+                  class="size-4"
+                  aria-hidden="true"
+                />平衡{:else}<CircleAlert
+                  class="size-4"
+                  aria-hidden="true"
+                />差额 {money(sum["借"].minus(sum["贷"]).toString())}{/if}</span
+            >
+          </div>
+        </fieldset>{/if}
     </div>
     <Dialog.Footer
-      class="shrink-0 flex-row flex-wrap justify-end gap-2 border-t px-5 py-4 pb-[max(16px,env(safe-area-inset-bottom))]"
-      >{#if saved}<Button
-          variant="outline"
-          disabled={pending || uncertain}
-          onclick={() => submit(true)}>保存并下一笔</Button
-        >{/if}<Button disabled={pending || uncertain} onclick={() => submit()}
-        >{pending ? "正在保存…" : "保存"}</Button
+      class="grid shrink-0 grid-cols-2 gap-3 border-t bg-card px-5 py-4 pb-[max(16px,env(safe-area-inset-bottom))]"
+      ><Button
+        class="h-14 rounded-2xl"
+        variant="secondary"
+        disabled={pending}
+        onclick={close}>稍后处理</Button
+      ><Button
+        class="h-14 rounded-2xl"
+        disabled={pending || uncertain}
+        onclick={() => submit()}
+        >{pending ? "正在保存…" : saved ? "保存补录" : "保存交易"}</Button
       ></Dialog.Footer
     >
   </Dialog.Content>
@@ -395,8 +625,8 @@
 <Dialog.Root bind:open={refundOpen}>
   <Dialog.Content showCloseButton={false} class="max-h-[90dvh] overflow-y-auto"
     ><Dialog.Header
-      ><Dialog.Title>补记退款</Dialog.Title><Dialog.Description
-        >退款借贷分录添加到当前交易，保留原分录；报表按净额及当前交易日期计算。</Dialog.Description
+      ><Dialog.Title>补记退款</Dialog.Title><Dialog.Description class="sr-only"
+        >本笔退款</Dialog.Description
       ></Dialog.Header
     >
     {#if refundError}<Notice variant="error">{refundError}</Notice>{/if}<Field

@@ -32,7 +32,7 @@
     ><Dialog.Content showCloseButton={false}
       ><Dialog.Header
         ><Dialog.Title>交易详情</Dialog.Title><Dialog.Description
-          >查看或补全已有交易。</Dialog.Description
+          class="sr-only">交易</Dialog.Description
         ></Dialog.Header
       >
       {#if !validId}<Notice variant="error">无效的交易编号。</Notice

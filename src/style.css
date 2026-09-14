@@ -174,8 +174,17 @@
   @apply w-full min-w-0 rounded-4xl border bg-input/30 px-3 py-2 text-base outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 md:text-sm;
 }
 .page {
-  @apply space-y-6;
+  @apply space-y-4;
   animation: page-in 180ms ease-out;
+}
+.editor-row {
+  @apply grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-x-2 py-3 sm:grid-cols-[7.5rem_minmax(0,1fr)];
+}
+.editor-label {
+  @apply flex items-center gap-2 text-base font-medium;
+}
+.editor-label svg {
+  @apply size-5 shrink-0 text-muted-foreground;
 }
 .page-heading {
   @apply flex flex-wrap items-center justify-between gap-4;

@@ -2,7 +2,6 @@
   import { onMount } from "svelte";
   import {
     Wallet,
-    LayoutDashboard,
     ReceiptText,
     Settings,
     Plus,
@@ -11,8 +10,11 @@
     Moon,
     Sun,
     LogOut,
+    MoreHorizontal,
+    House,
   } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
+  import * as Popover from "$lib/components/ui/popover";
   import * as Card from "$lib/components/ui/card";
   import Notice from "./components/Notice.svelte";
   import Loading from "./components/Loading.svelte";
@@ -40,9 +42,9 @@
     document.documentElement.classList.toggle("dark", dark);
   });
   const nav = [
-    { path: "/", label: "财务总览", icon: LayoutDashboard },
-    { path: "/transactions", label: "交易流水", icon: ReceiptText },
-    { path: "/accounts", label: "科目设置", icon: Settings },
+    { path: "/", label: "总览", icon: House },
+    { path: "/transactions", label: "流水", icon: ReceiptText },
+    { path: "/accounts", label: "科目", icon: Settings },
   ];
   let path = $derived(router.location.pathname);
   let authorized = $derived(auth.user?.sub === config.ownerSubject);
@@ -65,9 +67,6 @@
         <h1 class="text-3xl font-semibold tracking-tight">
           每一笔，都心中有数。
         </h1>
-        <p class="leading-7 text-muted-foreground">
-          看清资产与负债，梳理现金收支。把零散的流水，整理成清晰的生活记录。
-        </p>
         {#if auth.error}<Notice variant="error">{auth.error}</Notice>{/if}
         <Button
           class="w-full"
@@ -75,9 +74,6 @@
           onclick={() => auth.login()}
           >{auth.loading ? "正在验证登录…" : "使用北极小站登录"}</Button
         >
-        <p class="text-sm text-muted-foreground">
-          仅本人账号可访问。使用 Auth0 安全登录。
-        </p>
       </Card.Content>
     </Card.Root>
   </main>
@@ -106,61 +102,60 @@
         >
       {/each}
     </nav>
-    <p class="mt-auto px-3 text-xs text-muted-foreground">
-      让每一笔收支都有去处。
-    </p>
   </aside>
-  <div class="md:ml-56">
-    <header class="flex h-20 items-center justify-between gap-2 px-4 sm:px-8">
-      <span class="flex items-center gap-2 font-semibold"
-        ><span
-          class="grid size-8 place-items-center rounded-lg bg-primary text-sm text-primary-foreground"
-          >账</span
-        >个人财务</span
+  <div class="relative min-h-dvh md:ml-56">
+    <header
+      class="absolute top-5 right-4 z-20 sm:right-8"
+      aria-label="应用设置"
+    >
+      <Popover.Root
+        ><Popover.Trigger
+          >{#snippet child({ props })}<Button
+              {...props}
+              variant="ghost"
+              size="icon"
+              aria-label="应用菜单"
+              ><MoreHorizontal class="size-6" aria-hidden="true" /></Button
+            >{/snippet}</Popover.Trigger
+        ><Popover.Content class="w-48 p-2" align="end"
+          ><Button
+            class="w-full justify-start"
+            variant="ghost"
+            onclick={toggleAmounts}
+            >{#if hidden}<EyeOff aria-hidden="true" />显示金额{:else}<Eye
+                aria-hidden="true"
+              />隐藏金额{/if}</Button
+          ><Button
+            class="w-full justify-start"
+            variant="ghost"
+            onclick={() => {
+              themeChosen = true;
+              dark = !dark;
+            }}
+            >{#if dark}<Sun aria-hidden="true" />浅色外观{:else}<Moon
+                aria-hidden="true"
+              />深色外观{/if}</Button
+          ><Button
+            class="w-full justify-start"
+            variant="ghost"
+            onclick={() => auth.logout(clearCache)}
+            ><LogOut aria-hidden="true" />退出登录</Button
+          ></Popover.Content
+        ></Popover.Root
       >
-      <div class="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={hidden ? "显示金额" : "隐藏金额"}
-          onclick={toggleAmounts}
-          >{#if hidden}<EyeOff aria-hidden="true" />{:else}<Eye
-              aria-hidden="true"
-            />{/if}</Button
-        >
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="切换深浅主题"
-          onclick={() => {
-            themeChosen = true;
-            dark = !dark;
-          }}
-          >{#if dark}<Sun aria-hidden="true" />{:else}<Moon
-              aria-hidden="true"
-            />{/if}</Button
-        >
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="退出登录"
-          onclick={() => auth.logout(clearCache)}
-          ><LogOut aria-hidden="true" /></Button
-        >
-      </div>
     </header>
     <main
       id="main"
-      class="mx-auto max-w-7xl px-4 pt-2 pb-[calc(156px+env(safe-area-inset-bottom))] sm:px-8"
+      class="mx-auto max-w-5xl px-4 pt-5 pb-[calc(156px+env(safe-area-inset-bottom))] sm:px-8"
     >
       {#if !authorized}
-        <Empty
-          title="当前账号没有访问权限"
-          description="请使用已授权的本人账号登录。"
-        />
+        <Empty title="当前账号没有访问权限" />
       {:else if path === "/"}
         {#await import("./pages/Overview.svelte")}<Loading
-          />{:then page}<page.default {hidden} />{/await}
+          />{:then page}<page.default
+            {hidden}
+            onToggleAmounts={toggleAmounts}
+          />{/await}
       {:else if path === "/transactions" || path.startsWith("/transactions/")}
         {#await import("./pages/Transactions.svelte")}<Loading
           />{:then page}<page.default {hidden} />{/await}
@@ -172,22 +167,20 @@
         {#await import("./pages/Accounts.svelte")}<Loading
           />{:then page}<page.default />{/await}
       {:else}
-        <Empty title="页面不存在" description="返回总览继续查看账本。"
-          ><Button href="/">回到总览</Button></Empty
-        >
+        <Empty title="页面不存在"><Button href="/">回到总览</Button></Empty>
       {/if}
     </main>
   </div>
   {#if authorized && !path.startsWith("/transactions/")}
     <Button
       href="/transactions/new"
-      class="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] z-20 rounded-full px-6 shadow-lg md:right-10 md:bottom-8"
+      class="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] z-20 h-16 w-16 flex-col gap-0.5 rounded-full p-0 shadow-lg md:right-10 md:bottom-8"
       ><Plus aria-hidden="true" />记一笔</Button
     >
   {/if}
   <nav
     aria-label="移动导航"
-    class="fixed inset-x-0 bottom-0 z-30 flex h-[calc(68px+env(safe-area-inset-bottom))] items-start justify-around border-t bg-background pt-2 pb-[env(safe-area-inset-bottom)] md:hidden"
+    class="fixed inset-x-0 bottom-0 z-30 flex h-[calc(68px+env(safe-area-inset-bottom))] items-start justify-around border-t bg-card/95 backdrop-blur-md pt-2 pb-[env(safe-area-inset-bottom)] md:hidden"
   >
     {#each nav as item}<a
         href={item.path}

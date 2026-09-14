@@ -1,11 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { NotebookPen } from "@lucide/svelte";
-  let {
-    title,
-    description,
-    children,
-  }: { title: string; description: string; children?: Snippet } = $props();
+  let { title, children }: { title: string; children?: Snippet } = $props();
 </script>
 
 <div class="space-y-4 rounded-xl border border-dashed px-6 py-12 text-center">
@@ -14,6 +10,5 @@
     aria-hidden="true"
   />
   <h2 class="text-lg font-semibold">{title}</h2>
-  <p class="text-sm text-muted-foreground">{description}</p>
   {@render children?.()}
 </div>

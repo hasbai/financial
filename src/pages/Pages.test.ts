@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/svelte";
 import { QueryClient } from "@tanstack/svelte-query";
 import Harness from "../test/Harness.svelte";
@@ -18,6 +19,63 @@ afterEach(() => {
   clients.forEach((c) => c.clear());
   clients.length = 0;
   vi.restoreAllMocks();
+});
+it("matches the overview hierarchy and exposes supporting reports through controls", async () => {
+  setup("overview");
+  await screen.findByRole("heading", { name: "净资产" });
+  expect(screen.queryByRole("heading", { name: "本月收支趋势" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "科目余额" })).toBeNull();
+  expect(
+    screen.queryByText(/期初覆盖|以下仅反映|完整记录口径|内部转账抵销/),
+  ).toBeNull();
+  expect(
+    screen.getByRole("link", { name: "待补录 2 笔" }).getAttribute("href"),
+  ).toBe("/transactions?review=needed");
+  await fireEvent.click(screen.getByRole("button", { name: "资产负债" }));
+  await screen.findByRole("region", { name: "科目余额" });
+  expect(screen.queryByRole("region", { name: "最近交易" })).toBeNull();
+  await fireEvent.click(screen.getByRole("button", { name: "损益" }));
+  await screen.findByRole("region", { name: "损益明细" });
+});
+it("hides all overview amounts from the net asset eye control", async () => {
+  setup("overview");
+  await screen.findByRole("heading", { name: "净资产" });
+  await fireEvent.click(screen.getByRole("button", { name: "隐藏金额" }));
+  expect(document.body.textContent).not.toContain("¥");
+  expect(screen.queryByRole("img")).toBeNull();
+});
+it("shows actual monthly summary and signed transaction amounts", async () => {
+  setup("transactions");
+  const summary = await screen.findByRole("region", { name: "月度收支" });
+  expect(within(summary).getByText("¥200.00")).toBeTruthy();
+  await screen.findByText("− ¥100.00");
+  await fireEvent.click(screen.getByRole("button", { name: "支出" }));
+  expect(new URLSearchParams(router.location.search).get("account_type")).toBe(
+    "支出",
+  );
+});
+it("uses an inclusive date control while preserving SQL half-open date filters", async () => {
+  const { api } = setup("transactions");
+  await screen.findByText("示例消费");
+  await fireEvent.change(screen.getByLabelText("流水月份"), {
+    target: { value: "2026-09" },
+  });
+  await fireEvent.click(screen.getByRole("button", { name: "展开筛选" }));
+  expect((screen.getByLabelText("起始日期") as HTMLInputElement).value).toBe(
+    "2026-09-01",
+  );
+  expect((screen.getByLabelText("结束日期") as HTMLInputElement).value).toBe(
+    "2026-09-30",
+  );
+  await fireEvent.change(screen.getByLabelText("结束日期"), {
+    target: { value: "2026-09-15" },
+  });
+  await waitFor(() =>
+    expect(api.list).toHaveBeenLastCalledWith(
+      { start: "2026-08-31T16:00:00.000Z", end: "2026-09-15T16:00:00.000Z" },
+      null,
+    ),
+  );
 });
 function setup(
   page: "transactions" | "overview" | "accounts",
@@ -80,7 +138,7 @@ it("loads the next cursor without losing the first page", async () => {
   await screen.findByText("第二笔消费");
   expect(screen.getByText("示例消费")).toBeTruthy();
   expect(api.list).toHaveBeenLastCalledWith({}, cursor);
-  await screen.findByText("已显示全部 2 笔");
+  expect(screen.queryByRole("button", { name: "加载更多流水" })).toBeNull();
 });
 it("keeps unknown transaction amounts distinct from zero", async () => {
   setup("transactions", false, (repo) => {
@@ -96,7 +154,7 @@ it("keeps unknown transaction amounts distinct from zero", async () => {
 });
 it("passes the report period and cash scope through drilldown", async () => {
   const { api } = setup("overview");
-  await screen.findByText("已记录净资产");
+  await screen.findByText("净资产");
   await fireEvent.click(screen.getByRole("button", { name: "所选月份" }));
   await fireEvent.click(screen.getByRole("button", { name: "查看流水" }));
   const params = new URLSearchParams(router.location.search);
@@ -140,7 +198,7 @@ it("shows an empty future period without inventing a forecast", async () => {
       cash_categories: [],
     });
   });
-  await screen.findByText("未来 30 天暂无已记录现金流量");
+  await screen.findByText("暂无现金流");
   expect(
     screen.queryByRole("img", { name: /现金流入与流出分组柱状图/ }),
   ).toBeNull();
@@ -153,7 +211,7 @@ it("keeps a future query failure distinct from a zero cash flow", async () => {
     });
   });
   await screen.findByText("未来现金流加载失败");
-  expect(screen.queryByText("未来 30 天暂无已记录现金流量")).toBeNull();
+  expect(screen.queryByText("暂无现金流")).toBeNull();
   await fireEvent.click(screen.getByRole("button", { name: "所选月份" }));
   await screen.findByText("本期净流入");
 });
@@ -161,13 +219,21 @@ it("does not query future cash flow without cash accounts", async () => {
   const { api } = setup("overview", false, (api) => {
     vi.mocked(api.accounts).mockResolvedValue([accounts[0]]);
   });
-  await screen.findByText(/现金流量待确认/);
-  expect(api.overview).toHaveBeenCalledTimes(1);
+  await screen.findByRole("link", { name: "设置账户" });
+  expect(
+    vi
+      .mocked(api.overview)
+      .mock.calls.some(
+        ([start, end]) =>
+          Date.parse(end) - Date.parse(start) === 30 * 86400000 &&
+          Date.parse(start) > Date.parse(overview.as_of),
+      ),
+  ).toBe(false);
 });
 it("hides amounts in the report, trend and accessible data table", async () => {
   setup("overview", true);
-  await screen.findByText("已记录净资产");
-  expect(screen.getByText("金额已隐藏")).toBeTruthy();
+  await screen.findByText("净资产");
+  expect(screen.getByRole("button", { name: "显示金额" })).toBeTruthy();
   expect(screen.queryByRole("img")).toBeNull();
   expect(screen.queryByRole("table")).toBeNull();
   expect(document.body.textContent).not.toContain("¥");

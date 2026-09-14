@@ -1,19 +1,19 @@
 <script lang="ts">
-  import { createInfiniteQuery } from "@tanstack/svelte-query";
-  import {
-    ReceiptText,
-    SlidersHorizontal,
-    ArrowRight,
-    ArrowDownLeft,
-    ArrowUpRight,
-    ArrowLeftRight,
-  } from "@lucide/svelte";
+  import { createInfiniteQuery, createQuery } from "@tanstack/svelte-query";
+  import { SlidersHorizontal, Search, ChevronRight, X } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
   import { Badge } from "$lib/components/ui/badge";
   import * as Card from "$lib/components/ui/card";
   import { useApi, useAccounts } from "$lib/context";
   import { router } from "$lib/router.svelte";
-  import { money, statusLabels, kindLabels } from "$lib/finance";
+  import {
+    money,
+    statusLabels,
+    kindLabels,
+    currentMonth,
+    monthRange,
+    localDateTime,
+  } from "$lib/finance";
   import type { Cursor } from "$lib/types";
   import Field from "../components/Field.svelte";
   import SelectField from "../components/SelectField.svelte";
@@ -21,7 +21,9 @@
   import Loading from "../components/Loading.svelte";
   import Failure from "../components/Failure.svelte";
   import Empty from "../components/Empty.svelte";
-  import Notice from "../components/Notice.svelte";
+  import TransactionIcon from "../components/TransactionIcon.svelte";
+  import MiniBars from "../components/MiniBars.svelte";
+  import { transactionMoney, transactionCategory } from "$lib/presentation";
   let { hidden }: { hidden: boolean } = $props();
   const api = useApi();
   const accounts = useAccounts();
@@ -33,6 +35,29 @@
   $effect(() => {
     search = new URLSearchParams(filterKey).get("search") || "";
   });
+  const now = new Date().toISOString();
+  let summaryMonth = $derived(
+    params.get("start") && Number.isFinite(Date.parse(params.get("start")!))
+      ? new Date(params.get("start")!).toLocaleDateString("sv-SE", {
+          timeZone: "Asia/Shanghai",
+          year: "numeric",
+          month: "2-digit",
+        })
+      : currentMonth(),
+  );
+  let summaryRange = $derived(monthRange(summaryMonth));
+  const summary = createQuery(() => ({
+    queryKey: ["overview", summaryMonth],
+    queryFn: () => api.overview(summaryRange.start, summaryRange.end, now),
+  }));
+  function setMonth(month: string) {
+    if (!/^\d{4}-\d{2}$/.test(month)) return;
+    const next = new URLSearchParams(params);
+    const range = monthRange(month);
+    next.set("start", range.start);
+    next.set("end", range.end);
+    router.navigate("/transactions?" + next, true);
+  }
   function update(key: string, value: string) {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
@@ -87,21 +112,74 @@
 </script>
 
 <div class="page">
-  <div>
+  <div class="page-heading pr-12">
     <h1>交易流水</h1>
-    <p class="mt-2 text-muted-foreground">把每一笔，整理清楚。</p>
+    <div class="max-w-40">
+      <Field
+        label="流水月份"
+        type="month"
+        compact
+        value={params.get("start") ? summaryMonth : ""}
+        onchange={(e) => setMonth(e.currentTarget.value)}
+      />
+    </div>
   </div>
+  {#if summary.isPending}<Loading />{:else if summary.error}<Failure
+      error={summary.error}
+      retry={() => summary.refetch()}
+    />{:else if summary.data}
+    <section
+      class="finance-card grid grid-cols-3 divide-x p-4 sm:p-6"
+      aria-label="月度收支"
+    >
+      {#each [{ label: "收入", value: summary.data.income, type: "收入" }, { label: "支出", value: summary.data.expense, type: "支出" }, { label: "净流入", value: summary.data.cash_net, type: "cash" }] as stat}<button
+          class="min-w-0 px-2 text-left first:pl-0 last:pr-0"
+          onclick={() =>
+            router.navigate(
+              "/transactions?" +
+                new URLSearchParams({
+                  start: summaryRange.start,
+                  end: summary.data!.as_of,
+                  posted: "true",
+                  ...(stat.type === "cash"
+                    ? { cash: "true" }
+                    : { account_type: stat.type }),
+                }),
+            )}
+          ><span class="block text-sm text-muted-foreground"
+            >{Number(summaryMonth.slice(5))}月{stat.label}</span
+          ><span class="money mt-3 block break-words font-semibold sm:text-2xl"
+            >{money(stat.value, hidden)}</span
+          >{#if stat.type === "cash" && !hidden && summary.data.trend.length}<span
+              class="mt-2 block"><MiniBars data={summary.data.trend} /></span
+            >{/if}</button
+        >{/each}
+    </section>
+  {/if}
   <form
-    class="flex items-end gap-2"
+    class="flex items-center gap-2"
     onsubmit={(e) => {
       e.preventDefault();
       update("search", search);
     }}
   >
-    <div class="min-w-0 flex-1">
-      <Field label="搜索商户或摘要" type="search" bind:value={search} />
+    <div
+      class="finance-card flex min-w-0 flex-1 items-center gap-1 rounded-full px-3"
+    >
+      <Search
+        class="size-5 shrink-0 text-muted-foreground"
+        aria-hidden="true"
+      /><Field
+        label="搜索商户或摘要"
+        placeholder="搜索商家、备注"
+        type="search"
+        compact
+        bind:value={search}
+      /><Button type="submit" variant="ghost" size="icon" aria-label="搜索"
+        ><ChevronRight aria-hidden="true" /></Button
+      >
     </div>
-    <Button type="submit" variant="outline">搜索</Button><Button
+    <Button
       variant="ghost"
       size="icon"
       aria-label="展开筛选"
@@ -110,20 +188,57 @@
       ><SlidersHorizontal aria-hidden="true" /></Button
     >
   </form>
-  <div class="flex flex-wrap gap-2" aria-label="补录筛选">
-    {#each [["", "全部"], ["needed", "待补录"], ["unmatched", "待匹配"]] as [v, label]}<Button
-        variant={(params.get("review") || "") === v ? "default" : "outline"}
-        aria-pressed={(params.get("review") || "") === v}
-        onclick={() => update("review", v)}>{label}</Button
+  <div class="flex flex-wrap gap-2" role="group" aria-label="流水筛选">
+    {#each [["", "全部"], ["支出", "支出"], ["收入", "收入"]] as [v, label]}<Button
+        variant={(params.get("account_type") || "") === v &&
+        !params.get("review")
+          ? "default"
+          : "secondary"}
+        aria-pressed={(params.get("account_type") || "") === v &&
+          !params.get("review")}
+        onclick={() => {
+          const next = new URLSearchParams(params);
+          next.delete("review");
+          if (v) next.set("account_type", v);
+          else next.delete("account_type");
+          router.navigate("/transactions?" + next, true);
+        }}>{label}</Button
+      >{/each}
+    {#each [["needed", "待补录"], ["unmatched", "待匹配"]] as [v, label]}<Button
+        variant={params.get("review") === v ? "default" : "secondary"}
+        aria-pressed={params.get("review") === v}
+        onclick={() => update("review", params.get("review") === v ? "" : v)}
+        >{label}</Button
       >{/each}
   </div>
+  {#if params.get("posted") || params.get("cash") || params.get("start") || params.get("end")}<div
+      class="flex flex-wrap gap-2"
+      role="group"
+      aria-label="已选筛选"
+    >
+      {#if params.get("cash")}<Button
+          variant="outline"
+          onclick={() => update("cash", "")}
+          >现金<X aria-hidden="true" /></Button
+        >{/if}{#if params.get("posted")}<Button
+          variant="outline"
+          onclick={() => update("posted", "")}
+          >已入账<X aria-hidden="true" /></Button
+        >{/if}{#if params.get("start") || params.get("end")}<Button
+          variant="outline"
+          onclick={() => (expanded = !expanded)}>日期</Button
+        >{/if}<Button variant="ghost" onclick={clear}>清空筛选</Button>
+    </div>{/if}
   {#if expanded}<Card.Root
       ><Card.Content class="space-y-4 p-5">
         <div class="grid gap-4 sm:grid-cols-2">
           <Field
             label="起始日期"
             type="date"
-            value={params.get("start")?.slice(0, 10) || ""}
+            value={params.get("start") &&
+            Number.isFinite(Date.parse(params.get("start")!))
+              ? localDateTime(params.get("start")!).slice(0, 10)
+              : ""}
             onchange={(e) =>
               update(
                 "start",
@@ -132,14 +247,22 @@
                   : "",
               )}
           /><Field
-            label="结束日期（不含）"
+            label="结束日期"
             type="date"
-            value={params.get("end")?.slice(0, 10) || ""}
+            value={params.get("end") &&
+            Number.isFinite(Date.parse(params.get("end")!))
+              ? localDateTime(
+                  new Date(Date.parse(params.get("end")!) - 1).toISOString(),
+                ).slice(0, 10)
+              : ""}
             onchange={(e) =>
               update(
                 "end",
                 e.currentTarget.value
-                  ? e.currentTarget.value + "T00:00:00+08:00"
+                  ? new Date(
+                      Date.parse(e.currentTarget.value + "T00:00:00+08:00") +
+                        86400000,
+                    ).toISOString()
                   : "",
               )}
           />
@@ -171,17 +294,10 @@
         <Button variant="ghost" onclick={clear}>清空全部筛选</Button>
       </Card.Content></Card.Root
     >{/if}
-  {#if params.get("posted") || params.get("account_type") || params.get("cash")}<Notice
-      >正在查看报表同口径下钻结果。<Button variant="link" onclick={clear}
-        >查看全部流水</Button
-      ></Notice
-    >{/if}
   {#if query.isPending}<Loading />{:else if query.error}<Failure
       error={query.error}
       retry={() => query.refetch()}
-    />{:else if items.length === 0}<Empty
-      title="这里已经整理好了"
-      description="当前筛选没有流水。可切换条件，或记下新的一笔。"
+    />{:else if items.length === 0}<Empty title="暂无交易"
       ><Button href="/transactions/new">记一笔</Button></Empty
     >{:else}
     <div class="space-y-3">
@@ -197,30 +313,10 @@
         >
           <div class="flex justify-between gap-3">
             <div class="flex min-w-0 gap-3">
-              <div
-                class={[
-                  "grid size-11 shrink-0 place-items-center rounded-2xl",
-                  t.kind === "income" || t.kind === "refund"
-                    ? "bg-cash-in/10 text-cash-in"
-                    : t.kind === "expense"
-                      ? "bg-cash-out/10 text-cash-out"
-                      : "bg-muted text-primary",
-                ]}
-              >
-                {#if t.kind === "income" || t.kind === "refund"}<ArrowDownLeft
-                    class="size-5"
-                    aria-hidden="true"
-                  />{:else if t.kind === "expense"}<ArrowUpRight
-                    class="size-5"
-                    aria-hidden="true"
-                  />{:else if t.kind === "transfer"}<ArrowLeftRight
-                    class="size-5"
-                    aria-hidden="true"
-                  />{:else}<ReceiptText
-                    class="size-5"
-                    aria-hidden="true"
-                  />{/if}
-              </div>
+              <TransactionIcon
+                category={transactionCategory(t, accounts.data ?? [])}
+                kind={t.kind}
+              />
               <div class="min-w-0">
                 <p class="font-medium wrap-anywhere">
                   {t.merchant || t.notes || "未填写交易摘要"}
@@ -235,33 +331,38 @@
               </div>
             </div>
             <div class="max-w-[45%] text-right">
-              <p class="money break-words font-semibold">
-                {t.amount == null ? "金额待补录" : money(t.amount, hidden)}
+              <p
+                class="money break-words font-semibold"
+                class:text-cash-in={t.kind === "income" || t.kind === "refund"}
+              >
+                {t.amount == null ? "金额待补录" : transactionMoney(t, hidden)}
               </p>
               <p class="mt-1 text-xs text-muted-foreground">
                 {t.entry_count > 2 ? "多分录" : kindLabels[t.kind] || "交易"}
               </p>
             </div>
           </div>
-          <div class="mt-4 flex flex-wrap items-center gap-2">
-            <Badge variant="outline"
-              >{statusLabels[t.status] || "状态待确认"}</Badge
-            ><Badge
-              variant={t.complete ? "secondary" : "outline"}
-              class={!t.complete
-                ? "border-profit/20 bg-profit/10 text-profit"
-                : ""}>{t.complete ? "信息完整" : "待补录"}</Badge
-            >{#if !t.complete && t.status !== "cancel"}<span
-                class="flex items-center gap-1 text-xs text-muted-foreground"
+          <div class="mt-3 flex flex-wrap items-center gap-2 pl-15">
+            {#if transactionCategory(t, accounts.data ?? [])}<Badge
+                variant="secondary"
+                >{transactionCategory(t, accounts.data ?? [])}</Badge
+              >{/if}
+            {#if !t.complete && t.status !== "cancel"}<Badge
+                class="border-profit/20 bg-profit/10 text-profit"
+                variant="outline"
                 >{t.entry_count === 0
-                  ? "缺少分录"
+                  ? "待补录"
                   : t.missing_accounts
                     ? "待匹配科目"
-                    : "待核对"}<ArrowRight
-                  class="size-3"
-                  aria-hidden="true"
-                /></span
+                    : "待核对"}</Badge
               >{/if}
+            {#if t.status !== "success"}<Badge variant="outline"
+                >{statusLabels[t.status] || "待核对"}</Badge
+              >{/if}
+            <ChevronRight
+              class="ml-auto size-4 text-muted-foreground"
+              aria-hidden="true"
+            />
           </div>
         </a>
       {/each}
@@ -273,9 +374,5 @@
       disabled={query.isFetchingNextPage}
       onclick={() => query.fetchNextPage()}
       >{query.isFetchingNextPage ? "正在加载…" : "加载更多流水"}</Button
-    >{:else if items.length > 0}<p
-      class="border-t pt-5 text-center text-sm text-muted-foreground"
-    >
-      已显示全部 {items.length} 笔
-    </p>{/if}
+    >{/if}
 </div>

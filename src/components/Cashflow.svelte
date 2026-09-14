@@ -5,22 +5,18 @@
     ArrowUpRight,
     ChartNoAxesCombined,
     ChevronRight,
+    EyeOff,
   } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
   import { useApi, useAccounts } from "$lib/context";
-  import { money, categoryLabels } from "$lib/finance";
-  import {
-    cashDate,
-    loadCashBars,
-    nextThirtyDays,
-    type CashPeriod,
-  } from "$lib/cashflow";
+  import { money } from "$lib/finance";
+  import { loadCashBars, nextThirtyDays, type CashPeriod } from "$lib/cashflow";
   import type { Overview } from "$lib/types";
   import { router } from "$lib/router.svelte";
   import CashBars from "./CashBars.svelte";
   import Loading from "./Loading.svelte";
   import Failure from "./Failure.svelte";
-  import Notice from "./Notice.svelte";
+  import Empty from "./Empty.svelte";
   let {
     hidden,
     report,
@@ -71,7 +67,11 @@
         ><ChartNoAxesCombined class="size-5" aria-hidden="true" /></span
       >现金流量
     </h2>
-    <div class="flex rounded-xl bg-muted p-1" aria-label="现金流期间">
+    <div
+      class="flex rounded-xl bg-muted p-1"
+      role="group"
+      aria-label="现金流期间"
+    >
       <Button
         variant={mode === "month" ? "default" : "ghost"}
         class="rounded-lg px-3"
@@ -91,8 +91,8 @@
       retry={() => accounts.refetch()}
     />
   {:else if accounts.isPending}<Loading />
-  {:else if !configured}<Notice variant="warning"
-      >未找到“资产 / 现金及等价物”科目，现金流量待确认。</Notice
+  {:else if !configured}<Empty title="未设置现金账户"
+      ><Button href="/accounts">设置账户</Button></Empty
     >
   {:else if mode === "future" && futureQuery.error}<Failure
       error={futureQuery.error}
@@ -113,11 +113,6 @@
           class:text-cash-out={!hidden && summary.cash_net.startsWith("-")}
         >
           {money(summary.cash_net, hidden)}
-        </p>
-        <p class="mt-3 text-xs leading-5 text-muted-foreground">
-          {mode === "future" ? "已录入的未来交易" : "所选月份已记录现金流"} · {cashDate(
-            selected.start,
-          )}—{cashDate(selected.end)}
         </p>
         <div class="mt-6 grid grid-cols-2 gap-3 border-t pt-5">
           <div>
@@ -154,7 +149,7 @@
         {#if hidden}<div
             class="grid min-h-52 place-items-center rounded-xl bg-muted/50 text-sm text-muted-foreground"
           >
-            现金流金额已隐藏
+            <EyeOff class="size-8" aria-label="金额已隐藏" />
           </div>
         {:else if empty}<div
             class="flex min-h-52 flex-col items-center justify-center gap-2 rounded-xl bg-muted/50 px-5 text-center"
@@ -163,14 +158,8 @@
               class="mb-2 size-8 text-muted-foreground"
               aria-hidden="true"
             />
-            <p class="font-medium">
-              {mode === "future"
-                ? "未来 30 天暂无已记录现金流量"
-                : "本期暂无已记录现金流量"}
-            </p>
-            <p class="text-sm text-muted-foreground">
-              完整交易产生现金变动后，将在这里显示。
-            </p>
+            <p class="font-medium">暂无现金流</p>
+            <Button href="/transactions/new" variant="outline">记一笔</Button>
           </div>
         {:else if bars.error}<Failure
             error={bars.error}
@@ -180,30 +169,5 @@
         {:else if bars.data}<CashBars data={bars.data} />{/if}
       </div>
     </div>
-    {#if summary.cash_categories.length}<div
-        class="mt-5 grid gap-3 border-t pt-5 sm:grid-cols-3"
-      >
-        {#each summary.cash_categories as category}<div
-            class="rounded-xl bg-muted/50 p-3 text-xs"
-          >
-            <p class="mb-2 font-medium">{categoryLabels[category.name]}</p>
-            <p class="leading-6 text-muted-foreground">
-              流入 {money(category.inflow, hidden)}<br />流出 {money(
-                category.outflow,
-                hidden,
-              )}
-            </p>
-          </div>{/each}
-      </div>{/if}
-    <p class="mt-5 text-xs leading-5 text-muted-foreground">
-      {mode === "future"
-        ? "自页面打开时起 30 天，仅汇总已录入且完整的成功／退款交易，不含待处理记录。"
-        : "统计至所选月份末或页面打开时点，以较早者为准。"}现金内部转账抵销，同笔退款冲减原支出。
-    </p>
-    {#if summary.quality.period_pending > 0}<p
-        class="mt-2 text-xs text-muted-foreground"
-      >
-        期间另有 {summary.quality.period_pending} 笔待补录，尚未纳入。
-      </p>{/if}
   {/if}
 </section>

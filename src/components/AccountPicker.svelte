@@ -11,12 +11,16 @@
     onChange,
     label = "会计科目",
     disabled = false,
+    compact = false,
+    placeholder = "选择科目",
   }: {
     accounts: Account[];
     value?: number | null;
     onChange?: (id: number | null) => void;
     label?: string;
     disabled?: boolean;
+    compact?: boolean;
+    placeholder?: string;
   } = $props();
   let open = $state(false);
   const id = $props.id();
@@ -28,8 +32,8 @@
   }
 </script>
 
-<div class="space-y-2">
-  <Label for={id}>{label}</Label>
+<div class={compact ? "min-w-0" : "space-y-2"}>
+  <Label for={id} class={compact ? "sr-only" : ""}>{label}</Label>
   <div class="flex gap-1">
     <Popover.Root bind:open>
       <Popover.Trigger {id} {disabled}>
@@ -39,11 +43,17 @@
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            class="h-auto min-h-11 w-full min-w-0 justify-between whitespace-normal text-left"
+            class={[
+              "h-auto min-h-12 w-full min-w-0 justify-between whitespace-normal text-left",
+              compact && "rounded-xl border-transparent bg-transparent px-3",
+              compact && !chosen && "border-profit/40 bg-profit/5 text-profit",
+            ]}
             ><span class="min-w-0 break-words"
               >{chosen
-                ? `${chosen.type} / ${chosen.subtype} / ${chosen.name}`
-                : "搜索并选择科目"}</span
+                ? compact
+                  ? chosen.name
+                  : `${chosen.type} / ${chosen.subtype} / ${chosen.name}`
+                : placeholder}</span
             ><ChevronsUpDown class="size-4" aria-hidden="true" /></Button
           >{/snippet}
       </Popover.Trigger>
@@ -57,7 +67,7 @@
             aria-label="搜索会计科目"
           />
           <Command.List>
-            <Command.Empty>未找到科目，请到科目设置新增</Command.Empty>
+            <Command.Empty>无匹配科目</Command.Empty>
             {#each ["资产", "负债", "净资产", "收入", "支出"] as type}
               <Command.Group heading={type}>
                 {#each accounts.filter((a) => a.type === type) as account}
