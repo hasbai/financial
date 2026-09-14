@@ -26,8 +26,8 @@ try {
       const elapsed = Math.round(performance.now() - started);
       assert.equal(requests.length, 1);
       assert.ok(new URL(requests[0]).pathname.endsWith("/home"));
-      assert.equal(home.balance_trend.length, 6);
-      assert.ok(home.recent.length <= 3);
+      assert.ok(Array.isArray(home.balance_trend));
+      assert.ok(!("recent" in home));
       const full = await api.overview(home.start, home.as_of, home.as_of);
       for (const k of [
         "assets",
@@ -39,6 +39,23 @@ try {
       ])
         assert.equal(home[k], full[k]);
       assert.equal(home.pending, full.quality.pending);
+      const history = await api.report(
+        "balanceHistory",
+        home.start,
+        home.as_of,
+        home.as_of,
+      );
+      assert.deepEqual(
+        home.balance_trend,
+        history.map((r) => r.net_assets),
+      );
+      const daily = await api.report(
+        "cashDaily",
+        home.start,
+        home.as_of,
+        home.as_of,
+      );
+      assert.equal(home.month_cash_bars.length, daily.length);
       const hidden = await api.home(false);
       assert.ok(!("balance_trend" in hidden));
       assert.ok(!("cash_bars" in hidden));

@@ -55,6 +55,14 @@ function setup(
             cash: nonempty
               ? overview
               : { cash_in: "0", cash_out: "0", cash_net: "0" },
+            month_cash: nonempty
+              ? overview
+              : { cash_in: "0", cash_out: "0", cash_net: "0" },
+            month_cash_bars: select.includes("month_cash_bars")
+              ? nonempty
+                ? homeSnapshot().cash_bars
+                : []
+              : undefined,
             balance_trend: select.includes("balance_trend")
               ? homeSnapshot().balance_trend
               : undefined,
@@ -70,13 +78,15 @@ function setup(
             ? select.startsWith("id,")
               ? [transaction]
               : overview.quality
-            : select.startsWith("id:account_id")
+            : select.startsWith("id,name")
               ? overview.accounts
               : select.startsWith("name:subtype")
                 ? overview.categories
                 : select.startsWith("date,")
-                  ? overview.trend
-                  : view === "cashflow_statement"
+                  ? view === "balance_history_read"
+                    ? [{ date: "2026-09-01", ...overview }]
+                    : overview.trend
+                  : view === "cashflow_read"
                     ? { cash_in: "0", cash_out: "0", cash_net: "0" }
                     : overview;
     return new Response(JSON.stringify(data), {
@@ -123,7 +133,7 @@ it("loads only home data, reuses the closing balance, and fetches panel details 
   expect(new Set(requests.map(String)).size).toBe(requests.length);
   expect(
     selects(requests).some((s) =>
-      /^(id:account_id|name:subtype|date,|name:category|cash_opening)/.test(s),
+      /^(id,name|name:subtype|date,|name:category|cash_opening)/.test(s),
     ),
   ).toBe(false);
   expect(selects(requests)[0]).not.toContain("entries");
@@ -131,19 +141,21 @@ it("loads only home data, reuses the closing balance, and fetches panel details 
   const before = requests.length;
   await fireEvent.click(screen.getByRole("button", { name: "资产负债" }));
   await screen.findByRole("region", { name: "科目余额" });
-  expect(requests).toHaveLength(before + 1);
-  expect(selects(requests.slice(before))[0]).toMatch(/^id:account_id/);
+  expect(requests).toHaveLength(before + 2);
+  expect(
+    selects(requests.slice(before)).some((s) => s.startsWith("id,name")),
+  ).toBe(true);
   await fireEvent.click(screen.getByRole("button", { name: "损益" }));
   await screen.findByRole("region", { name: "损益明细" });
-  expect(requests).toHaveLength(before + 3);
+  expect(requests).toHaveLength(before + 4);
   expect(
-    selects(requests.slice(before + 1)).every((s) =>
+    selects(requests.slice(before + 2)).every((s) =>
       /^(name:subtype|date,)/.test(s),
     ),
   ).toBe(true);
   await fireEvent.click(screen.getByRole("button", { name: "总览" }));
   await screen.findByText("暂无现金流");
-  expect(requests).toHaveLength(before + 3);
+  expect(requests).toHaveLength(before + 4);
   await fireEvent.click(screen.getByRole("button", { name: "所选月份" }));
   await screen.findByText("本期净流入");
   expect(requests).toHaveLength(before + 4);
@@ -151,7 +163,7 @@ it("loads only home data, reuses the closing balance, and fetches panel details 
 
 it("does not request charts when amounts are hidden", async () => {
   const { requests } = setup("overview", true);
-  await screen.findByText("未来 30 天净流入");
+  await screen.findByText("本期净流入");
   expect(requests).toHaveLength(1);
   expect(selects(requests)[0]).not.toContain("balance_trend");
   expect(selects(requests)[0]).not.toContain("cash_bars");
@@ -166,9 +178,7 @@ it("loads only list, account labels and monthly income/cash/trend on direct list
   await screen.findByRole("region", { name: "月度收支" });
   await screen.findByText("示例消费");
   expect(requests).toHaveLength(5);
-  expect(requests.some((r) => r.pathname.endsWith("balance_sheet"))).toBe(
-    false,
-  );
+  expect(requests.some((r) => r.pathname.endsWith("balance_read"))).toBe(false);
   expect(
     selects(requests).some((s) => /^(name:|pending:|cash_opening)/.test(s)),
   ).toBe(false);
@@ -200,7 +210,7 @@ it("shares fresh reports across pages and refreshes visible reports after invali
   });
   expect(requests).toHaveLength(start + 4);
   expect(
-    requests.slice(start).some((r) => r.pathname.endsWith("balance_sheet")),
+    requests.slice(start).some((r) => r.pathname.endsWith("balance_read")),
   ).toBe(false);
 });
 
@@ -231,7 +241,7 @@ it("changing a month loads only the selected panel and preserves the cash period
   await screen.findByText("本期净流入");
   expect(requests).toHaveLength(before + 2);
   expect(
-    requests.slice(before).some((r) => r.pathname.endsWith("balance_sheet")),
+    requests.slice(before).some((r) => r.pathname.endsWith("balance_read")),
   ).toBe(false);
   expect(
     screen
@@ -242,10 +252,10 @@ it("changing a month loads only the selected panel and preserves the cash period
 
 it("unhides through one home request without the ten legacy chart requests", async () => {
   const { requests, setNonempty, rerender } = setup("overview", true);
-  await screen.findByText("未来 30 天净流入");
+  await screen.findByText("本期净流入");
   setNonempty();
   await rerender({ hidden: false });
-  await screen.findByRole("img", { name: /现金流入与流出分组柱状图/ });
+  await screen.findByRole("img", { name: /每日现金流入与流出柱状图/ });
   expect(requests).toHaveLength(2);
   expect(requests.every((r) => r.pathname.endsWith("/home"))).toBe(true);
   await fireEvent.click(screen.getByRole("button", { name: "隐藏金额" }));

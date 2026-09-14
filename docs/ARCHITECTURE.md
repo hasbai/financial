@@ -29,9 +29,10 @@ Data API 的 JWT 校验发生在 Neon，PostgreSQL 再限制本人行访问。�
 - `src/pages`：总览、流水、编辑、科目。
 - `src/lib/api.ts`：集中封装 PostgREST 调用，自动取得 Auth0 token。流水及三类报表直接 GET 视图，筛选、分组、金额求和均在 PostgreSQL；只有保存交易/科目使用 RPC。
 - `@tanstack/svelte-query`：通过 Svelte 5 accessor 查询缓存、游标分页与保存后刷新。
-- `src/lib/reports.ts`：按报表片段建立独立查询与缓存。当月首页通过 `financial.home` 一次加载全部首屏数据；科目余额、损益分类/逐日趋势在面板打开时加载，月度现金合计在选中该期间后加载。流水只加载列表、科目标签、月度损益/现金合计和可见趋势；交易编辑期间停止背后流水页的查询。
-- 相同截止时点的报表片段共用查询键；30秒内快速导航复用同一精确截止时点和新鲜缓存。保存仍使 `overview` / `transactions` 查询失效，退出清缓存。当月净资产曲线和未来现金分组随首页快照返回；历史月份曲线复用主卡期末值并读取五个历史时点；现金分组与合计使用相同区间键去重，金额隐藏时不加载图表。现金期间选择保存在总览页，月份变化和面板切换后保持选择。
-- `Repository.overview` 保留为完整报表兼容/核对入口，页面不再调用它。金额聚合、日期边界及三表权限不变。
+- `src/lib/reports.ts`：报表片段独立缓存。首页 `home` 单 GET 返回当前 balance 汇总、月度损益、现金逐日统计和 balance_history 曲线；不预载交易分录。资产面板读取科目余额和每日历史，现金面板复用逐日统计，损益面板按需读取分类和每日收支。
+- `balance`/`balance_history` 是物化视图，通过身份保护函数和 security_invoker 视图读取；保存整笔交易/科目后在同一事务全量刷新，不启用 cron。外部批量维护后执行 scripts/refresh-balances.mjs。
+- 保存使 overview/transactions 查询失效；30秒快照缓存支持快速导航，退出清缓存。历史余额直接读取每日快照，现金图一次按日聚合，不再每六天重复查询。
+- `Repository.overview` 保留核对入口，其余额采用新物化视图，现金和损益使用现有视图；不读取已删除的 balance_sheet/cashflow_statement。
 - Svelte 5 runes：编辑状态与分录数组；快照提交，原分录 ID 和 updated_at 保留。
 - Decimal.js + SQL numeric：金额输入与计算。
 - Svelte SVG：趋势展示及逐日可访问明细；坐标用 Number，仅用于呈现，权威金额来自 SQL。
@@ -46,7 +47,7 @@ Data API 的 JWT 校验发生在 Neon，PostgreSQL 再限制本人行访问。�
 
 `wrangler.jsonc` 配置 Worker financial、dist 静态目录、single-page-application 回退与 financial.hasbai.xyz 自定义域名。`public/_headers` 配置缓存、安全头。`pnpm build` 后用 Wrangler 发布。
 
-GitHub Actions 进行 frozen-lockfile 安装、typecheck、test、build。未设置自动生产数据库迁移。视图客户端发布前必须先在生产执行 `003_read_views.sql`；该迁移兼容旧客户端，可按数据库迁移、API验收、Worker发布的顺序交付。生产发布状态单独记录在 [PROGRESS](PROGRESS.md)。
+GitHub Actions 进行 frozen-lockfile 安装、typecheck、test、build。未设置自动生产数据库迁移。新版客户端发布前必须先应用 `005_balance_history.sql`，按数据库迁移、API验收、Worker发布顺序交付。该迁移保留现有 balance/cashflow 定义，支持从已移除旧报表的生产结构升级。生产发布状态单独记录在 [PROGRESS](PROGRESS.md)。
 
 回滚优先退回 Worker 版本；数据库不新增字段、不删除原数据。共享 Neon endpoint 的 provider 配置修改前必须核查原消费者；不调整其他 Auth0 application。
 

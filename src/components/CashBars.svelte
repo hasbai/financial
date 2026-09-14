@@ -1,7 +1,7 @@
 <script lang="ts">
   import { money } from "$lib/finance";
   import { cashDate, type CashBar } from "$lib/cashflow";
-  let { data }: { data: CashBar[] } = $props();
+  let { data, daily = false }: { data: CashBar[]; daily?: boolean } = $props();
   let max = $derived(
     Math.max(1, ...data.flatMap((d) => [Number(d.inflow), Number(d.outflow)])),
   );
@@ -31,7 +31,7 @@
   <div
     class="flex h-48 gap-2 sm:h-56"
     role="img"
-    aria-label="现金流入与流出分组柱状图，每六天一组，准确金额见下方现金流明细"
+    aria-label="每日现金流入与流出柱状图"
   >
     <div
       class="flex w-10 shrink-0 flex-col justify-between pb-8 text-right text-xs text-muted-foreground"
@@ -51,7 +51,7 @@
         <div class="border-t border-dashed"></div>
         <div class="border-t"></div>
       </div>
-      {#each data as bar}
+      {#each data as bar, i}
         <div class="z-10 flex min-w-0 flex-col">
           <div
             class="flex min-h-0 flex-1 items-end justify-center gap-1.5 px-1 sm:gap-3"
@@ -68,40 +68,46 @@
           </div>
           <span
             class="flex h-8 items-end justify-center whitespace-nowrap text-[11px] text-muted-foreground sm:text-xs"
-            >{cashDate(bar.start)}</span
+            >{i % Math.max(1, Math.ceil(data.length / 6)) === 0
+              ? cashDate(bar.start)
+              : ""}</span
           >
         </div>
       {/each}
     </div>
   </div>
-  <details class="text-sm">
-    <summary
-      class="min-h-12 cursor-pointer content-center text-muted-foreground"
-      >查看现金流明细</summary
-    >
-    <div class="overflow-x-auto">
-      <table class="w-full text-left text-xs sm:text-sm">
-        <caption class="sr-only">现金流明细</caption>
-        <thead
-          ><tr
-            ><th class="py-3">起止时间</th><th class="px-2">流入</th><th
-              class="px-2">流出</th
-            ></tr
-          ></thead
-        >
-        <tbody
-          >{#each data as bar}<tr class="border-t"
-              ><td class="py-3"
-                >{cashDate(bar.start, true)}<br />至 {cashDate(
-                  bar.end,
-                  true,
-                )}</td
-              ><td class="money whitespace-nowrap px-2">{money(bar.inflow)}</td
-              ><td class="money whitespace-nowrap px-2">{money(bar.outflow)}</td
+  {#if daily}<div class="text-sm">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs sm:text-sm">
+          <caption class="sr-only">现金流明细</caption>
+          <thead
+            ><tr
+              ><th class="py-3">日期</th><th class="px-2">流入</th><th
+                class="px-2">流出</th
               ></tr
-            >{/each}</tbody
-        >
-      </table>
-    </div>
-  </details>
+            ></thead
+          >
+          <tbody
+            >{#each data as bar}<tr class="border-t"
+                ><td class="py-3"
+                  ><a
+                    class="inline-flex min-h-12 items-center text-primary underline"
+                    href={"/transactions?" +
+                      new URLSearchParams({
+                        start: bar.start,
+                        end: bar.end,
+                        posted: "true",
+                        cash: "true",
+                      })}>{cashDate(bar.start)}</a
+                  ></td
+                ><td class="money whitespace-nowrap px-2"
+                  >{money(bar.inflow)}</td
+                ><td class="money whitespace-nowrap px-2"
+                  >{money(bar.outflow)}</td
+                ></tr
+              >{/each}</tbody
+          >
+        </table>
+      </div>
+    </div>{/if}
 </div>

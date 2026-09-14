@@ -33,29 +33,27 @@ async function compare() {
   const old = (
     await db.query("SELECT financial.overview($1,$2,$2) r", [h.start, h.as_of])
   ).rows[0].r;
-  for (const k of [
-    "assets",
-    "liabilities",
-    "net_assets",
-    "income",
-    "expense",
-    "profit",
-  ])
-    await eq(h[k], old[k]);
+  for (const k of ["income", "expense", "profit"]) await eq(h[k], old[k]);
   assert.equal(h.pending, old.quality.pending);
-  for (let i = 0; i < 6; i++) {
-    const at = new Date(
-      Date.parse(h.start) +
-        ((Date.parse(h.as_of) - Date.parse(h.start)) * i) / 5,
-    ).toISOString();
-    const r = (
-      await db.query(
-        "SELECT coalesce(sum(net_assets::numeric),0)::text n FROM financial.balance_sheet WHERE occurred_at<$1",
-        [at],
-      )
-    ).rows[0];
-    await eq(h.balance_trend[i], r.n);
-  }
+  const balance = (
+    await db.query(
+      "SELECT coalesce(sum(assets::numeric),0)::text assets,coalesce(sum(liabilities::numeric),0)::text liabilities,coalesce(sum(net_assets::numeric),0)::text net_assets FROM financial.balance_read",
+    )
+  ).rows[0];
+  for (const k of ["assets", "liabilities", "net_assets"])
+    await eq(h[k], balance[k]);
+  const history = (
+    await db.query(
+      "SELECT date,sum(net_assets::numeric)::text value FROM financial.balance_history_read WHERE date>=($1::timestamptz AT TIME ZONE 'Asia/Shanghai')::date AND date<=($2::timestamptz AT TIME ZONE 'Asia/Shanghai')::date GROUP BY date ORDER BY date",
+      [h.start, h.as_of],
+    )
+  ).rows;
+  assert.deepEqual(
+    h.balance_trend,
+    history.map((r) => r.value),
+  );
+  for (const k of ["cash_in", "cash_out", "cash_net"])
+    await eq(h.month_cash[k], old[k]);
   const cash = (
     await db.query("SELECT financial.overview($1,$2,$2) r", [
       h.as_of,
@@ -64,21 +62,14 @@ async function compare() {
   ).rows[0].r;
   for (const k of ["cash_in", "cash_out", "cash_net"])
     await eq(h.cash[k], cash[k]);
-  for (const b of h.cash_bars) {
+  for (const b of [...h.cash_bars, ...h.month_cash_bars]) {
     const r = (
       await db.query("SELECT financial.overview($1,$2,$2) r", [b.start, b.end])
     ).rows[0].r;
     await eq(b.inflow, r.cash_in);
     await eq(b.outflow, r.cash_out);
   }
-  assert.deepEqual(
-    h.recent.map((t) => t.id),
-    (
-      await db.query(
-        "SELECT id FROM financial.transactions ORDER BY occurred_at DESC,id DESC LIMIT 3",
-      )
-    ).rows.map((t) => t.id),
-  );
+  assert.deepEqual(h.recent, []);
   assert.equal(
     h.cash_configured,
     (
@@ -143,7 +134,7 @@ try {
     ]);
   }
   const nonempty = await compare();
-  assert.equal(nonempty.cash_bars.length, 5);
+  assert.equal(nonempty.cash_bars.length, 2);
   assert.equal(
     Date.parse(nonempty.future_end) - Date.parse(nonempty.as_of),
     30 * 86400000,
@@ -166,7 +157,7 @@ try {
   assert.deepEqual(await fingerprint(), before);
   checks++;
   console.log(
-    `PASS ${checks} home database scenarios: legacy figures, six chart points, cash boundaries/buckets, recent categories, invoker identity isolation, unchanged base rows.`,
+    `PASS ${checks} home database scenarios: balance MV figures, daily history, cash boundaries/days, invoker identity isolation, unchanged base rows.`,
   );
 } catch (e) {
   await db.query("ROLLBACK").catch(() => {});

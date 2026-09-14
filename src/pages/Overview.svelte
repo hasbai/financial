@@ -1,5 +1,6 @@
 <script lang="ts">
   import { useReport, useReportTime, reportStaleTime } from "$lib/reports";
+  import { dayLink } from "$lib/cashflow";
   import { effectiveEnd } from "$lib/api";
   import { untrack } from "svelte";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
@@ -11,14 +12,12 @@
     Landmark,
     TrendingUp,
     Wallet,
-    ReceiptText,
     Eye,
     EyeOff,
   } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
   import { useApi } from "$lib/context";
   import { currentMonth, money, monthRange } from "$lib/finance";
-  import { transactionMoney } from "$lib/presentation";
   import { router } from "$lib/router.svelte";
   import Field from "../components/Field.svelte";
   import Loading from "../components/Loading.svelte";
@@ -26,7 +25,6 @@
   import Empty from "../components/Empty.svelte";
   import Trend from "../components/Trend.svelte";
   import Cashflow from "../components/Cashflow.svelte";
-  import TransactionIcon from "../components/TransactionIcon.svelte";
   import BalanceSparkline from "../components/BalanceSparkline.svelte";
   let {
     hidden,
@@ -36,7 +34,7 @@
   let masked = $derived(hidden || localHidden);
   let month = $state(currentMonth());
   let view = $state("overview");
-  let cashMode = $state<"future" | "month">("future");
+  let cashMode = $state<"future" | "month">("month");
   const api = useApi();
   const openedAt = useReportTime();
   const cache = useQueryClient();
@@ -77,6 +75,11 @@
     () => !current && !!home.data && (view === "overview" || view === "profit"),
   );
   const quality = useReport("quality", period, () => !current && !!home.data);
+  const history = useReport(
+    "balanceHistory",
+    period,
+    () => view === "assets" && !masked,
+  );
   const balances = useReport("accounts", period, () => view === "assets");
   const categories = useReport("categories", period, () => view === "profit");
   const trend = useReport("trend", period, () => view === "profit" && !masked);
@@ -87,7 +90,7 @@
       ? [balance]
       : []),
     ...(!current && (view === "overview" || view === "profit") ? [income] : []),
-    ...(view === "assets" ? [balances] : []),
+    ...(view === "assets" ? [balances, ...(!masked ? [history] : [])] : []),
     ...(view === "profit" ? [categories, ...(!masked ? [trend] : [])] : []),
   ]);
   let query = $derived({
@@ -112,12 +115,6 @@
     accounts: balances.data ?? [],
     categories: categories.data ?? [],
     trend: trend.data ?? [],
-  });
-  let recent = $derived({
-    isPending: home.isPending,
-    error: home.error,
-    refetch: () => home.refetch(),
-    data: { items: home.data?.recent ?? [] },
   });
   function down(filters: Record<string, string>) {
     router.navigate(
@@ -253,7 +250,14 @@
         {#each [{ type: "资产", title: "总资产", value: data.assets, icon: Wallet, color: "bg-asset/10 text-asset" }, { type: "负债", title: "总负债", value: data.liabilities, icon: Landmark, color: "bg-cash-out/10 text-cash-out" }] as item}
           <button
             class="finance-card min-w-0 p-4 text-left transition-colors hover:bg-accent sm:p-5"
-            onclick={() => down({ account_type: item.type, start: "" })}
+            onclick={() =>
+              down({
+                account_type: item.type,
+                start: "",
+                end: current ? "" : data.as_of,
+                posted: "",
+                matched: "true",
+              })}
             ><span class="flex items-center gap-2"
               ><span class={`icon-tile ${item.color}`}
                 ><item.icon class="size-5" aria-hidden="true" /></span
@@ -269,8 +273,14 @@
         {/each}
       </div>
     {/if}
+    {#if view === "overview"}<Button
+        variant="ghost"
+        onclick={() => (view = "cash")}
+        >查看每日现金流<ChevronRight aria-hidden="true" /></Button
+      >{/if}
     {#if view === "overview" || view === "cash"}<Cashflow
         hidden={masked}
+        daily={view === "cash"}
         snapshot={home.data}
         asOf={data.as_of}
         bind:mode={cashMode}
@@ -321,55 +331,6 @@
         </div>
       </section>
     {/if}
-    {#if view === "overview"}
-      <section class="finance-card p-5 sm:p-6" aria-label="最近交易">
-        <div class="flex items-center justify-between">
-          <h2 class="flex items-center gap-3">
-            <span class="icon-tile bg-muted text-muted-foreground"
-              ><ReceiptText class="size-5" aria-hidden="true" /></span
-            >最近交易
-          </h2>
-          <Button href="/transactions" variant="ghost"
-            >查看全部<ChevronRight aria-hidden="true" /></Button
-          >
-        </div>
-        {#if recent.isPending}<Loading />{:else if recent.error}<Failure
-            error={recent.error}
-            retry={() => recent.refetch()}
-          />{:else if !recent.data?.items.length}<Empty title="暂无交易"
-            ><Button href="/transactions/new">记一笔</Button></Empty
-          >{:else}
-          <div class="mt-2 divide-y">
-            {#each recent.data.items.slice(0, 3) as t}<a
-                href={`/transactions/${t.id}`}
-                class="flex min-w-0 items-center gap-3 py-4"
-                ><TransactionIcon category={t.category} kind={t.kind} /><span
-                  class="min-w-0 flex-1"
-                  ><span class="block truncate font-medium"
-                    >{t.merchant || t.notes || "未命名交易"}</span
-                  ><span class="mt-1 block text-sm text-muted-foreground"
-                    >{new Date(t.occurred_at).toLocaleDateString("zh-CN", {
-                      timeZone: "Asia/Shanghai",
-                      month: "long",
-                      day: "numeric",
-                    })}</span
-                  ></span
-                ><span
-                  class="money max-w-[45%] break-words text-right font-semibold"
-                  class:text-cash-in={t.kind === "income" ||
-                    t.kind === "refund"}
-                  >{t.amount === null
-                    ? "待补录"
-                    : transactionMoney(t, masked)}</span
-                ><ChevronRight
-                  class="size-4 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                /></a
-              >{/each}
-          </div>
-        {/if}
-      </section>
-    {/if}
     {#if view === "profit"}<section
         class="finance-card space-y-4 p-5"
         aria-label="损益明细"
@@ -397,7 +358,14 @@
       >
         {#each data.accounts.filter( (a) => ["资产", "负债"].includes(a.type) ) as a}<button
             class="flex min-h-16 w-full items-center justify-between gap-3 py-3 text-left"
-            onclick={() => down({ account_id: String(a.id), start: "" })}
+            onclick={() =>
+              down({
+                account_id: String(a.id),
+                start: "",
+                end: current ? "" : data.as_of,
+                posted: "",
+                matched: "true",
+              })}
             ><span
               ><span class="block font-medium">{a.name}</span><span
                 class="text-sm text-muted-foreground"
@@ -409,4 +377,31 @@
           >{/each}
       </section>{/if}
   {/if}
+  {#if view === "assets" && !masked}<section
+      class="finance-card p-5"
+      aria-label="每日余额"
+    >
+      <h2>每日余额</h2>
+      {#if !history.data?.length}<Empty title="暂无余额历史" />{:else}
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead
+              ><tr><th>日期</th><th>资产</th><th>负债</th><th>净资产</th></tr
+              ></thead
+            ><tbody>
+              {#each history.data as day}<tr class="border-t"
+                  ><td
+                    ><a
+                      class="inline-flex min-h-12 items-center text-primary underline"
+                      href={dayLink(day.date, { posted: "", matched: "true" })}
+                      >{day.date}</a
+                    ></td
+                  ><td class="money">{money(day.assets)}</td><td class="money"
+                    >{money(day.liabilities)}</td
+                  ><td class="money">{money(day.net_assets)}</td></tr
+                >{/each}
+            </tbody>
+          </table>
+        </div>{/if}
+    </section>{/if}
 </div>

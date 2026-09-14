@@ -11,27 +11,39 @@ export function nextThirtyDays(now: string): CashPeriod {
   };
 }
 
-// Only dates are divided here. All authoritative cash amounts come from SQL.
-export function cashPeriods(range: CashPeriod): CashPeriod[] {
-  const start = Date.parse(range.start);
-  const end = Date.parse(range.end);
-  const count = Math.ceil((end - start) / (6 * day));
-  return Array.from({ length: Math.max(0, count) }, (_, i) => ({
-    start: new Date(start + i * 6 * day).toISOString(),
-    end: new Date(Math.min(end, start + (i + 1) * 6 * day)).toISOString(),
-  }));
-}
-
 export async function loadCashBars(
-  api: Pick<Repository, "cashflow">,
+  api: Pick<Repository, "report">,
   range: CashPeriod,
   asOf: string,
 ): Promise<CashBar[]> {
-  return Promise.all(
-    cashPeriods(range).map(async (period) => {
-      const report = await api.cashflow(period.start, period.end, asOf);
-      return { ...period, inflow: report.cash_in, outflow: report.cash_out };
-    }),
+  const rows = await api.report("cashDaily", range.start, range.end, asOf);
+  return rows.map((row) => {
+    const period = dayPeriod(row.date);
+    return {
+      start: new Date(
+        Math.max(Date.parse(period.start), Date.parse(range.start)),
+      ).toISOString(),
+      end: new Date(
+        Math.min(
+          Date.parse(period.end),
+          Date.parse(range.end),
+          Date.parse(asOf),
+        ),
+      ).toISOString(),
+      inflow: row.inflow,
+      outflow: row.outflow,
+    };
+  });
+}
+
+export function dayPeriod(date: string): CashPeriod {
+  const start = `${date}T00:00:00+08:00`;
+  return { start, end: new Date(Date.parse(start) + day).toISOString() };
+}
+export function dayLink(date: string, filters: Record<string, string> = {}) {
+  return (
+    "/transactions?" +
+    new URLSearchParams({ ...dayPeriod(date), posted: "true", ...filters })
   );
 }
 

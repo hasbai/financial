@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
+  import { createQuery } from "@tanstack/svelte-query";
   import {
     ArrowDownLeft,
     ArrowUpRight,
@@ -24,7 +24,8 @@
     asOf,
     range,
     now,
-    mode = $bindable<"future" | "month">("future"),
+    mode = $bindable<"future" | "month">("month"),
+    daily = false,
   }: {
     hidden: boolean;
     snapshot?: HomeSnapshot;
@@ -32,9 +33,9 @@
     range: CashPeriod;
     now: string;
     mode?: "future" | "month";
+    daily?: boolean;
   } = $props();
   const api = useApi();
-  const cache = useQueryClient();
   const accounts = useAccounts(() => !snapshot);
   let configured = $derived(
     snapshot?.cash_configured ??
@@ -56,36 +57,37 @@
     enabled: !snapshot && configured && mode === "future",
     staleTime: reportStaleTime,
   }));
+  let monthSnapshot = $derived(
+    snapshot && Date.parse(snapshot.start) === Date.parse(range.start)
+      ? snapshot.month_cash
+      : undefined,
+  );
   const monthQuery = useReport(
     "cash",
     () => ({ ...range, asOf }),
-    () => configured && mode === "month",
+    () => configured && mode === "month" && !monthSnapshot,
   );
   let selectedQuery = $derived(mode === "future" ? futureQuery : monthQuery);
   let summary = $derived(
-    mode === "future" && snapshot ? snapshot.cash : selectedQuery.data,
+    mode === "future" && snapshot
+      ? snapshot.cash
+      : mode === "month" && monthSnapshot
+        ? monthSnapshot
+        : selectedQuery.data,
   );
   let suppliedBars = $derived(
-    mode === "future" ? snapshot?.cash_bars : undefined,
+    mode === "future"
+      ? snapshot?.cash_bars
+      : monthSnapshot
+        ? snapshot?.month_cash_bars
+        : undefined,
   );
   let empty = $derived(
     summary && Number(summary.cash_in) === 0 && Number(summary.cash_out) === 0,
   );
   const bars = createQuery(() => ({
     queryKey: ["overview", "cash-bars", selected.start, selected.end],
-    queryFn: () =>
-      loadCashBars(
-        {
-          cashflow: (start, end, asOf) =>
-            cache.fetchQuery({
-              queryKey: ["overview", "cash", start, end],
-              queryFn: () => api.cashflow(start, end, asOf),
-              staleTime: reportStaleTime,
-            }),
-        },
-        selected,
-        selected.end,
-      ),
+    queryFn: () => loadCashBars(api, selected, selected.end),
     enabled:
       !(mode === "future" && snapshot) &&
       !suppliedBars &&
@@ -137,7 +139,7 @@
   {:else if !configured}<Empty title="未设置现金账户"
       ><Button href="/accounts">设置账户</Button></Empty
     >
-  {:else if !(mode === "future" && snapshot) && selectedQuery.error}<Failure
+  {:else if !(mode === "future" && snapshot) && !monthSnapshot && selectedQuery.error}<Failure
       error={selectedQuery.error}
       retry={() => selectedQuery.refetch()}
     />
@@ -204,13 +206,13 @@
             <p class="font-medium">暂无现金流</p>
             <Button href="/transactions/new" variant="outline">记一笔</Button>
           </div>
-        {:else if suppliedBars}<CashBars data={suppliedBars} />
+        {:else if suppliedBars}<CashBars data={suppliedBars} {daily} />
         {:else if bars.error}<Failure
             error={bars.error}
             retry={() => bars.refetch()}
           />
         {:else if bars.isPending}<Loading />
-        {:else if bars.data}<CashBars data={bars.data} />{/if}
+        {:else if bars.data}<CashBars data={bars.data} {daily} />{/if}
       </div>
     </div>
   {/if}

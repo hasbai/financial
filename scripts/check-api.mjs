@@ -96,9 +96,8 @@ await withUserToken(async (token, tokenData) => {
   );
   const cutoff = new Date().toISOString();
   const sum = (name) => `${name}:${name}::numeric.sum()::text`;
-  const balance = await query("balance_sheet", {
+  const balance = await query("balance_read", {
     select: ["assets", "liabilities", "net_assets"].map(sum).join(","),
-    occurred_at: "lt." + cutoff,
   });
   const period = [
     ["occurred_at", "gte.2026-09-01T00:00:00+08:00"],
@@ -108,7 +107,7 @@ await withUserToken(async (token, tokenData) => {
     ["select", ["income", "expense", "profit"].map(sum).join(",")],
     ...period,
   ]);
-  const cash = await query("cashflow_statement", [
+  const cash = await query("cashflow_read", [
     ["select", ["inflow", "outflow", "net"].map(sum).join(",")],
     ...period,
   ]);
@@ -215,9 +214,12 @@ await withUserToken(async (token, tokenData) => {
   for (const view of [
     "account",
     "transactions",
-    "balance_sheet",
+    "balance_read",
+    "balance_history_read",
+    "cashflow_daily",
+    "home",
     "income_statement",
-    "cashflow_statement",
+    "cashflow_read",
   ]) {
     const wrongAudience = await req(
       `/${view}?select=*&limit=1`,

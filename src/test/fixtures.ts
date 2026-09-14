@@ -60,6 +60,15 @@ export const overview: Overview = {
 };
 
 export const reportParts = {
+  balanceHistory: [
+    {
+      date: "2026-09-01",
+      assets: "1000.00",
+      liabilities: "100.00",
+      net_assets: "900.00",
+    },
+  ],
+  cashDaily: [{ date: "2026-09-01", inflow: "200.00", outflow: "30.00" }],
   balance: overview,
   accounts: overview.accounts,
   income: overview,

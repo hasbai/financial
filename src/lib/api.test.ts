@@ -87,6 +87,7 @@ describe("read views", () => {
         account_id: "7",
         account_type: "资产",
         cash: "true",
+        matched: "true",
       },
       { occurred_at: at, id: 101 },
     );
@@ -102,6 +103,8 @@ describe("read views", () => {
     expect(params.get("account_ids")).toBe("cs.{7}");
     expect(params.get("account_types")).toBe("cs.{资产}");
     expect(params.get("has_cash_flow")).toBe("eq.true");
+    expect(params.get("missing_accounts")).toBe("eq.0");
+    expect(params.get("entry_count")).toBe("gt.0");
     expect(params.get("posted_count")).toBe("eq.1");
     expect(params.get("order")).toBe("occurred_at.desc,id.desc");
     expect(params.get("or")).toContain(`occurred_at.eq."${at}",id.lt.101`);
@@ -124,7 +127,7 @@ describe("read views", () => {
   });
   it("keeps SQL decimal strings and queries only cash or balances for charts", async () => {
     const { repo, requests } = mockApi((url) =>
-      url.pathname.endsWith("cashflow_statement")
+      url.pathname.endsWith("cashflow_read")
         ? {
             cash_in: "9007199254740993.01",
             cash_out: "0.02",
@@ -152,6 +155,20 @@ describe("read views", () => {
     );
     expect((await repo.balance("2026-09-14")).net_assets).toBe("-100.00");
     expect(requests).toHaveLength(2);
+  });
+  it("reads the latest balance MV during the current day and a single closing day for history", async () => {
+    const { repo, requests } = mockApi(() => ({
+      assets: "0",
+      liabilities: "0",
+      net_assets: "0",
+      cash_closing: "0",
+    }));
+    await repo.balance(new Date().toISOString());
+    expect(requests[0].pathname).toMatch(/\/balance_read$/);
+    expect(requests[0].searchParams.has("date")).toBe(false);
+    await repo.balance("2020-10-01T00:00:00+08:00");
+    expect(requests[1].pathname).toMatch(/\/balance_history_read$/);
+    expect(requests[1].searchParams.get("date")).toBe("eq.2020-09-30");
   });
   it("preserves sub-millisecond report boundaries", async () => {
     const { repo, requests } = mockApi(() => ({
@@ -188,9 +205,9 @@ describe("read views", () => {
     expect(result.quality.coverage_start).toBeNull();
     expect(new Set(requests.map((r) => r.pathname.split("/").at(-1)))).toEqual(
       new Set([
-        "balance_sheet",
+        "balance_history_read",
         "income_statement",
-        "cashflow_statement",
+        "cashflow_read",
         "transactions",
       ]),
     );

@@ -83,6 +83,8 @@ export type HomeSnapshot = Pick<
   pending: number;
   cash_configured: boolean;
   cash: Pick<Overview, "cash_in" | "cash_out" | "cash_net">;
+  month_cash?: Pick<Overview, "cash_in" | "cash_out" | "cash_net">;
+  month_cash_bars?: import("./cashflow").CashBar[];
   balance_trend?: string[];
   cash_bars?: import("./cashflow").CashBar[];
   recent: (Pick<

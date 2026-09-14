@@ -77,16 +77,27 @@ export function createRepository(getToken: () => Promise<string>) {
       if (page.length < 1000) return result;
     }
   }
+  function balanceRows(asOf: string, select: string) {
+    // Midnight is a closing-day boundary. Intraday current queries use the latest MV.
+    const date = new Date(Date.parse(asOf) + 8 * 3600000).toISOString();
+    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+    if (date.slice(0, 10) >= today && date.slice(11, 23) !== "00:00:00.000")
+      return db.from("balance_read").select(select);
+    const closingDate = new Date(Date.parse(asOf) + 8 * 3600000 - 1)
+      .toISOString()
+      .slice(0, 10);
+    return db
+      .from("balance_history_read")
+      .select(select)
+      .eq("date", closingDate);
+  }
   async function balanceTotals(asOf: string) {
     const row = await read<Record<string, string | null>>(
-      db
-        .from("balance_sheet")
-        .select(
-          sums("assets", "liabilities", "net_assets") +
-            ",cash_closing:cash_balance::numeric.sum()::text",
-        )
-        .lt("occurred_at", asOf)
-        .single(),
+      balanceRows(
+        asOf,
+        sums("assets", "liabilities", "net_assets") +
+          ",cash_closing:cash_balance::numeric.sum()::text",
+      ).single(),
     );
     return {
       assets: row.assets ?? "0",
@@ -102,7 +113,7 @@ export function createRepository(getToken: () => Promise<string>) {
       cash_net: string | null;
     }>(
       db
-        .from("cashflow_statement")
+        .from("cashflow_read")
         .select(
           "cash_in:inflow::numeric.sum()::text,cash_out:outflow::numeric.sum()::text,cash_net:net::numeric.sum()::text",
         )
@@ -126,14 +137,11 @@ export function createRepository(getToken: () => Promise<string>) {
       balance: () => balanceTotals(cutoff),
       accounts: () =>
         allRows<Overview["accounts"][number]>(() =>
-          before(
-            "balance_sheet",
-            "id:account_id,name,type,subtype," + sums("balance"),
-          )
+          balanceRows(cutoff, "id,name,type,subtype,balance")
             .order("type")
             .order("subtype")
             .order("name")
-            .order("account_id"),
+            .order("id"),
         ),
       income: () =>
         read<Record<string, string | null>>(
@@ -159,17 +167,43 @@ export function createRepository(getToken: () => Promise<string>) {
       cashCategories: () =>
         allRows<Overview["cash_categories"][number]>(() =>
           period(
-            "cashflow_statement",
+            "cashflow_read",
             "name:category," + sums("inflow", "outflow"),
           ).order("category"),
         ),
-      opening: () =>
-        read<{ cash_opening: string | null }>(
+      opening: async () => ({
+        cash_opening: (await balanceTotals(effectiveEnd(start, cutoff)))
+          .cash_closing,
+      }),
+      balanceHistory: () =>
+        allRows<{
+          date: string;
+          assets: string;
+          liabilities: string;
+          net_assets: string;
+        }>(() =>
           db
-            .from("balance_sheet")
-            .select("cash_opening:cash_balance::numeric.sum()::text")
-            .lt("occurred_at", effectiveEnd(start, cutoff))
-            .single(),
+            .from("balance_history_read")
+            .select("date," + sums("assets", "liabilities", "net_assets"))
+            .gte(
+              "date",
+              new Date(Date.parse(start) + 8 * 3600000)
+                .toISOString()
+                .slice(0, 10),
+            )
+            .lte(
+              "date",
+              new Date(Date.parse(cutoff) + 8 * 3600000 - 1)
+                .toISOString()
+                .slice(0, 10),
+            )
+            .order("date"),
+        ),
+      cashDaily: () =>
+        allRows<{ date: string; inflow: string; outflow: string }>(() =>
+          period("cashflow_read", "date," + sums("inflow", "outflow")).order(
+            "date",
+          ),
         ),
       quality: () =>
         read<Overview["quality"]>(
@@ -204,8 +238,8 @@ export function createRepository(getToken: () => Promise<string>) {
         db
           .from("home")
           .select(
-            "as_of,start,future_end,assets,liabilities,net_assets,income,expense,profit,pending,cash_configured,cash,recent" +
-              (charts ? ",balance_trend,cash_bars" : ""),
+            "as_of,start,future_end,assets,liabilities,net_assets,income,expense,profit,pending,cash_configured,cash,month_cash" +
+              (charts ? ",balance_trend,cash_bars,month_cash_bars" : ""),
           )
           .single(),
       );
@@ -251,6 +285,8 @@ export function createRepository(getToken: () => Promise<string>) {
         query = query.contains("account_ids", [Number(filters.account_id)]);
       if (filters.account_type)
         query = query.contains("account_types", [filters.account_type]);
+      if (filters.matched === "true")
+        query = query.eq("missing_accounts", 0).gt("entry_count", 0);
       if (filters.cash === "true") query = query.eq("has_cash_flow", true);
       if (cursor) {
         if (

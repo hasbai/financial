@@ -1,6 +1,18 @@
 # 完成情况
 
-2026-09-14 更新。生产已具备四类查询视图；本轮单请求首页修复尚未部署，生产版本核验见此前记录。
+2026-09-15 更新。余额历史数据库迁移已应用生产；前端源码完成，生产 Data API 新对象缓存仍有 PGRST205，尚未发布 Worker。
+
+## 2026-09-15 Balance 与每日历史统计
+
+- 接入用户现有 balance 物化视图及 cashflow，停止查询已删除的 balance_sheet/cashflow_statement。保留 balance 原定义；新 balance_history 沿用同笔科目齐全规则，按北京时间每日累计并补齐无交易日，只计算至维护当天。用户更新后的 cashflow 排除零净额转账，测试已适配。
+- 新增005迁移及 refresh-balances 维护脚本。save_transaction/save_account 在整笔保存结束后全量刷新两个MV；批量直接维护后可一次性手动刷新。不创建定时任务、基表字段或触发器。物化视图本体不对客户端授权，固定search_path身份保护函数加security_invoker包装视图保留本人sub/issuer/audience隔离。
+- 首页仅统计，移除最近逐笔交易；现金默认所选月份，保留未来30天。现金/余额/损益面板提供逐日下钻；现金日内首尾裁剪保持与统计一致，余额下钻使用已匹配科目范围。金额隐藏同时隐藏图表和日表，当前首页仍单GET。
+- 生产副本最终验证分支：financial-balance-validation-final-20260915 / br-wandering-cloud-b3czr9xh。数据库基础37项、余额历史46项、首页8项全部通过；真实Auth0 PKCE JWT check-api/check-home-api通过。全部数据库测试写入回滚。
+- pnpm typecheck、pnpm test（10文件71项）、pnpm build、git diff --check通过。包含当前MV/历史日末读取、精确现金边界、每日下钻、隐藏金额、按需请求、失败重试。深浅色、窄屏布局和键盘入口按源码及DOM复核，未进行浏览器/真机视觉验收。
+- 生产005已单事务应用。balance_history共4750行、50科目、2026-06-13至2026-09-15共95日，每科目无日期缺口；当次最新历史与balance逐科目一致。原表行数和内容指纹不变：account 86/70412c04ef6e1aa2e97c0625fba82c2a，transaction 548/31b7950045bf92edb7ce1e97e0025b6f，entry 1012/e2a847d710d8664497e39b4cf8eaf17d。未复制开发数据覆盖生产。
+- **生产API未通过稳定验收**：check-api曾完整通过，check-home-api和原始请求反复出现PGRST205（home/balance_read/cashflow_read）。已确认Vite和实际请求均使用生产endpoint ep-long-dew-b3q1him6；SQL NOTIFY及Data API db_schemas原值重新提交仍未恢复稳定。原公开配置、身份及schema集合未改变；错误audience依然无法读业务数据。不可将一次成功请求当作全部接口稳定可用。
+- **未发布Worker**。待生产Neon Data API缓存问题消除后，重新运行生产check-home-api，再按发布授权部署前端。未重启共享数据库、删除分支或修改Auth0配置。
+- 原始验证证据：/tmp/financial-front-validation/accepted-*.log、/tmp/financial-balance-validation-final-20260915/results.log、/tmp/financial-production-balance-20260915/precheck.txt。
 
 ## 2026-09-14 首页合并为一次业务请求
 

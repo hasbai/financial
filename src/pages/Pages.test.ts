@@ -201,15 +201,17 @@ it("passes the report period and cash scope through drilldown", async () => {
     expect.any(String),
   );
 });
-it("defaults to recorded future cash flows and drills into exactly thirty days", async () => {
+it("selects recorded future cash flows and drills into exactly thirty days", async () => {
   setup("overview");
+  await screen.findByText("本期净流入");
+  await fireEvent.click(screen.getByRole("button", { name: "未来 30 天" }));
   await screen.findByText("未来 30 天净流入");
   expect(
     screen
       .getByRole("button", { name: "未来 30 天" })
       .getAttribute("aria-pressed"),
   ).toBe("true");
-  await screen.findByRole("img", { name: /现金流入与流出分组柱状图/ });
+  await screen.findByRole("img", { name: /每日现金流入与流出柱状图/ });
   await fireEvent.click(screen.getByRole("button", { name: "查看流水" }));
   const params = new URLSearchParams(router.location.search);
   expect(
@@ -226,9 +228,11 @@ it("shows an empty future period without inventing a forecast", async () => {
       cash_net: "0",
     });
   });
+  await screen.findByText("本期净流入");
+  await fireEvent.click(screen.getByRole("button", { name: "未来 30 天" }));
   await screen.findByText("暂无现金流");
   expect(
-    screen.queryByRole("img", { name: /现金流入与流出分组柱状图/ }),
+    screen.queryByRole("img", { name: /每日现金流入与流出柱状图/ }),
   ).toBeNull();
 });
 it("keeps a future query failure distinct from a zero cash flow", async () => {
@@ -238,6 +242,8 @@ it("keeps a future query failure distinct from a zero cash flow", async () => {
   await screen.findByText("未来现金流加载失败");
   expect(screen.queryByText("暂无现金流")).toBeNull();
   await fireEvent.click(screen.getByRole("button", { name: "重试" }));
+  await screen.findByText("本期净流入");
+  await fireEvent.click(screen.getByRole("button", { name: "未来 30 天" }));
   await screen.findByText("未来 30 天净流入");
   expect(api.home).toHaveBeenCalledTimes(2);
 });
@@ -292,4 +298,29 @@ it("clears all filters through the Bits UI select", async () => {
   );
   await fireEvent.click(screen.getByRole("button", { name: "清空全部筛选" }));
   await waitFor(() => expect(router.location.search).toBe(""));
+});
+
+it("keeps transaction details off the homepage and offers day-specific cash and balance links", async () => {
+  setup("overview");
+  await screen.findByText("本期净流入");
+  expect(screen.queryByRole("region", { name: "最近交易" })).toBeNull();
+  expect(screen.queryByRole("table")).toBeNull();
+  await fireEvent.click(screen.getByRole("button", { name: "现金流量" }));
+  const cashTable = await screen.findByRole("table", { name: "现金流明细" });
+  const cashLink = within(cashTable).getByRole("link");
+  const params = new URL(cashLink.getAttribute("href")!, "https://example.com")
+    .searchParams;
+  expect(params.get("cash")).toBe("true");
+  expect(
+    Date.parse(params.get("end")!) - Date.parse(params.get("start")!),
+  ).toBe(86400000);
+  await fireEvent.click(screen.getByRole("button", { name: "资产负债" }));
+  const balances = await screen.findByRole("region", { name: "每日余额" });
+  expect(
+    within(balances)
+      .getByRole("link", { name: "2026-09-01" })
+      .getAttribute("href"),
+  ).toContain("start=");
+  await fireEvent.click(screen.getByRole("button", { name: "隐藏金额" }));
+  expect(screen.queryByRole("region", { name: "每日余额" })).toBeNull();
 });

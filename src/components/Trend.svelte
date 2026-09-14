@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Overview } from "$lib/types";
+  import { dayLink } from "$lib/cashflow";
   import { money } from "$lib/finance";
   let { data }: { data: Overview["trend"] } = $props();
   let max = $derived(
@@ -74,9 +75,24 @@
           ><tr><th class="py-2">日期</th><th>收入</th><th>支出</th></tr></thead
         ><tbody
           >{#each data as d}<tr class="border-t"
-              ><td class="py-2">{d.date}</td><td class="money"
-                >{money(d.income)}</td
-              ><td class="money">{money(d.expense)}</td></tr
+              ><td class="py-2"
+                ><a
+                  class="inline-flex min-h-12 items-center text-primary underline"
+                  href={dayLink(d.date)}>{d.date}</a
+                ></td
+              ><td class="money"
+                ><a
+                  class="inline-flex min-h-12 items-center"
+                  href={dayLink(d.date, { account_type: "收入" })}
+                  >{money(d.income)}</a
+                ></td
+              ><td class="money"
+                ><a
+                  class="inline-flex min-h-12 items-center"
+                  href={dayLink(d.date, { account_type: "支出" })}
+                  >{money(d.expense)}</a
+                ></td
+              ></tr
             >{/each}</tbody
         >
       </table>

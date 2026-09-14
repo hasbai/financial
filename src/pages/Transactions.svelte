@@ -314,6 +314,11 @@
         <Button variant="ghost" onclick={clear}>清空全部筛选</Button>
       </Card.Content></Card.Root
     >{/if}
+  {#if params.get("matched") === "true"}<Button
+      variant="outline"
+      onclick={() => update("matched", "")}
+      >科目已匹配<X aria-hidden="true" /></Button
+    >{/if}
   {#if query.isPending}<Loading />{:else if query.error}<Failure
       error={query.error}
       retry={() => query.refetch()}
