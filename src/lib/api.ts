@@ -115,7 +115,89 @@ export function createRepository(getToken: () => Promise<string>) {
       cash_net: row.cash_net ?? "0",
     };
   }
+  function reportQueries(start: string, end: string, asOf: string) {
+    const cutoff = effectiveEnd(end, asOf);
+    const before = (view: string, select: string) =>
+      db.from(view).select(select).lt("occurred_at", cutoff);
+    const period = (view: string, select: string) =>
+      before(view, select).gte("occurred_at", start);
+    return {
+      balance: () => balanceTotals(cutoff),
+      accounts: () =>
+        allRows<Overview["accounts"][number]>(() =>
+          before(
+            "balance_sheet",
+            "id:account_id,name,type,subtype," + sums("balance"),
+          )
+            .order("type")
+            .order("subtype")
+            .order("name")
+            .order("account_id"),
+        ),
+      income: () =>
+        read<Record<string, string | null>>(
+          period(
+            "income_statement",
+            sums("income", "expense", "profit"),
+          ).single(),
+        ),
+      categories: () =>
+        allRows<Overview["categories"][number]>(() =>
+          period("income_statement", "name:subtype,type," + sums("amount"))
+            .in("type", ["收入", "支出"])
+            .order("type")
+            .order("subtype"),
+        ),
+      trend: () =>
+        allRows<Overview["trend"][number]>(() =>
+          period("income_statement", "date," + sums("income", "expense")).order(
+            "date",
+          ),
+        ),
+      cash: () => cashTotals(start, end, asOf),
+      cashCategories: () =>
+        allRows<Overview["cash_categories"][number]>(() =>
+          period(
+            "cashflow_statement",
+            "name:category," + sums("inflow", "outflow"),
+          ).order("category"),
+        ),
+      opening: () =>
+        read<{ cash_opening: string | null }>(
+          db
+            .from("balance_sheet")
+            .select("cash_opening:cash_balance::numeric.sum()::text")
+            .lt("occurred_at", effectiveEnd(start, cutoff))
+            .single(),
+        ),
+      quality: () =>
+        read<Overview["quality"]>(
+          before(
+            "transactions",
+            "pending:pending_count.sum(),missing_entries:missing_entry_count.sum(),missing_accounts:missing_account_count.sum(),posted:posted_count.sum(),coverage_start:occurred_at.min()",
+          ).single(),
+        ),
+      periodQuality: () =>
+        read<{ pending: number | null }>(
+          period("transactions", "pending:pending_count.sum()").single(),
+        ),
+    };
+  }
+  async function report<K extends keyof ReturnType<typeof reportQueries>>(
+    part: K,
+    start: string,
+    end: string,
+    asOf: string,
+  ): Promise<Awaited<ReturnType<ReturnType<typeof reportQueries>[K]>>> {
+    const result = await reportQueries(start, end, asOf)[part]();
+    if (part === "categories")
+      (result as Overview["categories"]).sort((a, b) =>
+        new Decimal(b.amount).comparedTo(a.amount),
+      );
+    return result as Awaited<ReturnType<ReturnType<typeof reportQueries>[K]>>;
+  }
   return {
+    report,
     async accounts() {
       const { data, error } = await db
         .from("account")
@@ -127,7 +209,9 @@ export function createRepository(getToken: () => Promise<string>) {
       if (error) throw new ApiError(error.code, error.message);
       return data as Account[];
     },
-    async list(filters: Filters, cursor: Cursor): Promise<Page> {
+    async list(filters: Filters, cursor: Cursor, pageSize = 30): Promise<Page> {
+      if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 30)
+        throw new ApiError("VALIDATION", "分页大小无效");
       let query = db.from("transactions").select(transactionColumns);
       if (filters.start) query = query.gte("occurred_at", filters.start);
       if (filters.end) query = query.lt("occurred_at", filters.end);
@@ -165,14 +249,14 @@ export function createRepository(getToken: () => Promise<string>) {
         query
           .order("occurred_at", { ascending: false })
           .order("id", { ascending: false })
-          .limit(31),
+          .limit(pageSize + 1),
       );
-      const items = rows.slice(0, 30);
+      const items = rows.slice(0, pageSize);
       const last = items.at(-1);
       return {
         items,
         next_cursor:
-          rows.length > 30 && last
+          rows.length > pageSize && last
             ? { occurred_at: last.occurred_at, id: last.id }
             : null,
       };
@@ -194,10 +278,7 @@ export function createRepository(getToken: () => Promise<string>) {
       asOf: string,
     ): Promise<Overview> {
       const cutoff = effectiveEnd(end, asOf);
-      const before = (view: string, select: string) =>
-        db.from(view).select(select).lt("occurred_at", cutoff);
-      const period = (view: string, select: string) =>
-        before(view, select).gte("occurred_at", start);
+      const queries = reportQueries(start, end, asOf);
       const [
         balance,
         accounts,
@@ -210,57 +291,16 @@ export function createRepository(getToken: () => Promise<string>) {
         quality,
         periodQuality,
       ] = await Promise.all([
-        balanceTotals(cutoff),
-        allRows<Overview["accounts"][number]>(() =>
-          before(
-            "balance_sheet",
-            "id:account_id,name,type,subtype," + sums("balance"),
-          )
-            .order("type")
-            .order("subtype")
-            .order("name")
-            .order("account_id"),
-        ),
-        read<Record<string, string | null>>(
-          period(
-            "income_statement",
-            sums("income", "expense", "profit"),
-          ).single(),
-        ),
-        allRows<Overview["categories"][number]>(() =>
-          period("income_statement", "name:subtype,type," + sums("amount"))
-            .in("type", ["收入", "支出"])
-            .order("type")
-            .order("subtype"),
-        ),
-        allRows<Overview["trend"][number]>(() =>
-          period("income_statement", "date," + sums("income", "expense")).order(
-            "date",
-          ),
-        ),
-        cashTotals(start, end, asOf),
-        allRows<Overview["cash_categories"][number]>(() =>
-          period(
-            "cashflow_statement",
-            "name:category," + sums("inflow", "outflow"),
-          ).order("category"),
-        ),
-        read<{ cash_opening: string | null }>(
-          db
-            .from("balance_sheet")
-            .select("cash_opening:cash_balance::numeric.sum()::text")
-            .lt("occurred_at", effectiveEnd(start, cutoff))
-            .single(),
-        ),
-        read<Overview["quality"]>(
-          before(
-            "transactions",
-            "pending:pending_count.sum(),missing_entries:missing_entry_count.sum(),missing_accounts:missing_account_count.sum(),posted:posted_count.sum(),coverage_start:occurred_at.min()",
-          ).single(),
-        ),
-        read<{ pending: number | null }>(
-          period("transactions", "pending:pending_count.sum()").single(),
-        ),
+        queries.balance(),
+        queries.accounts(),
+        queries.income(),
+        queries.categories(),
+        queries.trend(),
+        queries.cash(),
+        queries.cashCategories(),
+        queries.opening(),
+        queries.quality(),
+        queries.periodQuality(),
       ]);
       return {
         as_of: cutoff,
@@ -308,7 +348,7 @@ function sums(...columns: string[]) {
     .map((column) => `${column}:${column}::numeric.sum()::text`)
     .join(",");
 }
-function effectiveEnd(end: string, asOf: string) {
+export function effectiveEnd(end: string, asOf: string) {
   // Preserve PostgreSQL microseconds even when both boundaries share one JS millisecond.
   const micros = (value: string) => {
     const fraction = value.match(/\.(\d+)(?:Z|[+-]\d{2}:?\d{2})$/i)?.[1] ?? "";

@@ -1,22 +1,31 @@
 <script lang="ts">
-  import { createQuery } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import { useApi } from "$lib/context";
-  let { start, end }: { start: string; end: string } = $props();
+  let { start, end, closing }: { start: string; end: string; closing: string } =
+    $props();
   const api = useApi();
+  const cache = useQueryClient();
   const query = createQuery(() => ({
     queryKey: ["overview", "balance-trend", start, end],
     queryFn: () =>
       Promise.all(
-        Array.from({ length: 6 }, (_, i) => {
+        Array.from({ length: 5 }, (_, i) => {
           const at = new Date(
             Date.parse(start) + ((Date.parse(end) - Date.parse(start)) * i) / 5,
           ).toISOString();
-          return api.balance(at).then((r) => r.net_assets);
+          return cache
+            .fetchQuery({
+              queryKey: ["overview", "balance", null, at],
+              queryFn: () => api.balance(at),
+              staleTime: 300_000,
+            })
+            .then((r) => r.net_assets);
         }),
       ),
+    enabled: Date.parse(end) > Date.parse(start),
     staleTime: 300_000,
   }));
-  let values = $derived(query.data?.map(Number) ?? []);
+  let values = $derived(query.data ? [...query.data, closing].map(Number) : []);
   let low = $derived(Math.min(...values));
   let span = $derived(Math.max(1, Math.max(...values) - low));
   let points = $derived(

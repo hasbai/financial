@@ -1,0 +1,209 @@
+import { afterEach, expect, it, vi } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
+import { QueryClient } from "@tanstack/svelte-query";
+import Harness from "../test/Harness.svelte";
+import { createRepository } from "../lib/api";
+import { router } from "../lib/router.svelte";
+import { accounts, transaction, overview } from "../test/fixtures";
+
+const clients: QueryClient[] = [];
+afterEach(() => {
+  cleanup();
+  clients.splice(0).forEach((cache) => cache.clear());
+  vi.unstubAllGlobals();
+});
+
+function setup(
+  page: "overview" | "transactions" = "overview",
+  hidden = false,
+  path?: string,
+) {
+  const requests: URL[] = [];
+  let failCategories = false;
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    requests.push(url);
+    const view = url.pathname.split("/").at(-1);
+    const select = url.searchParams.get("select") ?? "";
+    if (failCategories && select.startsWith("name:subtype"))
+      return new Response(
+        JSON.stringify({ code: "503", message: "分类加载失败" }),
+        { status: 503 },
+      );
+    const data =
+      view === "account"
+        ? accounts
+        : view === "transactions"
+          ? select.startsWith("id,")
+            ? [transaction]
+            : overview.quality
+          : select.startsWith("id:account_id")
+            ? overview.accounts
+            : select.startsWith("name:subtype")
+              ? overview.categories
+              : select.startsWith("date,")
+                ? overview.trend
+                : view === "cashflow_statement"
+                  ? { cash_in: "0", cash_out: "0", cash_net: "0" }
+                  : overview;
+    return new Response(JSON.stringify(data), {
+      headers: { "content-type": "application/json" },
+    });
+  });
+  const api = createRepository(async () => "test-token");
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
+  });
+  clients.push(cache);
+  router.navigate(
+    path ?? (page === "overview" ? "/" : "/transactions"),
+    true,
+    true,
+  );
+  const rendered = render(Harness, { api, cache, page, hidden });
+  return {
+    ...rendered,
+    requests,
+    cache,
+    failCategories: (value: boolean) => {
+      failCategories = value;
+    },
+  };
+}
+const selects = (requests: URL[]) =>
+  requests.map((r) => r.searchParams.get("select") ?? "");
+
+it("loads only home data, reuses the closing balance, and fetches panel details on demand", async () => {
+  const { requests } = setup();
+  await screen.findByText("暂无现金流");
+  await waitFor(() =>
+    expect(document.querySelector("svg polyline")).toBeTruthy(),
+  );
+  expect(requests).toHaveLength(11);
+  expect(new Set(requests.map(String)).size).toBe(requests.length);
+  expect(
+    selects(requests).some((s) =>
+      /^(id:account_id|name:subtype|date,|name:category|cash_opening)/.test(s),
+    ),
+  ).toBe(false);
+  expect(
+    requests
+      .find((r) => r.searchParams.get("select")?.startsWith("id,occurred_at"))
+      ?.searchParams.get("limit"),
+  ).toBe("4");
+
+  const before = requests.length;
+  await fireEvent.click(screen.getByRole("button", { name: "资产负债" }));
+  await screen.findByRole("region", { name: "科目余额" });
+  expect(requests).toHaveLength(before + 1);
+  expect(selects(requests.slice(before))[0]).toMatch(/^id:account_id/);
+  await fireEvent.click(screen.getByRole("button", { name: "损益" }));
+  await screen.findByRole("region", { name: "损益明细" });
+  expect(requests).toHaveLength(before + 3);
+  expect(
+    selects(requests.slice(before + 1)).every((s) =>
+      /^(name:subtype|date,)/.test(s),
+    ),
+  ).toBe(true);
+  await fireEvent.click(screen.getByRole("button", { name: "总览" }));
+  await screen.findByText("暂无现金流");
+  expect(requests).toHaveLength(before + 3);
+  await fireEvent.click(screen.getByRole("button", { name: "所选月份" }));
+  await screen.findByText("本期净流入");
+  expect(requests).toHaveLength(before + 4);
+});
+
+it("does not request charts when amounts are hidden", async () => {
+  const { requests } = setup("overview", true);
+  await screen.findByText("未来 30 天净流入");
+  expect(requests).toHaveLength(6);
+  expect(document.body.textContent).not.toContain("¥");
+  await fireEvent.click(screen.getByRole("button", { name: "损益" }));
+  await screen.findByRole("region", { name: "损益明细" });
+  expect(selects(requests).some((s) => s.startsWith("date,"))).toBe(false);
+});
+
+it("loads only list, account labels and monthly income/cash/trend on direct list navigation", async () => {
+  const { requests } = setup("transactions");
+  await screen.findByRole("region", { name: "月度收支" });
+  await screen.findByText("示例消费");
+  expect(requests).toHaveLength(5);
+  expect(requests.some((r) => r.pathname.endsWith("balance_sheet"))).toBe(
+    false,
+  );
+  expect(
+    selects(requests).some((s) => /^(name:|pending:|cash_opening)/.test(s)),
+  ).toBe(false);
+});
+
+it("does not load the covered transaction page on a direct editor route", async () => {
+  const { requests } = setup("transactions", false, "/transactions/7");
+  await screen.findByRole("heading", { name: "交易流水" });
+  expect(requests).toHaveLength(0);
+});
+
+it("shares fresh reports across pages and refreshes visible reports after invalidation", async () => {
+  const { requests, rerender, cache } = setup();
+  await screen.findByText("暂无现金流");
+  await waitFor(() =>
+    expect(document.querySelector("svg polyline")).toBeTruthy(),
+  );
+  const before = requests.length;
+  router.navigate("/transactions", true, true);
+  await rerender({ page: "transactions" });
+  await screen.findByRole("region", { name: "月度收支" });
+  await screen.findByText("示例消费");
+  // Shared accounts and income are fresh. Only list, monthly cash and trend load.
+  expect(requests).toHaveLength(before + 3);
+  const start = requests.length;
+  await cache.invalidateQueries({
+    predicate: (q) =>
+      ["overview", "transactions"].includes(String(q.queryKey[0])),
+  });
+  expect(requests).toHaveLength(start + 4);
+  expect(
+    requests.slice(start).some((r) => r.pathname.endsWith("balance_sheet")),
+  ).toBe(false);
+});
+
+it("keeps failed lazy details separate and retries only the failed query", async () => {
+  const view = setup();
+  await screen.findByText("暂无现金流");
+  view.failCategories(true);
+  await fireEvent.click(screen.getByRole("button", { name: "损益" }));
+  await screen.findByText("分类加载失败");
+  const before = view.requests.length;
+  view.failCategories(false);
+  await fireEvent.click(screen.getByRole("button", { name: "重试" }));
+  await screen.findByRole("region", { name: "损益明细" });
+  expect(view.requests).toHaveLength(before + 1);
+  expect(selects(view.requests.slice(before))[0]).toMatch(/^name:subtype/);
+});
+
+it("changing a month loads only the selected panel and preserves the cash period selection", async () => {
+  const { requests } = setup();
+  await screen.findByText("暂无现金流");
+  await fireEvent.click(screen.getByRole("button", { name: "现金流量" }));
+  await fireEvent.click(screen.getByRole("button", { name: "所选月份" }));
+  await screen.findByText("本期净流入");
+  const before = requests.length;
+  await fireEvent.change(screen.getAllByLabelText("报表月份")[0], {
+    target: { value: "2025-01" },
+  });
+  await screen.findByText("本期净流入");
+  expect(requests).toHaveLength(before + 2);
+  expect(
+    requests.slice(before).some((r) => r.pathname.endsWith("balance_sheet")),
+  ).toBe(false);
+  expect(
+    screen
+      .getByRole("button", { name: "所选月份" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+});

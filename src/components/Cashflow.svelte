@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createQuery } from "@tanstack/svelte-query";
+  import { createQuery, useQueryClient } from "@tanstack/svelte-query";
   import {
     ArrowDownLeft,
     ArrowUpRight,
@@ -11,7 +11,7 @@
   import { useApi, useAccounts } from "$lib/context";
   import { money } from "$lib/finance";
   import { loadCashBars, nextThirtyDays, type CashPeriod } from "$lib/cashflow";
-  import type { Overview } from "$lib/types";
+  import { useReport, reportStaleTime } from "$lib/reports";
   import { router } from "$lib/router.svelte";
   import CashBars from "./CashBars.svelte";
   import Loading from "./Loading.svelte";
@@ -19,14 +19,20 @@
   import Empty from "./Empty.svelte";
   let {
     hidden,
-    report,
+    asOf,
     range,
     now,
-  }: { hidden: boolean; report: Overview; range: CashPeriod; now: string } =
-    $props();
+    mode = $bindable<"future" | "month">("future"),
+  }: {
+    hidden: boolean;
+    asOf: string;
+    range: CashPeriod;
+    now: string;
+    mode?: "future" | "month";
+  } = $props();
   const api = useApi();
+  const cache = useQueryClient();
   const accounts = useAccounts();
-  let mode = $state<"future" | "month">("future");
   let configured = $derived(
     !!accounts.data?.some(
       (a) => a.type === "资产" && a.subtype === "现金及等价物",
@@ -34,23 +40,41 @@
   );
   let future = $derived(nextThirtyDays(now));
   let selected = $derived(
-    mode === "future" ? future : { start: range.start, end: report.as_of },
+    mode === "future" ? future : { start: range.start, end: asOf },
   );
   const futureQuery = createQuery(() => ({
-    queryKey: ["overview", "future-cash", future.start, future.end],
+    queryKey: ["overview", "cash", future.start, future.end],
     queryFn: () => api.cashflow(future.start, future.end, future.end),
-    enabled: configured,
-    staleTime: 300_000,
+    enabled: configured && mode === "future",
+    staleTime: reportStaleTime,
   }));
-  let summary = $derived(mode === "future" ? futureQuery.data : report);
+  const monthQuery = useReport(
+    "cash",
+    () => ({ ...range, asOf }),
+    () => configured && mode === "month",
+  );
+  let selectedQuery = $derived(mode === "future" ? futureQuery : monthQuery);
+  let summary = $derived(selectedQuery.data);
   let empty = $derived(
     summary && Number(summary.cash_in) === 0 && Number(summary.cash_out) === 0,
   );
   const bars = createQuery(() => ({
     queryKey: ["overview", "cash-bars", selected.start, selected.end],
-    queryFn: () => loadCashBars(api, selected, selected.end),
+    queryFn: () =>
+      loadCashBars(
+        {
+          cashflow: (start, end, asOf) =>
+            cache.fetchQuery({
+              queryKey: ["overview", "cash", start, end],
+              queryFn: () => api.cashflow(start, end, asOf),
+              staleTime: reportStaleTime,
+            }),
+        },
+        selected,
+        selected.end,
+      ),
     enabled: configured && !!summary && !empty && !hidden,
-    staleTime: 300_000,
+    staleTime: reportStaleTime,
   }));
   function drilldown() {
     router.navigate(
@@ -94,9 +118,9 @@
   {:else if !configured}<Empty title="未设置现金账户"
       ><Button href="/accounts">设置账户</Button></Empty
     >
-  {:else if mode === "future" && futureQuery.error}<Failure
-      error={futureQuery.error}
-      retry={() => futureQuery.refetch()}
+  {:else if selectedQuery.error}<Failure
+      error={selectedQuery.error}
+      retry={() => selectedQuery.refetch()}
     />
   {:else if !summary}<Loading />
   {:else}

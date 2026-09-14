@@ -9,7 +9,7 @@ import {
 } from "@testing-library/svelte";
 import { QueryClient } from "@tanstack/svelte-query";
 import Harness from "../test/Harness.svelte";
-import { accounts, transaction, overview } from "../test/fixtures";
+import { accounts, transaction, overview, reportParts } from "../test/fixtures";
 import { router } from "../lib/router.svelte";
 import { currentMonth, monthRange } from "../lib/finance";
 import type { Repository } from "../lib/api";
@@ -88,16 +88,17 @@ function setup(
     list: vi
       .fn()
       .mockResolvedValue({ items: [transaction], next_cursor: null }),
-    balance: vi
-      .fn()
-      .mockResolvedValue({
-        assets: "100",
-        liabilities: "0",
-        net_assets: "100",
-        cash_closing: "100",
-      }),
+    balance: vi.fn().mockResolvedValue({
+      assets: "100",
+      liabilities: "0",
+      net_assets: "100",
+      cash_closing: "100",
+    }),
     cashflow: vi.fn().mockResolvedValue(overview),
     overview: vi.fn().mockResolvedValue(overview),
+    report: vi.fn(
+      async (part: keyof typeof reportParts) => reportParts[part],
+    ) as Repository["report"],
     transaction: vi.fn().mockResolvedValue(transaction),
     save: vi.fn(),
     saveAccount: vi.fn().mockResolvedValue(accounts[0]),
@@ -170,11 +171,12 @@ it("passes the report period and cash scope through drilldown", async () => {
   const range = monthRange(currentMonth());
   expect(Object.fromEntries(params)).toEqual({
     start: range.start,
-    end: overview.as_of,
+    end: expect.any(String),
     posted: "true",
     cash: "true",
   });
-  expect(api.overview).toHaveBeenCalledWith(
+  expect(api.report).toHaveBeenCalledWith(
+    "cash",
     range.start,
     range.end,
     expect.any(String),

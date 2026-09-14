@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { createInfiniteQuery, createQuery } from "@tanstack/svelte-query";
+  import { useReport, useReportTime } from "$lib/reports";
+  import { effectiveEnd } from "$lib/api";
+  import { createInfiniteQuery } from "@tanstack/svelte-query";
   import { SlidersHorizontal, Search, ChevronRight, X } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
   import { Badge } from "$lib/components/ui/badge";
@@ -26,7 +28,8 @@
   import { transactionMoney, transactionCategory } from "$lib/presentation";
   let { hidden }: { hidden: boolean } = $props();
   const api = useApi();
-  const accounts = useAccounts();
+  let visible = $derived(router.location.pathname === "/transactions");
+  const accounts = useAccounts(() => visible);
   let expanded = $state(false);
   let search = $state("");
   let params = $derived(new URLSearchParams(router.location.search));
@@ -35,7 +38,7 @@
   $effect(() => {
     search = new URLSearchParams(filterKey).get("search") || "";
   });
-  const now = new Date().toISOString();
+  const now = useReportTime();
   let summaryMonth = $derived(
     params.get("start") && Number.isFinite(Date.parse(params.get("start")!))
       ? new Date(params.get("start")!).toLocaleDateString("sv-SE", {
@@ -46,10 +49,26 @@
       : currentMonth(),
   );
   let summaryRange = $derived(monthRange(summaryMonth));
-  const summary = createQuery(() => ({
-    queryKey: ["overview", summaryMonth],
-    queryFn: () => api.overview(summaryRange.start, summaryRange.end, now),
-  }));
+  const period = () => ({ ...summaryRange, asOf: now });
+  const income = useReport("income", period, () => visible);
+  const cash = useReport("cash", period, () => visible);
+  const trend = useReport("trend", period, () => visible && !hidden);
+  let activeSummary = $derived([income, cash, ...(!hidden ? [trend] : [])]);
+  let summary = $derived({
+    isPending: activeSummary.some((q) => q.isPending),
+    error: activeSummary.find((q) => q.error)?.error,
+    refetch: () =>
+      Promise.all(
+        activeSummary.filter((q) => q.isError).map((q) => q.refetch()),
+      ),
+    data: {
+      as_of: effectiveEnd(summaryRange.end, now),
+      income: income.data?.income ?? "0",
+      expense: income.data?.expense ?? "0",
+      cash_net: cash.data?.cash_net ?? "0",
+      trend: trend.data ?? [],
+    },
+  });
   function setMonth(month: string) {
     if (!/^\d{4}-\d{2}$/.test(month)) return;
     const next = new URLSearchParams(params);
@@ -73,6 +92,7 @@
   const query = createInfiniteQuery(() => ({
     queryKey: ["transactions", filterKey],
     queryFn: ({ pageParam }) => api.list(filters, pageParam),
+    enabled: visible,
     initialPageParam: null as Cursor,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   }));

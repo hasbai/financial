@@ -10,10 +10,12 @@ export function useApi(): Repository {
   if (!api) throw new Error("Missing API provider");
   return api;
 }
-export function useAccounts() {
+export function useAccounts(enabled: () => boolean = () => true) {
   const api = useApi();
   return createQuery(() => ({
     queryKey: ["accounts"],
     queryFn: () => api.accounts(),
+    staleTime: 30_000,
+    enabled: enabled(),
   }));
 }

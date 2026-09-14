@@ -58,3 +58,16 @@ export const overview: Overview = {
     generated_at: "2026-09-13T00:00:00Z",
   },
 };
+
+export const reportParts = {
+  balance: overview,
+  accounts: overview.accounts,
+  income: overview,
+  categories: overview.categories,
+  trend: overview.trend,
+  cash: overview,
+  cashCategories: overview.cash_categories,
+  opening: overview,
+  quality: overview.quality,
+  periodQuality: { pending: overview.quality.period_pending },
+};

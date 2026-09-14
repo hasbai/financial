@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { useReport, useReportTime, reportStaleTime } from "$lib/reports";
+  import { effectiveEnd } from "$lib/api";
   import { createQuery } from "@tanstack/svelte-query";
   import {
     Bell,
@@ -33,18 +35,58 @@
   let masked = $derived(hidden || localHidden);
   let month = $state(currentMonth());
   let view = $state("overview");
+  let cashMode = $state<"future" | "month">("future");
   const api = useApi();
   const accounts = useAccounts();
-  const now = new Date().toISOString();
+  const now = useReportTime();
   let range = $derived(monthRange(month));
-  const query = createQuery(() => ({
-    queryKey: ["overview", month],
-    queryFn: () => api.overview(range.start, range.end, now),
-  }));
-  let data = $derived(query.data);
+  let cutoff = $derived(effectiveEnd(range.end, now));
+  const period = () => ({ ...range, asOf: now });
+  const balance = useReport(
+    "balance",
+    period,
+    () => view === "overview" || view === "assets",
+  );
+  const income = useReport(
+    "income",
+    period,
+    () => view === "overview" || view === "profit",
+  );
+  const quality = useReport("quality", period);
+  const balances = useReport("accounts", period, () => view === "assets");
+  const categories = useReport("categories", period, () => view === "profit");
+  const trend = useReport("trend", period, () => view === "profit" && !masked);
+  let active = $derived([
+    quality,
+    ...(view === "overview" || view === "assets" ? [balance] : []),
+    ...(view === "overview" || view === "profit" ? [income] : []),
+    ...(view === "assets" ? [balances] : []),
+    ...(view === "profit" ? [categories, ...(!masked ? [trend] : [])] : []),
+  ]);
+  let query = $derived({
+    isPending: active.some((q) => q.isPending),
+    error: active.find((q) => q.error)?.error,
+    refetch: () =>
+      Promise.all(active.filter((q) => q.isError).map((q) => q.refetch())),
+  });
+  let data = $derived({
+    as_of: cutoff,
+    net_assets: balance.data?.net_assets ?? "0",
+    assets: balance.data?.assets ?? "0",
+    liabilities: balance.data?.liabilities ?? "0",
+    income: income.data?.income ?? "0",
+    expense: income.data?.expense ?? "0",
+    profit: income.data?.profit ?? "0",
+    quality: { pending: quality.data?.pending ?? 0 },
+    accounts: balances.data ?? [],
+    categories: categories.data ?? [],
+    trend: trend.data ?? [],
+  });
   const recent = createQuery(() => ({
-    queryKey: ["transactions", "recent"],
-    queryFn: () => api.list({}, null),
+    queryKey: ["transactions", "recent", 3],
+    queryFn: () => api.list({}, null, 3),
+    enabled: view === "overview",
+    staleTime: reportStaleTime,
   }));
   function down(filters: Record<string, string>) {
     router.navigate(
@@ -79,7 +121,9 @@
         variant="ghost"
         size="icon"
         class="relative"
-        aria-label={data ? `待补录 ${data.quality.pending} 笔` : "待补录"}
+        aria-label={quality.data
+          ? `待补录 ${data.quality.pending} 笔`
+          : "待补录"}
         ><Bell
           class="size-6"
           aria-hidden="true"
@@ -148,7 +192,11 @@
         {#if !masked}<div
             class="pointer-events-none absolute right-0 bottom-0 w-1/2 opacity-65"
           >
-            <BalanceSparkline start={range.start} end={data.as_of} />
+            <BalanceSparkline
+              start={range.start}
+              end={data.as_of}
+              closing={data.net_assets}
+            />
           </div>{/if}
         <div class="relative">
           <div class="flex items-center gap-3">
@@ -193,7 +241,8 @@
     {/if}
     {#if view === "overview" || view === "cash"}<Cashflow
         hidden={masked}
-        report={data}
+        asOf={data.as_of}
+        bind:mode={cashMode}
         {range}
         {now}
       />{/if}
