@@ -4,6 +4,8 @@ import {
 } from "@neondatabase/postgrest-js";
 
 import Decimal from "decimal.js";
+import { dayPeriod, nextThirtyDays } from "./cashflow";
+const Money = Decimal.clone({ precision: 40 });
 import { config } from "./config";
 import type {
   Account,
@@ -77,145 +79,167 @@ export function createRepository(getToken: () => Promise<string>) {
       if (page.length < 1000) return result;
     }
   }
-  function balanceRows(asOf: string, select: string) {
-    // Midnight is a closing-day boundary. Intraday current queries use the latest MV.
-    const date = new Date(Date.parse(asOf) + 8 * 3600000).toISOString();
-    const today = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-    if (date.slice(0, 10) >= today && date.slice(11, 23) !== "00:00:00.000")
-      return db.from("balance_read").select(select);
-    const closingDate = new Date(Date.parse(asOf) + 8 * 3600000 - 1)
-      .toISOString()
-      .slice(0, 10);
-    return db
-      .from("balance_history_read")
-      .select(select)
-      .eq("date", closingDate);
+  // Share concurrent reads without retaining user data outside the query cache.
+  const pending = new Map<string, Promise<unknown>>();
+  function shared<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const existing = pending.get(key);
+    if (existing) return existing as Promise<T>;
+    const promise = load().finally(() => pending.delete(key));
+    pending.set(key, promise);
+    return promise;
+  }
+  function balanceRows(asOf: string) {
+    const date = localDate(asOf);
+    const today = localDate(new Date().toISOString());
+    const midnight =
+      new Date(Date.parse(asOf) + 8 * 3600000).toISOString().slice(11) ===
+      "00:00:00.000Z";
+    const current = date >= today && !midnight;
+    const closingDate = localDate(new Date(Date.parse(asOf) - 1).toISOString());
+    return shared(`balance:${current ? "current" : closingDate}`, () =>
+      allRows<BalanceRow>(() => {
+        let query = db
+          .from(current ? "balance" : "balance_history")
+          .select("id,name,type,subtype,balance::text");
+        if (!current) query = query.eq("date", closingDate);
+        return query.order("id");
+      }),
+    );
   }
   async function balanceTotals(asOf: string) {
-    const row = await read<Record<string, string | null>>(
-      balanceRows(
-        asOf,
-        sums("assets", "liabilities", "net_assets") +
-          ",cash_closing:cash_balance::numeric.sum()::text",
-      ).single(),
+    return summarizeBalances(await balanceRows(asOf));
+  }
+  function cashRows(start: string, cutoff: string) {
+    return shared(`cash:${start}:${cutoff}`, () =>
+      allRows<CashRow>(() =>
+        db
+          .from("cashflow")
+          .select("transaction_id,occurred_at,net::text")
+          .gte("occurred_at", start)
+          .lt("occurred_at", cutoff)
+          .order("occurred_at")
+          .order("transaction_id"),
+      ),
     );
-    return {
-      assets: row.assets ?? "0",
-      liabilities: row.liabilities ?? "0",
-      net_assets: row.net_assets ?? "0",
-      cash_closing: row.cash_closing ?? "0",
-    };
   }
   async function cashTotals(start: string, end: string, asOf: string) {
-    const row = await read<{
-      cash_in: string | null;
-      cash_out: string | null;
-      cash_net: string | null;
-    }>(
-      db
-        .from("cashflow_read")
-        .select(
-          "cash_in:inflow::numeric.sum()::text,cash_out:outflow::numeric.sum()::text,cash_net:net::numeric.sum()::text",
-        )
-        .gte("occurred_at", start)
-        .lt("occurred_at", effectiveEnd(end, asOf))
-        .single(),
+    return summarizeCash(await cashRows(start, effectiveEnd(end, asOf)));
+  }
+  function incomeRows(start: string, cutoff: string) {
+    return shared(`income:${start}:${cutoff}`, () =>
+      allRows<IncomeRow>(() =>
+        db
+          .from("income_statement")
+          .select("occurred_at,date,type,subtype,income,expense,profit,amount")
+          .gte("occurred_at", start)
+          .lt("occurred_at", cutoff)
+          .order("occurred_at")
+          .order("type")
+          .order("subtype"),
+      ),
     );
-    return {
-      cash_in: row.cash_in ?? "0",
-      cash_out: row.cash_out ?? "0",
-      cash_net: row.cash_net ?? "0",
-    };
+  }
+  function historyRows(start: string, cutoff: string) {
+    return shared(`history:${start}:${cutoff}`, () =>
+      allRows<BalanceRow & { date: string }>(() =>
+        db
+          .from("balance_history")
+          .select("date,id,name,type,subtype,balance::text")
+          .gte("date", localDate(start))
+          .lte(
+            "date",
+            localDate(new Date(Date.parse(cutoff) - 1).toISOString()),
+          )
+          .order("date")
+          .order("id"),
+      ),
+    );
+  }
+  function qualityRows(cutoff: string) {
+    return shared(`quality:${cutoff}`, () =>
+      allRows<QualityRow>(() =>
+        db
+          .from("transactions")
+          .select("id,occurred_at,entry_count,missing_accounts,complete,status")
+          .lt("occurred_at", cutoff)
+          .order("occurred_at")
+          .order("id"),
+      ),
+    );
   }
   function reportQueries(start: string, end: string, asOf: string) {
     const cutoff = effectiveEnd(end, asOf);
-    const before = (view: string, select: string) =>
-      db.from(view).select(select).lt("occurred_at", cutoff);
-    const period = (view: string, select: string) =>
-      before(view, select).gte("occurred_at", start);
     return {
       balance: () => balanceTotals(cutoff),
-      accounts: () =>
-        allRows<Overview["accounts"][number]>(() =>
-          balanceRows(cutoff, "id,name,type,subtype,balance")
-            .order("type")
-            .order("subtype")
-            .order("name")
-            .order("id"),
-        ),
-      income: () =>
-        read<Record<string, string | null>>(
-          period(
-            "income_statement",
-            sums("income", "expense", "profit"),
-          ).single(),
-        ),
-      categories: () =>
-        allRows<Overview["categories"][number]>(() =>
-          period("income_statement", "name:subtype,type," + sums("amount"))
-            .in("type", ["收入", "支出"])
-            .order("type")
-            .order("subtype"),
-        ),
-      trend: () =>
-        allRows<Overview["trend"][number]>(() =>
-          period("income_statement", "date," + sums("income", "expense")).order(
-            "date",
-          ),
+      accounts: () => balanceRows(cutoff),
+      income: async () => summarizeIncome(await incomeRows(start, cutoff)),
+      categories: async () =>
+        [
+          ...group(
+            (await incomeRows(start, cutoff)).filter((r) =>
+              ["收入", "支出"].includes(r.type),
+            ),
+            (r) => JSON.stringify([r.type, r.subtype]),
+          ).values(),
+        ].map((rows) => ({
+          name: rows[0].subtype,
+          type: rows[0].type,
+          amount: sum(rows.map((r) => r.amount)),
+        })),
+      trend: async () =>
+        [...group(await incomeRows(start, cutoff), (r) => r.date)].map(
+          ([date, rows]) => ({
+            date,
+            income: sum(rows.map((r) => r.income)),
+            expense: sum(rows.map((r) => r.expense)),
+          }),
         ),
       cash: () => cashTotals(start, end, asOf),
-      cashCategories: () =>
-        allRows<Overview["cash_categories"][number]>(() =>
-          period(
-            "cashflow_read",
-            "name:category," + sums("inflow", "outflow"),
-          ).order("category"),
-        ),
+      cashCategories: async () => {
+        const [cash, entries] = await Promise.all([
+          cashRows(start, cutoff),
+          allRows<{ transaction_id: number; type: string; subtype: string }>(
+            () =>
+              db
+                .from("statement_entries")
+                .select("id,transaction_id,type,subtype")
+                .gte("occurred_at", start)
+                .lt("occurred_at", cutoff)
+                .order("id"),
+          ),
+        ]);
+        const byTransaction = group(entries, (e) => String(e.transaction_id));
+        return [
+          ...group(cash, (row) => {
+            const items = byTransaction.get(String(row.transaction_id)) ?? [];
+            return items.some((e) => ["收入", "支出"].includes(e.type))
+              ? "living"
+              : items.some(
+                    (e) => e.type === "资产" && e.subtype !== "现金及等价物",
+                  )
+                ? "investing"
+                : "financing";
+          }),
+        ].map(([name, rows]) => {
+          const totals = summarizeCash(rows);
+          return { name, inflow: totals.cash_in, outflow: totals.cash_out };
+        });
+      },
       opening: async () => ({
         cash_opening: (await balanceTotals(effectiveEnd(start, cutoff)))
           .cash_closing,
       }),
-      balanceHistory: () =>
-        allRows<{
-          date: string;
-          assets: string;
-          liabilities: string;
-          net_assets: string;
-        }>(() =>
-          db
-            .from("balance_history_read")
-            .select("date," + sums("assets", "liabilities", "net_assets"))
-            .gte(
-              "date",
-              new Date(Date.parse(start) + 8 * 3600000)
-                .toISOString()
-                .slice(0, 10),
-            )
-            .lte(
-              "date",
-              new Date(Date.parse(cutoff) + 8 * 3600000 - 1)
-                .toISOString()
-                .slice(0, 10),
-            )
-            .order("date"),
+      balanceHistory: async () =>
+        [...group(await historyRows(start, cutoff), (r) => r.date)].map(
+          ([date, rows]) => ({ date, ...summarizeBalances(rows) }),
         ),
-      cashDaily: () =>
-        allRows<{ date: string; inflow: string; outflow: string }>(() =>
-          period("cashflow_read", "date," + sums("inflow", "outflow")).order(
-            "date",
-          ),
-        ),
-      quality: () =>
-        read<Overview["quality"]>(
-          before(
-            "transactions",
-            "pending:pending_count.sum(),missing_entries:missing_entry_count.sum(),missing_accounts:missing_account_count.sum(),posted:posted_count.sum(),coverage_start:occurred_at.min()",
-          ).single(),
-        ),
-      periodQuality: () =>
-        read<{ pending: number | null }>(
-          period("transactions", "pending:pending_count.sum()").single(),
-        ),
+      cashDaily: async () => dailyCash(await cashRows(start, cutoff)),
+      quality: async () => summarizeQuality(await qualityRows(cutoff)),
+      periodQuality: async () => ({
+        pending: (await qualityRows(cutoff)).filter(
+          (r) => effectiveEnd(start, r.occurred_at) === start && needsReview(r),
+        ).length,
+      }),
     };
   }
   async function report<K extends keyof ReturnType<typeof reportQueries>>(
@@ -233,21 +257,54 @@ export function createRepository(getToken: () => Promise<string>) {
   }
   return {
     report,
-    async home(charts = true) {
-      const snapshot = await read<HomeSnapshot>(
-        db
-          .from("home")
-          .select(
-            "as_of,start,future_end,assets,liabilities,net_assets,income,expense,profit,pending,cash_configured,cash,month_cash" +
-              (charts ? ",balance_trend,cash_bars,month_cash_bars" : ""),
-          )
-          .single(),
+    async home(charts = true): Promise<HomeSnapshot> {
+      const asOf = new Date().toISOString();
+      const start = new Date(
+        `${localDate(asOf).slice(0, 7)}-01T00:00:00+08:00`,
+      ).toISOString();
+      const futureEnd = nextThirtyDays(asOf).end;
+      const [balances, income, cash, quality, accounts, history] =
+        await Promise.all([
+          balanceRows(asOf),
+          incomeRows(start, asOf),
+          cashRows(start, futureEnd),
+          qualityRows(asOf),
+          allRows<{ id: number }>(() =>
+            db
+              .from("account")
+              .select("id")
+              .eq("type", "资产")
+              .eq("subtype", "现金及等价物")
+              .order("id"),
+          ),
+          charts ? historyRows(start, asOf) : Promise.resolve([]),
+        ]);
+      const monthCash = cash.filter(
+        (r) => effectiveEnd(r.occurred_at, asOf) !== asOf,
+      );
+      const futureCash = cash.filter(
+        (r) => effectiveEnd(r.occurred_at, asOf) === asOf,
       );
       return {
-        ...snapshot,
-        as_of: new Date(snapshot.as_of).toISOString(),
-        start: new Date(snapshot.start).toISOString(),
-        future_end: new Date(snapshot.future_end).toISOString(),
+        as_of: asOf,
+        start,
+        future_end: futureEnd,
+        ...summarizeBalances(balances),
+        ...summarizeIncome(income),
+        pending: summarizeQuality(quality).pending,
+        cash_configured: accounts.length > 0,
+        cash: summarizeCash(futureCash),
+        month_cash: summarizeCash(monthCash),
+        recent: [],
+        ...(charts
+          ? {
+              balance_trend: [...group(history, (r) => r.date).values()].map(
+                (rows) => summarizeBalances(rows).net_assets,
+              ),
+              cash_bars: cashBars(futureCash, asOf, futureEnd),
+              month_cash_bars: cashBars(monthCash, start, asOf),
+            }
+          : {}),
       };
     },
     async accounts() {
@@ -396,11 +453,118 @@ export function createRepository(getToken: () => Promise<string>) {
 }
 export type Repository = ReturnType<typeof createRepository>;
 
-// These helpers only shape queries. SQL computes all authoritative report amounts.
-function sums(...columns: string[]) {
-  return columns
-    .map((column) => `${column}:${column}::numeric.sum()::text`)
-    .join(",");
+type BalanceRow = Overview["accounts"][number];
+type CashRow = { transaction_id: number; occurred_at: string; net: string };
+type IncomeRow = {
+  occurred_at: string;
+  date: string;
+  type: Account["type"];
+  subtype: string;
+  income: string;
+  expense: string;
+  profit: string;
+  amount: string;
+};
+type QualityRow = Pick<
+  Transaction,
+  | "id"
+  | "occurred_at"
+  | "entry_count"
+  | "missing_accounts"
+  | "complete"
+  | "status"
+>;
+function sum(values: string[]) {
+  return values
+    .reduce((total, value) => total.plus(value), new Money(0))
+    .toString();
+}
+function group<T>(rows: T[], key: (row: T) => string) {
+  const groups = new Map<string, T[]>();
+  for (const row of rows) {
+    const name = key(row);
+    const items = groups.get(name) ?? [];
+    items.push(row);
+    groups.set(name, items);
+  }
+  return groups;
+}
+function localDate(value: string) {
+  return new Date(Date.parse(value) + 8 * 3600000).toISOString().slice(0, 10);
+}
+function summarizeBalances(rows: BalanceRow[]) {
+  const assets = sum(
+    rows.filter((r) => r.type === "资产").map((r) => r.balance),
+  );
+  const liabilities = sum(
+    rows.filter((r) => r.type === "负债").map((r) => r.balance),
+  );
+  return {
+    assets,
+    liabilities,
+    net_assets: new Money(assets).minus(liabilities).toString(),
+    cash_closing: sum(
+      rows
+        .filter((r) => r.type === "资产" && r.subtype === "现金及等价物")
+        .map((r) => r.balance),
+    ),
+  };
+}
+function summarizeCash(rows: CashRow[]) {
+  return {
+    cash_in: sum(rows.filter((r) => new Money(r.net).gt(0)).map((r) => r.net)),
+    cash_out: new Money(
+      sum(rows.filter((r) => new Money(r.net).lt(0)).map((r) => r.net)),
+    )
+      .negated()
+      .toString(),
+    cash_net: sum(rows.map((r) => r.net)),
+  };
+}
+function summarizeIncome(rows: IncomeRow[]) {
+  return {
+    income: sum(rows.map((r) => r.income)),
+    expense: sum(rows.map((r) => r.expense)),
+    profit: sum(rows.map((r) => r.profit)),
+  };
+}
+function needsReview(row: QualityRow) {
+  return !row.complete && row.status !== "cancel";
+}
+function summarizeQuality(rows: QualityRow[]) {
+  return {
+    pending: rows.filter(needsReview).length,
+    missing_entries: rows.filter(
+      (r) => r.entry_count === 0 && r.status !== "cancel",
+    ).length,
+    missing_accounts: rows.filter((r) => r.missing_accounts > 0).length,
+    posted: rows.filter(
+      (r) =>
+        r.complete &&
+        ["success", "refund", "partial_refund"].includes(r.status),
+    ).length,
+    coverage_start: rows[0]?.occurred_at ?? null,
+  };
+}
+function dailyCash(rows: CashRow[]) {
+  return [...group(rows, (r) => localDate(r.occurred_at))].map(
+    ([date, items]) => {
+      const totals = summarizeCash(items);
+      return { date, inflow: totals.cash_in, outflow: totals.cash_out };
+    },
+  );
+}
+function cashBars(rows: CashRow[], start: string, end: string) {
+  return dailyCash(rows).map(({ date, ...totals }) => {
+    const day = dayPeriod(date);
+    return {
+      start: new Date(
+        Math.max(Date.parse(start), Date.parse(day.start)),
+      ).toISOString(),
+      end: effectiveEnd(end, day.end),
+      ...totals,
+    };
+  });
 }
 export function effectiveEnd(end: string, asOf: string) {
   // Preserve PostgreSQL microseconds even when both boundaries share one JS millisecond.

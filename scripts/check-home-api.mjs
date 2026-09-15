@@ -24,10 +24,13 @@ try {
       const started = performance.now();
       const home = await api.home();
       const elapsed = Math.round(performance.now() - started);
-      assert.equal(requests.length, 1);
-      assert.ok(new URL(requests[0]).pathname.endsWith("/home"));
+      const homeRequests = requests.length;
+      assert.equal(new Set(requests).size, homeRequests);
+      assert.ok(
+        requests.every((r) => !/_read$|\/home$/.test(new URL(r).pathname)),
+      );
       assert.ok(Array.isArray(home.balance_trend));
-      assert.ok(!("recent" in home));
+      assert.deepEqual(home.recent, []);
       const full = await api.overview(home.start, home.as_of, home.as_of);
       for (const k of [
         "assets",
@@ -60,7 +63,7 @@ try {
       assert.ok(!("balance_trend" in hidden));
       assert.ok(!("cash_bars" in hidden));
       console.log(
-        `PASS real JWT home: 1 GET, ${elapsed}ms, ${Buffer.byteLength(JSON.stringify(home))} bytes; figures match full report; hidden projection excludes charts.`,
+        `PASS real JWT home: ${homeRequests} source GETs, ${elapsed}ms, ${Buffer.byteLength(JSON.stringify(home))} bytes; figures match full report; hidden projection excludes charts.`,
       );
     } finally {
       globalThis.fetch = original;

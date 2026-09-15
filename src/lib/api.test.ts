@@ -125,57 +125,56 @@ describe("read views", () => {
       repo.list({}, { occurred_at: "invalid", id: 1 }),
     ).rejects.toBeInstanceOf(ApiError);
   });
-  it("keeps SQL decimal strings and queries only cash or balances for charts", async () => {
+  it("aggregates raw decimal strings without losing cents", async () => {
     const { repo, requests } = mockApi((url) =>
-      url.pathname.endsWith("cashflow_read")
-        ? {
-            cash_in: "9007199254740993.01",
-            cash_out: "0.02",
-            cash_net: "9007199254740992.99",
-          }
-        : {
-            assets: "100.00",
-            liabilities: "200.00",
-            net_assets: "-100.00",
-            cash_closing: "30.00",
-          },
+      url.pathname.endsWith("cashflow")
+        ? [
+            {
+              transaction_id: 1,
+              occurred_at: "2026-09-01",
+              net: "9007199254740993.01",
+            },
+            { transaction_id: 2, occurred_at: "2026-09-02", net: "-0.02" },
+          ]
+        : [
+            {
+              id: 1,
+              type: "资产",
+              subtype: "现金及等价物",
+              name: "现金",
+              balance: "100",
+            },
+            {
+              id: 2,
+              type: "负债",
+              subtype: "信用卡",
+              name: "卡",
+              balance: "200",
+            },
+          ],
     );
-    const cash = await repo.cashflow(
-      "2026-09-01",
-      "2026-10-01",
-      "2026-09-14T02:00:00Z",
-    );
-    expect(cash.cash_net).toBe("9007199254740992.99");
+    expect(
+      (await repo.cashflow("2026-09-01", "2026-10-01", "2026-09-14T02:00:00Z"))
+        .cash_net,
+    ).toBe("9007199254740992.99");
     expect(requests[0].searchParams.getAll("occurred_at")).toEqual([
       "gte.2026-09-01",
       "lt.2026-09-14T02:00:00Z",
     ]);
-    expect(requests[0].searchParams.get("select")).toContain(
-      "::numeric.sum()::text",
-    );
-    expect((await repo.balance("2026-09-14")).net_assets).toBe("-100.00");
+    expect(requests[0].searchParams.get("select")).toContain("net::text");
+    expect((await repo.balance("2026-09-14")).net_assets).toBe("-100");
     expect(requests).toHaveLength(2);
   });
-  it("reads the latest balance MV during the current day and a single closing day for history", async () => {
-    const { repo, requests } = mockApi(() => ({
-      assets: "0",
-      liabilities: "0",
-      net_assets: "0",
-      cash_closing: "0",
-    }));
+  it("reads current balance and exactly one historical closing day", async () => {
+    const { repo, requests } = mockApi(() => []);
     await repo.balance(new Date().toISOString());
-    expect(requests[0].pathname).toMatch(/\/balance_read$/);
-    expect(requests[0].searchParams.has("date")).toBe(false);
+    expect(requests[0].pathname).toMatch(/\/balance$/);
     await repo.balance("2020-10-01T00:00:00+08:00");
-    expect(requests[1].pathname).toMatch(/\/balance_history_read$/);
+    expect(requests[1].pathname).toMatch(/\/balance_history$/);
     expect(requests[1].searchParams.get("date")).toBe("eq.2020-09-30");
   });
   it("preserves sub-millisecond report boundaries", async () => {
-    const { repo, requests } = mockApi(() => ({
-      cash_in: null,
-      cash_out: null,
-      cash_net: null,
-    }));
+    const { repo, requests } = mockApi(() => []);
     await repo.cashflow(
       "2026-09-01",
       "2026-09-14T02:00:00.123456Z",
@@ -185,12 +184,8 @@ describe("read views", () => {
       "lt.2026-09-14T10:00:00.123455+08:00",
     );
   });
-  it("assembles empty aggregate results without inventing rows or using read RPCs", async () => {
-    const { repo, requests } = mockApi((url, headers) =>
-      headers.get("accept")?.includes("object")
-        ? { pending: null, coverage_start: null }
-        : [],
-    );
+  it("assembles empty reports and deduplicates concurrent source reads", async () => {
+    const { repo, requests } = mockApi(() => []);
     const result = await repo.overview(
       "2026-09-01",
       "2026-10-01",
@@ -200,52 +195,76 @@ describe("read views", () => {
     expect(result.cash_net).toBe("0");
     expect(result.profit).toBe("0");
     expect(result.accounts).toEqual([]);
-    expect(result.trend).toEqual([]);
-    expect(result.quality.pending).toBe(0);
     expect(result.quality.coverage_start).toBeNull();
-    expect(new Set(requests.map((r) => r.pathname.split("/").at(-1)))).toEqual(
-      new Set([
-        "balance_history_read",
-        "income_statement",
-        "cashflow_read",
-        "transactions",
-      ]),
-    );
+    expect(new Set(requests.map(String)).size).toBe(requests.length);
+    expect(requests.some((r) => /_read$|\/home$/.test(r.pathname))).toBe(false);
   });
-  it("fetches all grouped rows beyond the API cap and preserves decimal category ordering", async () => {
-    const { repo, requests } = mockApi((url, headers) => {
-      const select = url.searchParams.get("select") ?? "";
-      if (
-        url.pathname.endsWith("income_statement") &&
-        select.startsWith("date,")
-      ) {
-        return url.searchParams.get("offset") === "0"
-          ? Array.from({ length: 1000 }, (_, n) => ({
-              date: String(n),
-              income: "0.00",
-              expense: "0.00",
-            }))
-          : [{ date: "1000", income: "0.00", expense: "0.00" }];
-      }
-      if (select.startsWith("name:subtype"))
-        return [
-          { name: "a", type: "收入", amount: "9007199254740993.01" },
-          { name: "b", type: "支出", amount: "9007199254740993.02" },
-        ];
-      return headers.get("accept")?.includes("object")
-        ? { coverage_start: null }
-        : [];
+  it("pages raw rows beyond the cap and groups categories with decimal ordering", async () => {
+    const { repo, requests } = mockApi((url) => {
+      if (!url.pathname.endsWith("income_statement")) return [];
+      const offset = Number(url.searchParams.get("offset"));
+      const row = {
+        occurred_at: "2026-09-01",
+        date: "2026-09-01",
+        type: "收入",
+        subtype: "工资",
+        income: "0.01",
+        expense: "0",
+        profit: "0.01",
+        amount: "0.01",
+      };
+      return offset === 0
+        ? Array.from({ length: 1000 }, () => row)
+        : [
+            {
+              ...row,
+              type: "支出",
+              subtype: "消费",
+              income: "0",
+              expense: "10.01",
+              profit: "-10.01",
+              amount: "10.01",
+            },
+            {
+              ...row,
+              type: "资产",
+              subtype: "现金",
+              income: "0",
+              amount: "0",
+              profit: "0",
+            },
+          ];
     });
     const result = await repo.overview(
-      "2020-01-01",
+      "2026-09-01",
       "2026-10-01",
       "2026-09-14",
     );
-    expect(result.trend).toHaveLength(1001);
-    expect(result.categories.map((c) => c.name)).toEqual(["b", "a"]);
-    expect(requests.some((r) => r.searchParams.get("offset") === "1000")).toBe(
-      true,
-    );
+    expect(result.trend).toEqual([
+      { date: "2026-09-01", income: "10", expense: "10.01" },
+    ]);
+    expect(result.categories.map((c) => c.name)).toEqual(["消费", "工资"]);
+    expect(result.profit).toBe("-0.01");
+    expect(
+      requests.filter((r) => r.pathname.endsWith("income_statement")),
+    ).toHaveLength(2);
+  });
+  it("groups history by day without adding balances across days", async () => {
+    const { repo } = mockApi(() => [
+      { date: "2026-09-01", id: 1, type: "资产", balance: "10" },
+      { date: "2026-09-01", id: 2, type: "负债", balance: "3" },
+      { date: "2026-09-02", id: 1, type: "资产", balance: "20" },
+    ]);
+    expect(
+      (
+        await repo.report(
+          "balanceHistory",
+          "2026-09-01",
+          "2026-10-01",
+          "2026-09-14",
+        )
+      ).map((r) => r.net_assets),
+    ).toEqual(["7", "20"]);
   });
   it("rejects the whole report when one view fails", async () => {
     vi.stubGlobal(

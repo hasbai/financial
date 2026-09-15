@@ -13,11 +13,6 @@ const db = new pg.Client({
   }),
 });
 
-const claims = {
-  sub: "auth0|6a9e921870e37d7bbfb76c8f",
-  iss: "https://hasbai.eu.auth0.com/",
-  aud: "https://financial.hasbai.xyz/api",
-};
 let checks = 0;
 let stage = "startup";
 const evidence = [];
@@ -47,23 +42,17 @@ const rpc = async (name, args) => {
     throw e;
   }
 };
-const identity = async (c = claims) =>
-  q("SELECT set_config($1,$2,true)", ["request.jwt.claims", JSON.stringify(c)]);
-const asAnonymous = async (c = claims) => {
-  await identity(c);
-  await q("SET LOCAL ROLE anonymous");
-};
 const balance = async (id) =>
   (
     await q(
-      "SELECT balance::numeric::text balance FROM financial.balance_read WHERE id=$1",
+      "SELECT balance::numeric::text balance FROM financial.balance WHERE id=$1",
       [id],
     )
   ).rows[0]?.balance ?? null;
 const history = async (id, start = "2026-09-01", end = "2026-09-15") =>
   (
     await q(
-      "SELECT date::text date,balance::numeric::text balance FROM financial.balance_history_read WHERE id=$1 AND date BETWEEN $2::date AND $3::date ORDER BY date",
+      "SELECT date::text date,balance::numeric::text balance FROM financial.balance_history WHERE id=$1 AND date BETWEEN $2::date AND $3::date ORDER BY date",
       [id, start, end],
     )
   ).rows;
@@ -152,13 +141,8 @@ async function main() {
     "cashflow_read",
     "cashflow_daily",
     "home",
-  ]) {
-    assert.equal(byName[name]?.relkind, "v", name);
-    assert.ok(
-      byName[name]?.reloptions?.includes("security_invoker=true"),
-      name,
-    );
-  }
+  ])
+    assert.equal(byName[name], undefined, name);
   checks += 7;
 
   const funcs = (
@@ -189,7 +173,7 @@ async function main() {
   checks += 6;
 
   await q("BEGIN");
-  await asAnonymous();
+  await q("SET LOCAL ROLE superadmin");
   stage = "save_account cash";
   const cash = await rpc("save_account", [
     null,
@@ -246,7 +230,7 @@ async function main() {
   // A pending transaction is valid for the balance materialization but excluded from cashflow.
   const cashflowBeforePending = (
     await q(
-      "SELECT coalesce(sum(net::numeric),0)::text net FROM financial.cashflow_daily WHERE date='2026-09-13'",
+      "SELECT coalesce(sum(net::numeric),0)::text net FROM financial.cashflow WHERE occurred_at >= '2026-09-13T00:00:00+08:00' AND occurred_at < '2026-09-14T00:00:00+08:00'",
     )
   ).rows[0].net;
   stage = "save_transaction pending";
@@ -264,7 +248,7 @@ async function main() {
   assert.equal(
     (
       await q(
-        "SELECT count(*)::int n FROM financial.cashflow_read WHERE transaction_id=$1",
+        "SELECT count(*)::int n FROM financial.cashflow WHERE transaction_id=$1",
         [pending.id],
       )
     ).rows[0].n,
@@ -273,7 +257,7 @@ async function main() {
   assert.equal(
     (
       await q(
-        "SELECT coalesce(sum(net::numeric),0)::text net FROM financial.cashflow_daily WHERE date='2026-09-13'",
+        "SELECT coalesce(sum(net::numeric),0)::text net FROM financial.cashflow WHERE occurred_at >= '2026-09-13T00:00:00+08:00' AND occurred_at < '2026-09-14T00:00:00+08:00'",
       )
     ).rows[0].net,
     cashflowBeforePending,
@@ -297,7 +281,7 @@ async function main() {
   assert.equal(
     (
       await q(
-        "SELECT net::numeric::text net FROM financial.cashflow_read WHERE transaction_id=$1",
+        "SELECT net::numeric::text net FROM financial.cashflow WHERE transaction_id=$1",
         [refund.id],
       )
     ).rows[0].net,
@@ -334,63 +318,31 @@ async function main() {
   }
   checks += 2 + afterEdit.length;
 
-  // Owner can read through guarded wrappers while the materialized view itself is not granted.
+  // The signed role is resolved by Data API; direct database reads need no JWT claims.
   assert.ok(
-    (await q("SELECT count(*)::int n FROM financial.balance_history_read"))
-      .rows[0].n > 0,
+    (await q("SELECT count(*)::int n FROM financial.balance_history")).rows[0]
+      .n > 0,
   );
-  let directError = null;
-  await q("SAVEPOINT direct_mv_read");
-  try {
-    await q("SELECT count(*) FROM financial.balance_history");
-  } catch (e) {
-    directError = e;
-  }
-  await q("ROLLBACK TO SAVEPOINT direct_mv_read");
-  assert.ok(directError, "direct materialized view read must be denied");
-  assert.match(directError.message, /permission denied/);
-  checks += 2;
+  checks++;
 
-  // Wrong subject, issuer, audience, and missing claims are isolated by is_owner().
-  for (const c of [
-    { ...claims, sub: "auth0|someone-else" },
-    { ...claims, iss: "https://wrong.example/" },
-    { ...claims, aud: "other-api" },
-    {},
-  ]) {
-    await identity(c);
-    assert.equal(
-      (await q("SELECT count(*)::int n FROM financial.balance_read")).rows[0].n,
-      0,
-    );
-    assert.equal(
-      (await q("SELECT count(*)::int n FROM financial.balance_history_read"))
-        .rows[0].n,
-      0,
-    );
-    checks++;
-  }
-
-  // Switch back to owner and check daily continuity and latest balance equality.
-  await identity();
   const continuity = (
     await q(`WITH per AS (
     SELECT id,min(date) first_date,max(date) last_date,count(*)::bigint rows,
-      (max(date)-min(date)+1)::bigint expected FROM financial.balance_history_read GROUP BY id
+      (max(date)-min(date)+1)::bigint expected FROM financial.balance_history GROUP BY id
   ) SELECT count(*) FILTER (WHERE rows<>expected)::int gaps,count(*)::int accounts FROM per`)
   ).rows[0];
   assert.equal(continuity.gaps, 0);
   assert.ok(continuity.accounts >= 54);
   const latestMismatch = (
     await q(`WITH latest AS (
-    SELECT DISTINCT ON (id) id,balance::numeric FROM financial.balance_history_read ORDER BY id,date DESC
-  ) SELECT count(*)::int n FROM latest l JOIN financial.balance_read b USING (id) WHERE l.balance<>b.balance::numeric`)
+    SELECT DISTINCT ON (id) id,balance::numeric FROM financial.balance_history ORDER BY id,date DESC
+  ) SELECT count(*)::int n FROM latest l JOIN financial.balance b USING (id) WHERE l.balance<>b.balance::numeric`)
   ).rows[0].n;
   assert.equal(latestMismatch, 0);
   checks += 2;
 
   const historySize = (
-    await q("SELECT count(*)::int n FROM financial.balance_history_read")
+    await q("SELECT count(*)::int n FROM financial.balance_history")
   ).rows[0].n;
   await rpc("save_transaction", [
     null,
@@ -398,14 +350,14 @@ async function main() {
     savePayload("2090-01-01T00:00:00+08:00", pair(cash, income, "1.00")),
   ]);
   assert.equal(
-    (await q("SELECT count(*)::int n FROM financial.balance_history_read"))
-      .rows[0].n,
+    (await q("SELECT count(*)::int n FROM financial.balance_history")).rows[0]
+      .n,
     historySize,
   );
   assert.equal(
     (
       await q(
-        "SELECT max(date)<=(current_timestamp AT TIME ZONE 'Asia/Shanghai')::date ok FROM financial.balance_history_read",
+        "SELECT max(date)<=(current_timestamp AT TIME ZONE 'Asia/Shanghai')::date ok FROM financial.balance_history",
       )
     ).rows[0].ok,
     true,
@@ -425,7 +377,7 @@ async function main() {
   checks++;
   note("checks", checks);
   console.log(
-    `PASS ${checks} checks; migration objects, base-table fingerprints, daily carry, pending/refund/back-edit, and owner isolation verified; test writes rolled back`,
+    `PASS ${checks} checks; migration objects, base-table fingerprints, daily carry, pending/refund/back-edit, and direct role access verified; test writes rolled back`,
   );
 }
 

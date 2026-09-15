@@ -1,6 +1,17 @@
 # 完成情况
 
-2026-09-15 更新。余额历史数据库迁移已应用生产；前端源码完成，生产 Data API 新对象缓存仍有 PGRST205，尚未发布 Worker。
+2026-09-15 更新。本轮角色授权与前端直接读取已在隔离分支验证；生产尚未切换。
+
+## 2026-09-15 取消权限函数和页面包装视图
+
+- 按用户最新要求，以 Auth0 superadmin 和 PostgreSQL schema/对象 GRANT 授权；删除 is_owner、personal_* policies，关闭三表 RLS。保留保存业务校验、分录 ID、原子提交和余额刷新。
+- 006_role_access.sql 删除 home、balance_read、balance_history_read、cashflow_read、cashflow_daily 及对应读取函数、旧查询 RPC。原 balance/cashflow/balance_history 定义和三表记录/ID不变。既有 transactions、statement_entries、income_statement 业务视图继续使用。
+- 前端直接读取报表列，Decimal 完成金额汇总、分类、日统计和首页数据形状，取消后端 home 快照依赖。保留现有页面和按需请求；隐藏金额时不读取余额历史。
+- 隔离分支 financial-role-access-20260915 / br-divine-frost-b3dv0o2s 已应用迁移，原三表86/548/1012行及内容指纹、字段均未改变，角色读写、普通角色拒绝、业务校验与刷新通过；测试数据回滚。
+- Auth0 financial role Action（35884b07-e1f4-4ab8-b66c-0325d5a055e4）已部署版本2，沿用原post-login绑定，只对financial API写入顶层 role=superadmin。其他Action和绑定保留。命名空间claim在Neon未正确选择角色，顶层role配合.role已通过真实PKCE/API验收。
+- 隔离API ep-rapid-union-b3ncctmg 的 check-api/check-home-api 已通过：原报表直读、首页与完整报表一致、签名/audience/无token拒绝。生产Neon未改；前端尚未部署，未做浏览器视觉验收。
+- 最终验收：pnpm typecheck 0错误/0警告，pnpm test 10文件72项、pnpm build、git diff --check 全通过；更新后的数据库脚本47项、余额历史41项通过。日志 /tmp/financial-role-acceptance/。
+- 当前授权边界和数据转换职责已同步 AGENTS、DATABASE、ARCHITECTURE 和 DOMAIN，以下各条为历史过程记录，旧 is_owner / home 方案不再是当前目标。
 
 ## 2026-09-15 Balance 与每日历史统计
 

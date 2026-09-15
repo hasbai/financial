@@ -38,57 +38,52 @@ function setup(
     requests.push(url);
     const view = url.pathname.split("/").at(-1);
     const select = url.searchParams.get("select") ?? "";
-    if (failHome && view === "home")
+    if (failHome && view === "balance")
       return new Response(
         JSON.stringify({ code: "503", message: "首页加载失败" }),
         { status: 503 },
       );
-    if (failCategories && select.startsWith("name:subtype"))
+    if (failCategories && view === "income_statement")
       return new Response(
         JSON.stringify({ code: "503", message: "分类加载失败" }),
         { status: 503 },
       );
+    const rawIncome = [
+      {
+        occurred_at: new Date().toISOString(),
+        date: "2026-09-01",
+        type: "支出",
+        subtype: "消费",
+        income: "0",
+        expense: "10",
+        profit: "-10",
+        amount: "10",
+      },
+    ];
     const data =
-      view === "home"
-        ? {
-            ...homeSnapshot(),
-            cash: nonempty
-              ? overview
-              : { cash_in: "0", cash_out: "0", cash_net: "0" },
-            month_cash: nonempty
-              ? overview
-              : { cash_in: "0", cash_out: "0", cash_net: "0" },
-            month_cash_bars: select.includes("month_cash_bars")
-              ? nonempty
-                ? homeSnapshot().cash_bars
-                : []
-              : undefined,
-            balance_trend: select.includes("balance_trend")
-              ? homeSnapshot().balance_trend
-              : undefined,
-            cash_bars: select.includes("cash_bars")
-              ? nonempty
-                ? homeSnapshot().cash_bars
-                : []
-              : undefined,
-          }
-        : view === "account"
-          ? accounts
-          : view === "transactions"
-            ? select.startsWith("id,")
-              ? [transaction]
-              : overview.quality
-            : select.startsWith("id,name")
-              ? overview.accounts
-              : select.startsWith("name:subtype")
-                ? overview.categories
-                : select.startsWith("date,")
-                  ? view === "balance_history_read"
-                    ? [{ date: "2026-09-01", ...overview }]
-                    : overview.trend
-                  : view === "cashflow_read"
-                    ? { cash_in: "0", cash_out: "0", cash_net: "0" }
-                    : overview;
+      view === "account"
+        ? accounts
+        : view === "transactions"
+          ? [transaction]
+          : view === "balance"
+            ? overview.accounts
+            : view === "balance_history"
+              ? overview.accounts.map((a) => ({ ...a, date: "2026-09-01" }))
+              : view === "income_statement"
+                ? rawIncome
+                : view === "cashflow"
+                  ? nonempty
+                    ? [
+                        {
+                          transaction_id: 7,
+                          occurred_at: new Date(
+                            Date.now() - 60000,
+                          ).toISOString(),
+                          net: "-10",
+                        },
+                      ]
+                    : []
+                  : [];
     return new Response(JSON.stringify(data), {
       headers: { "content-type": "application/json" },
     });
@@ -128,15 +123,14 @@ it("loads only home data, reuses the closing balance, and fetches panel details 
   await waitFor(() =>
     expect(document.querySelector("svg polyline")).toBeTruthy(),
   );
-  expect(requests).toHaveLength(1);
-  expect(requests[0].pathname).toMatch(/\/home$/);
+  expect(requests).toHaveLength(6);
+  expect(requests.some((r) => /_read$|\/home$/.test(r.pathname))).toBe(false);
   expect(new Set(requests.map(String)).size).toBe(requests.length);
   expect(
-    selects(requests).some((s) =>
-      /^(id,name|name:subtype|date,|name:category|cash_opening)/.test(s),
+    selects(requests).every(
+      (s) => !s.includes("entries") && !s.includes(".sum()"),
     ),
-  ).toBe(false);
-  expect(selects(requests)[0]).not.toContain("entries");
+  ).toBe(true);
 
   const before = requests.length;
   await fireEvent.click(screen.getByRole("button", { name: "资产负债" }));
@@ -147,24 +141,19 @@ it("loads only home data, reuses the closing balance, and fetches panel details 
   ).toBe(true);
   await fireEvent.click(screen.getByRole("button", { name: "损益" }));
   await screen.findByRole("region", { name: "损益明细" });
-  expect(requests).toHaveLength(before + 4);
-  expect(
-    selects(requests.slice(before + 2)).every((s) =>
-      /^(name:subtype|date,)/.test(s),
-    ),
-  ).toBe(true);
+  expect(requests).toHaveLength(before + 3);
   await fireEvent.click(screen.getByRole("button", { name: "总览" }));
   await screen.findByText("暂无现金流");
-  expect(requests).toHaveLength(before + 4);
+  expect(requests).toHaveLength(before + 3);
   await fireEvent.click(screen.getByRole("button", { name: "所选月份" }));
   await screen.findByText("本期净流入");
-  expect(requests).toHaveLength(before + 4);
+  expect(requests).toHaveLength(before + 3);
 });
 
 it("does not request charts when amounts are hidden", async () => {
   const { requests } = setup("overview", true);
   await screen.findByText("本期净流入");
-  expect(requests).toHaveLength(1);
+  expect(requests).toHaveLength(5);
   expect(selects(requests)[0]).not.toContain("balance_trend");
   expect(selects(requests)[0]).not.toContain("cash_bars");
   expect(document.body.textContent).not.toContain("¥");
@@ -177,8 +166,8 @@ it("loads only list, account labels and monthly income/cash/trend on direct list
   const { requests } = setup("transactions");
   await screen.findByRole("region", { name: "月度收支" });
   await screen.findByText("示例消费");
-  expect(requests).toHaveLength(5);
-  expect(requests.some((r) => r.pathname.endsWith("balance_read"))).toBe(false);
+  expect(requests).toHaveLength(4);
+  expect(requests.some((r) => r.pathname.endsWith("balance"))).toBe(false);
   expect(
     selects(requests).some((s) => /^(name:|pending:|cash_opening)/.test(s)),
   ).toBe(false);
@@ -208,9 +197,9 @@ it("shares fresh reports across pages and refreshes visible reports after invali
     predicate: (q) =>
       ["overview", "transactions"].includes(String(q.queryKey[0])),
   });
-  expect(requests).toHaveLength(start + 4);
+  expect(requests).toHaveLength(start + 3);
   expect(
-    requests.slice(start).some((r) => r.pathname.endsWith("balance_read")),
+    requests.slice(start).some((r) => r.pathname.endsWith("balance")),
   ).toBe(false);
 });
 
@@ -225,7 +214,11 @@ it("keeps failed lazy details separate and retries only the failed query", async
   await fireEvent.click(screen.getByRole("button", { name: "重试" }));
   await screen.findByRole("region", { name: "损益明细" });
   expect(view.requests).toHaveLength(before + 1);
-  expect(selects(view.requests.slice(before))[0]).toMatch(/^name:subtype/);
+  expect(
+    view.requests
+      .slice(before)
+      .every((r) => r.pathname.endsWith("income_statement")),
+  ).toBe(true);
 });
 
 it("changing a month loads only the selected panel and preserves the cash period selection", async () => {
@@ -241,7 +234,7 @@ it("changing a month loads only the selected panel and preserves the cash period
   await screen.findByText("本期净流入");
   expect(requests).toHaveLength(before + 2);
   expect(
-    requests.slice(before).some((r) => r.pathname.endsWith("balance_read")),
+    requests.slice(before).some((r) => r.pathname.endsWith("balance")),
   ).toBe(false);
   expect(
     screen
@@ -250,23 +243,23 @@ it("changing a month loads only the selected panel and preserves the cash period
   ).toBe("true");
 });
 
-it("unhides through one home request without the ten legacy chart requests", async () => {
+it("unhides by reading sources once without page-specific views", async () => {
   const { requests, setNonempty, rerender } = setup("overview", true);
   await screen.findByText("本期净流入");
   setNonempty();
   await rerender({ hidden: false });
   await screen.findByRole("img", { name: /每日现金流入与流出柱状图/ });
-  expect(requests).toHaveLength(2);
-  expect(requests.every((r) => r.pathname.endsWith("/home"))).toBe(true);
+  expect(requests).toHaveLength(11);
+  expect(requests.some((r) => r.pathname.endsWith("/home"))).toBe(false);
   await fireEvent.click(screen.getByRole("button", { name: "隐藏金额" }));
-  expect(requests).toHaveLength(2);
+  expect(requests).toHaveLength(11);
 });
-it("refreshes the current homepage with exactly one snapshot after saving", async () => {
+it("refreshes each homepage source once after saving", async () => {
   const { requests, cache } = setup();
   await screen.findByText("暂无现金流");
   await cache.invalidateQueries({ queryKey: ["overview"] });
-  expect(requests).toHaveLength(2);
-  expect(requests.every((r) => r.pathname.endsWith("/home"))).toBe(true);
+  expect(requests).toHaveLength(12);
+  expect(requests.some((r) => r.pathname.endsWith("/home"))).toBe(false);
 });
 
 it("does not hide a failed snapshot behind disabled historical queries", async () => {
@@ -279,5 +272,7 @@ it("does not hide a failed snapshot behind disabled historical queries", async (
     target: { value: "2025-01" },
   });
   await screen.findByText("首页加载失败");
-  expect(requests.filter((r) => r.pathname.endsWith("/home"))).toHaveLength(2);
+  expect(requests.filter((r) => r.pathname.endsWith("/balance"))).toHaveLength(
+    2,
+  );
 });

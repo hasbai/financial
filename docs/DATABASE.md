@@ -1,47 +1,35 @@
 # 数据库与 API
 
-保持 `financial.account`、`financial.transaction`、`financial.entry` 三张基表、全部原字段和 ID。人民币；业务对象均在 financial。前端读取使用 Data API GET，写入仅调用 save_transaction/save_account；金额计算在 SQL，API 金额为十进制字符串。
+仅保留 financial.account、financial.transaction、financial.entry 三张基表及全部原字段、记录、ID。2026-09-15 用户明确：权限使用 Auth0 superadmin 映射数据库角色；页面格式由前端处理。
 
-## 当前报表对象
+## 数据读取
 
-| 对象 | 粒度与用途 |
-| --- | --- |
-| balance | 用户维护的物化视图；每科目当前余额，保留原定义与 updated_at |
-| balance_history | 物化视图；北京时间自然日 × 科目，保存当日累计余额；从最早有效记录至维护当天，包含无交易日期 |
-| balance_read | balance 的受保护读取视图；科目余额、资产、负债、净资产、现金余额字符串 |
-| balance_history_read | balance_history 的受保护读取视图；历史月末余额及逐日曲线 |
-| cashflow | 用户现有逐笔现金净额视图；transaction_id、occurred_at、net |
-| cashflow_read | 读取 cashflow，提供 date、inflow、outflow、net 与用途分类；保留精确时点供半开区间筛选 |
-| cashflow_daily | 从 cashflow_read 按北京时间日期汇总流入、流出与净额 |
-| income_statement | 现有损益视图；按期间汇总、分类及每日收支 |
-| home | 单行首页快照：当前余额、当月损益、待补录数、月度/未来30天现金统计、每日余额及现金图表；不加载交易明细 |
-| transactions | 每笔交易及分录、完整性、搜索与筛选字段；按日下钻复用 |
-| statement_entries | 完整且状态为 success/refund/partial_refund 的分录；现金流、损益基础 |
+- balance：用户维护的当前科目余额物化视图，保留原定义。
+- balance_history：已有每日科目累计余额物化视图，前端按日期汇总曲线，按选定日读取月末余额。
+- cashflow：用户现有逐笔净现金流，列 transaction_id、occurred_at、net；前端拆分正负流量、按日汇总。分类需要时读取 statement_entries 判断生活、投资、筹资。
+- income_statement：已有损益报表，前端汇总期间金额、分类及每日收支。
+- transactions / statement_entries：既有流水与有效分录业务视图，保留当前业务纳入规则、筛选和保存返回契约。
 
-不重建已删除的 balance_sheet/cashflow_statement。现金每日统计在完整日期范围可读 cashflow_daily；存在日内截止时点时，对 cashflow_read 先筛选再按 date 做 SQL 聚合，以保持统计与下钻一致。
+006 删除 home、balance_read、balance_history_read、cashflow_read、cashflow_daily 和 read_balance、read_balance_history、overview、get_accounts、transactions_page。不新增页面专用视图，不重建已删除的 balance_sheet/cashflow_statement。历史迁移保留用于追溯，不代表当前应用继续依赖旧对象。
 
-## 余额及日期
+## 权限
 
-balance_history 与用户的 balance 使用相同纳入规则：只要同笔 transaction 不含 account_id 为 NULL 的分录即纳入，不额外限制状态或借贷平衡。资产/支出为借减贷，其余科目为贷减借。当前 balance 包含所有已录入日期，包括未来日期；历史余额只累计到所选日结束，日历不向未来扩展。两者在存在未来交易时不必相等。
+Auth0 Post Login Action 将角色写入 Access Token 的顶层 role；Data API 配置 jwt_role_claim_key 为 `.role`，验证 JWT 后切换到 PostgreSQL superadmin。superadmin 是 NOLOGIN/NOSUPERUSER/NOBYPASSRLS 的业务角色，不是 PostgreSQL 超级用户。authenticator 与管理用 neondb_owner 可切换到该角色。
 
-首页当月读取 balance；历史月份读取月末日余额。余额 API 的历史查询是日终快照，不再承诺旧 balance_sheet 的任意日内余额。损益及现金继续精确半开区间。历史未覆盖日期为空；首页不添加口径说明，规则维护在本文及 DOMAIN。
+superadmin 具有 financial schema USAGE、三表及现有业务视图 SELECT、save_transaction/save_account EXECUTE；没有基表 DML 或直接刷新权限。anonymous、authenticated 和 PUBLIC 的 financial 访问授权撤销。删除 is_owner、personal_read/personal_write，关闭三表 RLS；不再检查固定 subject，不在前端检查角色。
 
-## 刷新维护
+保存函数继续以 financial_writer 执行，固定 search_path，保留借贷/金额校验、updated_at 冲突、分录 ID 及同笔退款。transaction_detail 仅作保存内部返回助手，refresh_balances 仅作内部刷新，两者都不暴露给 superadmin 执行。
 
-`005_balance_history.sql` 首次建立并填充历史物化视图，刷新现有 balance。save_transaction/save_account 在一整笔维护保存完成后调用 refresh_balances，全量刷新两个物化视图；保存、刷新在同一事务，任一步失败全部回滚。回补、改金额、改日期、科目匹配和科目类型修改都会重算全部历史。刷新使用事务 advisory lock 串行化。不创建定时任务或基表触发器。
+## 金额、日期与刷新
 
-批量直接维护数据完成后，将 direct connection string 经 stdin 传入 `node scripts/refresh-balances.mjs`，一次性刷新两个对象。脚本不输出凭据。其他外部程序直接改基表不会自动刷新，需在其维护事务后执行此入口；不要仅刷新 balance 而遗漏历史。
+numeric 列在请求中转 text，前端 Decimal 汇总，不经 JavaScript Number 计算业务金额。按稳定唯一顺序每1000行分页；同一报表同时读取时复用进行中的请求。日期采用北京时间，现金及损益使用精确半开区间。当前首页由客户端固定同一 as_of 用于筛选、分组和下钻，多次数据请求不宣称数据库原子快照。
 
-## 访问保护
+balance 的纳入规则仅排除同笔科目缺失，包含已录入未来交易。balance_history 沿用该规则，按北京时间日末累计至维护当天；存在未来交易时最新历史不必等于当前余额。
 
-普通读取视图全部 security_invoker。PostgreSQL 物化视图没有 RLS，balance/balance_history 本体不授予 anonymous/authenticated/financial_writer SELECT。两个固定 search_path 的 SECURITY DEFINER 读取函数仅在 is_owner() 的 sub/issuer/audience 全匹配时返回缓存数据；公开包装视图调用它们。客户端不可直接读 MV 或对基表 DML，无法执行维护刷新函数。
+保存交易/科目后同一事务调用 refresh_balances，以 advisory lock 串行化刷新两个物化视图；不设 cron 或分录触发器。外部批量维护后经 stdin 将管理连接串传给 node scripts/refresh-balances.mjs，一次性刷新两个对象。
 
-save_transaction/save_account 保留原 financial_writer 权限、JWT 判断、固定 search_path、updated_at 冲突检查、金额/借贷校验以及分录 ID 保留。refresh_balances 仅授予 financial_writer 执行，内部再次验证身份。没有新增表、列或多用户结构。
+## 验证与切换
 
-## 请求与验证
+scripts/test-database.mjs 验证三表字段、退款、精度、保存回滚、角色授权和现金损益。scripts/test-balance-database.mjs 验证历史连续、北京时间边界、回补、pending 与未来交易。所有测试写入均回滚，连接串只从 stdin 获取。首页前端组装由 API/组件测试及 scripts/check-home-api.mjs 验证；原 test-home-database.mjs 随 home 视图移除。
 
-Data API 金额聚合使用 `::numeric.sum()::text`；空 SQL 合计映射为字符串 "0"。分组以稳定顺序每1000行分页，科目单日快照先限制 date，不能跨天求和。流水按 occurred_at DESC,id DESC 游标分页；现金下钻 `posted=true&cash=true`，余额下钻 `matched=true`（同笔科目齐全且有分录），不强加旧报表状态过滤。
-
-`scripts/test-database.mjs` 验证原写入/退款/现金损益/权限契约；`scripts/test-balance-database.mjs` 验证日历连续、跨零点、回补刷新、pending差异、远期记录不扩日历和物化缓存隔离；`scripts/test-home-database.mjs` 比对首页与底层报表。数据库测试连接串均从 stdin 输入，测试数据事务回滚。真实 JWT 使用 check-api/check-home-api 单独核验。
-
-迁移必须先在生产副本隔离分支验证，再应用目标数据库。前端发布单独记录；不把源码构建通过当作线上验收。
+scripts/check-api.mjs 使用真实 Auth0 PKCE 验证顶层 role、直接读取及网关拒绝；DATA_API_URL 指定目标。check-home-api.mjs 用 VITE_DATA_API_URL 指定已迁移分支。迁移先在生产副本验证，生产数据不由开发副本覆盖；数据库/API、前端部署和浏览器验收分别记录。
