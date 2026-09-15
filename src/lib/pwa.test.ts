@@ -27,11 +27,15 @@ it("precache is versioned, contains only static app resources, and never interce
   const fetcher = vi.fn();
   runInNewContext(source, {
     URL,
+    Response,
     self: {
       location: { origin: "https://financial.hasbai.xyz" },
       addEventListener: (name: string, fn: any) => (handlers[name] = fn),
     },
-    caches: { open: vi.fn().mockResolvedValue(cache) },
+    caches: {
+      open: vi.fn().mockResolvedValue(cache),
+      keys: vi.fn().mockResolvedValue([]),
+    },
     fetch: fetcher,
   });
   let pending: Promise<unknown> = Promise.resolve();
@@ -39,7 +43,7 @@ it("precache is versioned, contains only static app resources, and never interce
   await pending;
   expect(cache.addAll).toHaveBeenCalledWith([
     "/assets/app.js",
-    "/index.html",
+    "/",
     "/manifest.webmanifest",
   ]);
   const dispatch = (
@@ -85,4 +89,107 @@ it("precache is versioned, contains only static app resources, and never interce
   expect((await readFile(join(dir, "sw.js"), "utf8")).split("\n")[0]).not.toBe(
     source.split("\n")[0],
   );
+});
+
+it("handles a real HTTP redirect and repairs the still-active worker cache before activation", async () => {
+  const { createServer } = await import("node:http");
+  const server = createServer((request, response) => {
+    if (request.url === "/index.html") {
+      response.writeHead(307, { Location: "/" });
+      response.end();
+    } else {
+      response.writeHead(200, {
+        "Content-Type": "text/html",
+        "X-App-Version": "old",
+      });
+      response.end("<html>previous application</html>");
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address() as { port: number };
+    const origin = `http://127.0.0.1:${address.port}`;
+    const redirected = await fetch(origin + "/index.html");
+    expect(redirected.redirected).toBe(true);
+    const originalBody = await redirected.clone().text();
+    const dir = await mkdtemp(join(tmpdir(), "financial-pwa-redirect-"));
+    directories.push(dir);
+    await writeFile(join(dir, "index.html"), "<html>new application</html>");
+    await buildPwa(dir);
+    const source = await readFile(join(dir, "sw.js"), "utf8");
+    const handlers: Record<string, (event: any) => void> = {};
+    const stores = new Map<string, Map<string, Response>>([
+      ["financial-static-old", new Map([["/index.html", redirected.clone()]])],
+      ["unrelated", new Map([["/index.html", redirected.clone()]])],
+    ]);
+    const cacheApi = {
+      keys: async () => [...stores.keys()],
+      open: async (key: string) => {
+        if (!stores.has(key)) stores.set(key, new Map());
+        const store = stores.get(key)!;
+        return {
+          match: async (path: string) => store.get(path)?.clone(),
+          put: async (path: string, value: Response) => {
+            store.set(path, value.clone());
+          },
+          addAll: async (paths: string[]) => {
+            expect(paths).toEqual(["/"]);
+            for (const path of paths)
+              store.set(path, await fetch(origin + path));
+          },
+        };
+      },
+    };
+    runInNewContext(source, {
+      URL,
+      Response,
+      self: {
+        location: { origin },
+        addEventListener: (name: string, fn: any) => (handlers[name] = fn),
+      },
+      caches: cacheApi,
+      fetch,
+    });
+    let pending: Promise<unknown> = Promise.resolve();
+    handlers.install({ waitUntil: (p: Promise<unknown>) => (pending = p) });
+    await pending;
+    // The old worker can immediately reuse the same key and body without skipWaiting or reload.
+    const repaired = stores.get("financial-static-old")!.get("/index.html")!;
+    expect(repaired.redirected).toBe(false);
+    expect(await repaired.clone().text()).toBe(originalBody);
+    expect(repaired.headers.get("x-app-version")).toBe("old");
+    expect(stores.get("unrelated")!.get("/index.html")!.redirected).toBe(true);
+    const current = [...stores.keys()].find(
+      (key) =>
+        key.startsWith("financial-static-") && key !== "financial-static-old",
+    )!;
+    // Defend against a redirected navigation cache even if hosting redirects the canonical URL later.
+    stores.get(current)!.set("/", redirected.clone());
+    for (const path of [
+      "/",
+      "/transactions/new",
+      "/auth/callback?code=example&state=example",
+    ]) {
+      let result: Promise<Response> | undefined;
+      handlers.fetch({
+        request: {
+          url: origin + path,
+          method: "GET",
+          mode: "navigate",
+          redirect: "manual",
+          headers: new Headers(),
+        },
+        respondWith: (p: Promise<Response>) => (result = p),
+      });
+      const response = await result!;
+      expect(response.redirected).toBe(false);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe(originalBody);
+    }
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
 });

@@ -2,6 +2,12 @@
 
 2026-09-15 更新。006角色授权迁移已应用生产，真实JWT/API及首页核对通过；代码5adabe3已由Cloudflare自动部署。
 
+## 2026-09-15 PWA 首页重定向故障修复
+
+- 用户报告首页 FetchEvent network error。已真实HTTP复现：/index.html 返回307到/，默认fetch跟随后Response.redirected=true；旧SW的cache.addAll缓存该响应，导航redirect=manual时浏览器拒绝。此前HTTP200和资源哈希核验未覆盖此响应语义，不能代表SW控制下导航可用。
+- 缓存入口改为规范根路径/，导航缓存响应若redirected则重建Response。新版install阶段原位修复旧financial-static缓存的/index.html，保留旧应用正文和版本，以使旧worker在新版waiting期间恢复导航；不skipWaiting、不强制刷新或丢弃表单。
+- 增加真实本地HTTP307回归，覆盖首页、新建交易、带code/state的回调导航redirect=manual、旧缓存原位修复及无关缓存保留。pnpm typecheck 0错误/0警告；pnpm test 13文件90项通过；pnpm build、git diff --check通过。真实生产HTTP根因复现通过，未使用浏览器。
+
 ## 2026-09-15 iOS 优先录入与 PWA
 
 - 收入/支出分类按当前类型过滤，不渲染无关五类标题；分类和账户均按type/subtype分组后选择name，支持范围内搜索、重开定位、返回大类及选择后焦点归还。手机全屏选择，桌面居中面板。
