@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { useReport, useReportTime, reportStaleTime } from "$lib/reports";
+  import { useReport, useReportTime } from "$lib/reports";
+  import { sessionQueryOptions } from "$lib/query-cache";
   import { dayLink } from "$lib/cashflow";
   import { effectiveEnd } from "$lib/api";
   import { untrack } from "svelte";
@@ -57,7 +58,7 @@
       );
       return snapshot;
     },
-    staleTime: reportStaleTime,
+    ...sessionQueryOptions,
   }));
   let now = $derived(home.data?.as_of ?? openedAt);
   let current = $derived(month === currentMonth());

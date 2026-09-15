@@ -31,7 +31,22 @@ try {
       );
       assert.ok(Array.isArray(home.balance_trend));
       assert.deepEqual(home.recent, []);
-      const full = await api.overview(home.start, home.as_of, home.as_of);
+      await api.home();
+      await api.accounts();
+      await api.report("accounts", home.start, home.as_of, home.as_of);
+      await api.report("categories", home.start, home.as_of, home.as_of);
+      await api.report("trend", home.start, home.as_of, home.as_of);
+      await api.report("cashDaily", home.start, home.as_of, home.as_of);
+      await api.home(false);
+      assert.equal(
+        requests.length,
+        homeRequests,
+        "warm home, accounts and panels must reuse source rows",
+      );
+      // A separate repository/cache makes the reconciliation independent of
+      // the rows cached by home, and still exercises the original report views.
+      const reference = createRepository(async () => token);
+      const full = await reference.overview(home.start, home.as_of, home.as_of);
       for (const k of [
         "assets",
         "liabilities",
@@ -42,7 +57,7 @@ try {
       ])
         assert.equal(home[k], full[k]);
       assert.equal(home.pending, full.quality.pending);
-      const history = await api.report(
+      const history = await reference.report(
         "balanceHistory",
         home.start,
         home.as_of,
@@ -52,7 +67,7 @@ try {
         home.balance_trend,
         history.map((r) => r.net_assets),
       );
-      const daily = await api.report(
+      const daily = await reference.report(
         "cashDaily",
         home.start,
         home.as_of,
@@ -63,7 +78,7 @@ try {
       assert.ok(!("balance_trend" in hidden));
       assert.ok(!("cash_bars" in hidden));
       console.log(
-        `PASS real JWT home: ${homeRequests} source GETs, ${elapsed}ms, ${Buffer.byteLength(JSON.stringify(home))} bytes; figures match full report; hidden projection excludes charts.`,
+        `PASS real JWT home: ${homeRequests} source GETs, ${elapsed}ms, ${Buffer.byteLength(JSON.stringify(home))} bytes; warm home/accounts/panels add 0 GETs; figures match independently loaded full report; hidden projection excludes charts.`,
       );
     } finally {
       globalThis.fetch = original;

@@ -1,5 +1,6 @@
 import { getContext, setContext } from "svelte";
 import { createQuery } from "@tanstack/svelte-query";
+import { sessionQueryOptions } from "./query-cache";
 import type { Repository } from "./api";
 const repositoryKey = Symbol("financial.repository");
 export function setRepository(api: Repository) {
@@ -15,7 +16,7 @@ export function useAccounts(enabled: () => boolean = () => true) {
   return createQuery(() => ({
     queryKey: ["accounts"],
     queryFn: () => api.accounts(),
-    staleTime: 30_000,
+    ...sessionQueryOptions,
     enabled: enabled(),
   }));
 }

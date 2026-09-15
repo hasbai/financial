@@ -12,7 +12,8 @@
   import { money } from "$lib/finance";
   import { loadCashBars, nextThirtyDays, type CashPeriod } from "$lib/cashflow";
   import type { HomeSnapshot } from "$lib/types";
-  import { useReport, reportStaleTime } from "$lib/reports";
+  import { useReport } from "$lib/reports";
+  import { sessionQueryOptions } from "$lib/query-cache";
   import { router } from "$lib/router.svelte";
   import CashBars from "./CashBars.svelte";
   import Loading from "./Loading.svelte";
@@ -55,7 +56,7 @@
     queryKey: ["overview", "cash", future.start, future.end],
     queryFn: () => api.cashflow(future.start, future.end, future.end),
     enabled: !snapshot && configured && mode === "future",
-    staleTime: reportStaleTime,
+    ...sessionQueryOptions,
   }));
   let monthSnapshot = $derived(
     snapshot && Date.parse(snapshot.start) === Date.parse(range.start)
@@ -95,7 +96,7 @@
       !!summary &&
       !empty &&
       !hidden,
-    staleTime: reportStaleTime,
+    ...sessionQueryOptions,
   }));
   function drilldown() {
     router.navigate(

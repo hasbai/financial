@@ -13,7 +13,7 @@
     },
   });
   const auth = createAuth();
-  setRepository(createRepository(auth.getToken));
+  setRepository(createRepository(auth.getToken, cache));
   onMount(() => {
     const stop = router.start();
     void auth.init(() => cache.clear());

@@ -1,3 +1,5 @@
+import { QueryClient } from "@tanstack/svelte-query";
+import { reportTime, sessionQueryOptions } from "./query-cache";
 import {
   NeonPostgrestClient,
   fetchWithToken,
@@ -35,7 +37,10 @@ export function errorMessage(e: unknown) {
     return "登录已过期";
   return message.replace(/^VALIDATION: /, "");
 }
-export function createRepository(getToken: () => Promise<string>) {
+export function createRepository(
+  getToken: () => Promise<string>,
+  cache = new QueryClient(),
+) {
   const db = new NeonPostgrestClient({
     dataApiUrl: config.dataApiUrl,
     options: {
@@ -79,14 +84,30 @@ export function createRepository(getToken: () => Promise<string>) {
       if (page.length < 1000) return result;
     }
   }
-  // Share concurrent reads without retaining user data outside the query cache.
-  const pending = new Map<string, Promise<unknown>>();
   function shared<T>(key: string, load: () => Promise<T>): Promise<T> {
-    const existing = pending.get(key);
-    if (existing) return existing as Promise<T>;
-    const promise = load().finally(() => pending.delete(key));
-    pending.set(key, promise);
-    return promise;
+    return cache.fetchQuery({
+      queryKey: ["overview", "source", key],
+      queryFn: load,
+      ...sessionQueryOptions,
+      retry: false,
+    });
+  }
+  function accounts() {
+    return cache.fetchQuery({
+      queryKey: ["accounts", "source"],
+      queryFn: () =>
+        allRows<Account>(() =>
+          db
+            .from("account")
+            .select("*")
+            .order("type")
+            .order("subtype")
+            .order("name")
+            .order("id"),
+        ),
+      ...sessionQueryOptions,
+      retry: false,
+    });
   }
   function balanceRows(asOf: string) {
     const date = localDate(asOf);
@@ -110,17 +131,45 @@ export function createRepository(getToken: () => Promise<string>) {
     return summarizeBalances(await balanceRows(asOf));
   }
   function cashRows(start: string, cutoff: string) {
-    return shared(`cash:${start}:${cutoff}`, () =>
-      allRows<CashRow>(() =>
-        db
-          .from("cashflow")
-          .select("transaction_id,occurred_at,net::text")
-          .gte("occurred_at", start)
-          .lt("occurred_at", cutoff)
-          .order("occurred_at")
-          .order("transaction_id"),
-      ),
-    );
+    // Home already holds both month-to-date and future cash. Reuse a complete
+    // covering range when a panel/list asks for a subset of those same rows.
+    const covering = cache
+      .getQueryCache()
+      .findAll({
+        queryKey: ["overview", "cash-source"],
+      })
+      .find((query) => {
+        const [, , from, to] = query.queryKey as string[];
+        return (
+          !query.state.isInvalidated &&
+          query.state.status === "success" &&
+          effectiveEnd(from, start) === from &&
+          effectiveEnd(cutoff, to) === cutoff
+        );
+      });
+    if (covering)
+      return Promise.resolve(
+        (covering.state.data as CashRow[]).filter(
+          (row) =>
+            effectiveEnd(start, row.occurred_at) === start &&
+            effectiveEnd(row.occurred_at, cutoff) !== cutoff,
+        ),
+      );
+    return cache.fetchQuery({
+      queryKey: ["overview", "cash-source", start, cutoff],
+      ...sessionQueryOptions,
+      retry: false,
+      queryFn: () =>
+        allRows<CashRow>(() =>
+          db
+            .from("cashflow")
+            .select("transaction_id,occurred_at,net::text")
+            .gte("occurred_at", start)
+            .lt("occurred_at", cutoff)
+            .order("occurred_at")
+            .order("transaction_id"),
+        ),
+    });
   }
   async function cashTotals(start: string, end: string, asOf: string) {
     return summarizeCash(await cashRows(start, effectiveEnd(end, asOf)));
@@ -140,19 +189,21 @@ export function createRepository(getToken: () => Promise<string>) {
     );
   }
   function historyRows(start: string, cutoff: string) {
-    return shared(`history:${start}:${cutoff}`, () =>
-      allRows<BalanceRow & { date: string }>(() =>
-        db
-          .from("balance_history")
-          .select("date,id,name,type,subtype,balance::text")
-          .gte("date", localDate(start))
-          .lte(
-            "date",
-            localDate(new Date(Date.parse(cutoff) - 1).toISOString()),
-          )
-          .order("date")
-          .order("id"),
-      ),
+    return shared(
+      `history:${localDate(start)}:${localDate(new Date(Date.parse(cutoff) - 1).toISOString())}`,
+      () =>
+        allRows<BalanceRow & { date: string }>(() =>
+          db
+            .from("balance_history")
+            .select("date,id,name,type,subtype,balance::text")
+            .gte("date", localDate(start))
+            .lte(
+              "date",
+              localDate(new Date(Date.parse(cutoff) - 1).toISOString()),
+            )
+            .order("date")
+            .order("id"),
+        ),
     );
   }
   function qualityRows(cutoff: string) {
@@ -258,25 +309,18 @@ export function createRepository(getToken: () => Promise<string>) {
   return {
     report,
     async home(charts = true): Promise<HomeSnapshot> {
-      const asOf = new Date().toISOString();
+      const asOf = reportTime(cache);
       const start = new Date(
         `${localDate(asOf).slice(0, 7)}-01T00:00:00+08:00`,
       ).toISOString();
       const futureEnd = nextThirtyDays(asOf).end;
-      const [balances, income, cash, quality, accounts, history] =
+      const [balances, income, cash, quality, allAccounts, history] =
         await Promise.all([
           balanceRows(asOf),
           incomeRows(start, asOf),
           cashRows(start, futureEnd),
           qualityRows(asOf),
-          allRows<{ id: number }>(() =>
-            db
-              .from("account")
-              .select("id")
-              .eq("type", "资产")
-              .eq("subtype", "现金及等价物")
-              .order("id"),
-          ),
+          accounts(),
           charts ? historyRows(start, asOf) : Promise.resolve([]),
         ]);
       const monthCash = cash.filter(
@@ -292,7 +336,9 @@ export function createRepository(getToken: () => Promise<string>) {
         ...summarizeBalances(balances),
         ...summarizeIncome(income),
         pending: summarizeQuality(quality).pending,
-        cash_configured: accounts.length > 0,
+        cash_configured: allAccounts.some(
+          (a) => a.type === "资产" && a.subtype === "现金及等价物",
+        ),
         cash: summarizeCash(futureCash),
         month_cash: summarizeCash(monthCash),
         recent: [],
@@ -307,17 +353,7 @@ export function createRepository(getToken: () => Promise<string>) {
           : {}),
       };
     },
-    async accounts() {
-      const { data, error } = await db
-        .from("account")
-        .select("*")
-        .order("type")
-        .order("subtype")
-        .order("name")
-        .limit(1000);
-      if (error) throw new ApiError(error.code, error.message);
-      return data as Account[];
-    },
+    accounts,
     async list(filters: Filters, cursor: Cursor, pageSize = 30): Promise<Page> {
       if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 30)
         throw new ApiError("VALIDATION", "分页大小无效");
