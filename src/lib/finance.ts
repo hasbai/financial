@@ -4,7 +4,10 @@ import type { Entry, Payload } from "./types";
 export const amountSchema = z
   .string()
   .regex(/^\d{1,10}(\.\d{1,2})?$/, "金额最多两位小数")
-  .refine((v) => new Decimal(v).gt(0), "金额必须大于零");
+  .refine(
+    (v) => /^\d{1,10}(\.\d{1,2})?$/.test(v) && new Decimal(v).gt(0),
+    "金额必须大于零",
+  );
 export function totals(entries: Entry[]) {
   return entries.reduce(
     (s, e) => {

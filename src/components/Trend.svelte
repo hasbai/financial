@@ -33,7 +33,7 @@
     viewBox="0 0 800 240"
     role="img"
     aria-label="本月完整记录收入及支出趋势，逐日数值见下方趋势明细"
-    class="h-60 w-full overflow-visible"
+    class="h-60 w-full overflow-hidden"
   >
     <line x1="40" x2="760" y1="110" y2="110" stroke="var(--border)" />
     <polyline

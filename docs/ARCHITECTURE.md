@@ -64,3 +64,13 @@ GitHub Actions 进行 frozen-lockfile 安装、typecheck、test、build。数据
 - 首页资产/损益/每日历史面板复用原始行；cashflow优先复用已缓存且覆盖所需半开时间区间的完整行，再用原有微秒边界裁剪。历史余额缓存按实际请求日期键控。
 - 隐藏后首次显示金额只补余额历史；失败重试只重读失败源。所有源缓存位于应用注入的同一QueryClient，不保存到localStorage，退出清空也覆盖在途查询。
 - Auth0 oauth/token属于登录/续期，Cloudflare cdn-cgi/rum属于性能上报；Google Play log未在项目源码中引入，不能仅凭URL认定其具体发起方。
+
+## iOS PWA
+
+manifest 声明北极账本、standalone、同源 scope/start_url 和图标；同时提供180px Apple Touch Icon。Vite build 完成后 scripts/build-pwa.mjs 按 index、manifest、icons、assets 的内容生成有版本的 sw.js 和静态资源清单。
+
+Service Worker 只预缓存公开应用资源；不拦截跨域Auth0/Neon、非GET、Authorization请求，也不缓存带查询参数的资源或任何运行时API响应。受控导航使用对应版本的缓存应用壳，避免旧SW与新页面混用；首次未受控导航仍由静态托管服务返回。新SW保持waiting，所有旧客户端关闭后激活，不skipWaiting、不强制刷新正在填写的交易。新版本激活后清理旧版应用缓存。
+
+账本查询与token继续只放内存，无离线数据库、离线保存队列或后台写入。编辑期间断网保留当前内存输入，禁用保存；网络恢复允许提交，结果不明确仍沿用待核对状态禁止重复写入。冷启动离线只能取得应用壳，登录/读取需要网络。
+
+mobile-viewport.ts 使用 VisualViewport 高度和offsetTop适配键盘；放大时不覆盖系统缩放。仅正常尺寸更新CSS变量，弹层焦点与滚动锁使用Bits UI。PWA standalone中的真实登录、安装、系统返回和键盘行为需单独真机验收，程序化JWT/API不替代此项。

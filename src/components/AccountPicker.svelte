@@ -1,9 +1,9 @@
 <script lang="ts">
-  import * as Popover from "$lib/components/ui/popover";
+  import * as Dialog from "$lib/components/ui/dialog";
   import * as Command from "$lib/components/ui/command";
   import { Button } from "$lib/components/ui/button";
   import { Label } from "$lib/components/ui/label";
-  import { Check, ChevronsUpDown, X } from "@lucide/svelte";
+  import { ArrowLeft, Check, ChevronRight, X } from "@lucide/svelte";
   import type { Account } from "$lib/types";
   let {
     accounts,
@@ -23,8 +23,32 @@
     placeholder?: string;
   } = $props();
   let open = $state(false);
+  let group = $state("");
+  let search = $state("");
   const id = $props.id();
+  const key = (a: Account) => JSON.stringify([a.type, a.subtype]);
   let chosen = $derived(accounts.find((a) => a.id === value));
+  let multipleTypes = $derived(new Set(accounts.map((a) => a.type)).size > 1);
+  let groups = $derived([
+    ...new Map(
+      accounts.map((a) => [
+        key(a),
+        {
+          key: key(a),
+          label: multipleTypes ? `${a.type} · ${a.subtype}` : a.subtype,
+        },
+      ]),
+    ).values(),
+  ]);
+  let visible = $derived(
+    accounts.filter((a) =>
+      search.trim()
+        ? `${a.type} ${a.subtype} ${a.name} ${a.notes ?? ""}`
+            .toLocaleLowerCase()
+            .includes(search.trim().toLocaleLowerCase())
+        : key(a) === group,
+    ),
+  );
   function choose(next: number | null) {
     value = next;
     onChange?.(next);
@@ -32,19 +56,28 @@
   }
 </script>
 
-<div class={compact ? "min-w-0" : "space-y-2"}>
+<div class={compact ? "min-w-0" : "min-w-0 space-y-2"}>
   <Label for={id} class={compact ? "sr-only" : ""}>{label}</Label>
-  <div class="flex gap-1">
-    <Popover.Root bind:open>
-      <Popover.Trigger {id} {disabled}>
+  <div class="flex min-w-0 gap-1">
+    <Dialog.Root
+      bind:open
+      onOpenChange={(v) => {
+        if (v) {
+          search = "";
+          group = chosen ? key(chosen) : "";
+        }
+      }}
+    >
+      <Dialog.Trigger {id} {disabled}>
         {#snippet child({ props })}<Button
             {...props}
             {disabled}
-            variant="outline"
             role="combobox"
+            aria-haspopup="dialog"
             aria-expanded={open}
+            variant="outline"
             class={[
-              "h-auto min-h-12 w-full min-w-0 justify-between whitespace-normal text-left",
+              "h-auto min-h-12 min-w-0 flex-1 justify-between whitespace-normal text-left",
               compact && "rounded-xl border-transparent bg-transparent px-3",
               compact && !chosen && "border-profit/40 bg-profit/5 text-profit",
             ]}
@@ -54,46 +87,92 @@
                   ? chosen.name
                   : `${chosen.type} / ${chosen.subtype} / ${chosen.name}`
                 : placeholder}</span
-            ><ChevronsUpDown class="size-4" aria-hidden="true" /></Button
+            ><ChevronRight class="size-4 shrink-0" aria-hidden="true" /></Button
           >{/snippet}
-      </Popover.Trigger>
-      <Popover.Content
-        class="w-[min(420px,calc(100vw-2rem))] p-0"
-        align="start"
+      </Dialog.Trigger>
+      <Dialog.Content
+        showCloseButton={false}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          document.getElementById(id)?.focus({ preventScroll: true });
+        }}
+        class="mobile-panel flex h-dvh max-h-dvh max-w-full flex-col gap-0 rounded-none p-0 sm:h-[min(600px,85dvh)] sm:max-w-md sm:rounded-3xl"
       >
-        <Command.Root label="搜索会计科目">
+        <Dialog.Header
+          class="mobile-panel-header flex-row items-center gap-2 border-b px-4 py-3 text-left"
+        >
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={group || search ? "返回大类" : `关闭${label}选择`}
+            onclick={() => {
+              if (group || search) {
+                group = "";
+                search = "";
+              } else open = false;
+            }}><ArrowLeft aria-hidden="true" /></Button
+          >
+          <Dialog.Title class="min-w-0 flex-1 break-words"
+            >{search
+              ? label
+              : groups.find((g) => g.key === group)?.label ||
+                `选择${label}`}</Dialog.Title
+          >
+          <Dialog.Description class="sr-only">{label}</Dialog.Description>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`关闭${label}选择`}
+            onclick={() => (open = false)}><X aria-hidden="true" /></Button
+          >
+        </Dialog.Header>
+        <Command.Root
+          shouldFilter={false}
+          class="min-h-0 flex-1 rounded-none p-0"
+          label={`搜索${label}`}
+        >
           <Command.Input
-            placeholder="搜索类型、子类、名称或说明…"
-            aria-label="搜索会计科目"
+            bind:value={search}
+            aria-label={`搜索${label}`}
+            placeholder={`搜索${label}`}
+            class="text-base"
           />
-          <Command.List>
+          <Command.List
+            class="max-h-none min-h-0 flex-1 overscroll-contain p-3 pb-[max(16px,env(safe-area-inset-bottom))]"
+          >
             <Command.Empty>无匹配科目</Command.Empty>
-            {#each ["资产", "负债", "净资产", "收入", "支出"] as type}
-              <Command.Group heading={type}>
-                {#each accounts.filter((a) => a.type === type) as account}
-                  <Command.Item
-                    value={`${account.id} ${account.type} ${account.subtype} ${account.name} ${account.notes || ""}`}
-                    onSelect={() => choose(account.id)}
-                    class="min-h-11"
-                  >
-                    <Check
-                      class={value === account.id
-                        ? "size-4"
-                        : "size-4 opacity-0"}
+            {#if !group && !search.trim()}
+              {#each groups as item}<Command.Item
+                  value={item.key}
+                  onSelect={() => (group = item.key)}
+                  class="min-h-14 gap-3 whitespace-normal"
+                  ><span class="min-w-0 flex-1 break-words">{item.label}</span
+                  ><span class="text-muted-foreground"
+                    >{accounts.filter((a) => key(a) === item.key).length}</span
+                  ><ChevronRight
+                    class="size-4"
+                    aria-hidden="true"
+                  /></Command.Item
+                >{/each}
+            {:else}
+              {#each visible as account}<Command.Item
+                  value={String(account.id)}
+                  onSelect={() => choose(account.id)}
+                  class="min-h-14 gap-3 whitespace-normal"
+                  ><span class="min-w-0 flex-1 break-words"
+                    >{search.trim()
+                      ? `${account.subtype} / ${account.name}`
+                      : account.name}</span
+                  >{#if value === account.id}<Check
+                      class="size-5 shrink-0"
                       aria-hidden="true"
-                    /><span
-                      >{account.subtype} / {account.name}{account.notes
-                        ? ` · ${account.notes}`
-                        : ""}</span
-                    >
-                  </Command.Item>
-                {/each}
-              </Command.Group>
-            {/each}
+                    />{/if}</Command.Item
+                >{/each}
+            {/if}
           </Command.List>
         </Command.Root>
-      </Popover.Content>
-    </Popover.Root>
+      </Dialog.Content>
+    </Dialog.Root>
     {#if value !== null}<Button
         {disabled}
         variant="ghost"

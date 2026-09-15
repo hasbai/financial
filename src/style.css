@@ -215,3 +215,74 @@ h2 {
     scroll-behavior: auto !important;
   }
 }
+
+/* Every screen owns one vertical scroll surface. Safe areas belong to its chrome. */
+html,
+body,
+#root {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+}
+html {
+  overscroll-behavior: none;
+}
+.finance-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+[data-slot="popover-content"] {
+  max-width: calc(
+    100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 2rem
+  );
+  max-height: calc(var(--visual-height, 100dvh) - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+[data-slot="dialog-content"] {
+  top: calc(var(--visual-top, 0px) + var(--visual-height, 100dvh) / 2);
+  max-height: calc(
+    var(--visual-height, 100dvh) - env(safe-area-inset-top) -
+      env(safe-area-inset-bottom) - 2rem
+  );
+  overflow-y: auto;
+  overscroll-behavior: none;
+}
+.editor-scroll,
+.mobile-panel [data-slot="command-list"] {
+  overscroll-behavior: none;
+}
+.editor-scroll {
+  scroll-padding-block: 1rem;
+}
+@media (max-width: 639px) {
+  input,
+  select,
+  textarea,
+  [data-slot="command-input"] {
+    font-size: 16px !important;
+  }
+  input[type="date"],
+  input[type="month"],
+  input[type="datetime-local"] {
+    max-width: 100%;
+    min-width: 0;
+  }
+  .mobile-panel[data-slot="dialog-content"] {
+    top: var(--visual-top, 0px);
+    left: 0;
+    width: 100%;
+    max-width: 100%;
+    height: var(--visual-height, 100dvh);
+    max-height: var(--visual-height, 100dvh);
+    translate: none;
+    transform: none;
+    overflow: hidden;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    animation: none;
+  }
+  .mobile-panel-header {
+    padding-top: max(1rem, env(safe-area-inset-top));
+  }
+}

@@ -5,15 +5,10 @@
     Plus,
     Trash2,
     ArrowLeft,
-    ReceiptText,
     MoreHorizontal,
-    Grid2X2,
-    Wallet,
     UserRound,
     CalendarDays,
     NotebookPen,
-    ArrowLeftRight,
-    Banknote,
     Check,
     CircleAlert,
     Sparkles,
@@ -26,6 +21,8 @@
   import { useApi, useAccounts } from "$lib/context";
   import { errorMessage } from "$lib/api";
   import { router } from "$lib/router.svelte";
+  import BusinessEntries from "../components/BusinessEntries.svelte";
+  import { businessLayout, type BusinessLayout } from "$lib/business-entries";
   import { editorPayload, appendRefund, simpleEntrySlots } from "$lib/editor";
   import {
     localDateTime,
@@ -53,9 +50,11 @@
   let dirty = $derived(JSON.stringify(values) !== baseline);
   let pending = $state(false);
   let advanced = $state(false);
+  let business = $state<BusinessLayout | null | undefined>(undefined);
+  let online = $state(navigator.onLine);
   let moreOpen = $state(false);
   let sourceOpen = $state(false);
-  let preferred = $state<"支出" | "收入">("支出");
+  let formRevision = $state(0);
   let errors = $state<string[]>([]);
   let success = $state("");
   let uncertain = $state(false);
@@ -68,9 +67,12 @@
   const accounts = useAccounts();
   const cache = useQueryClient();
   let sum = $derived(totals(values.entries));
-  let slots = $derived(
-    simpleEntrySlots(values, accounts.data ?? [], preferred),
-  );
+  let slots = $derived(simpleEntrySlots(values, accounts.data ?? []));
+  $effect(() => {
+    if (accounts.data && business === undefined) {
+      business = businessLayout(values, accounts.data);
+    }
+  });
   const suggestions = createQuery(() => ({
     queryKey: ["transactions", "suggestions", saved?.merchant],
     queryFn: () => api.list({ search: saved!.merchant, posted: "true" }, null),
@@ -101,20 +103,6 @@
     ensurePair();
     if (slots) values.entries[slots[which]].account_id = id;
   }
-  function setSimpleAmount(amount: string) {
-    ensurePair();
-    values.entries.forEach((e) => (e.amount = amount));
-  }
-  function setType(type: "支出" | "收入") {
-    if (!slots || slots.type === type) return;
-    ensurePair();
-    const c = slots.category;
-    const a = slots.account;
-    values.entries[c].direction = type === "支出" ? "借" : "贷";
-    values.entries[c].account_id = null;
-    values.entries[a].direction = type === "支出" ? "贷" : "借";
-    preferred = type;
-  }
   function applySuggestion() {
     if (!suggestion || !suggestionSlots || !slots) return;
     const category = suggestion.entries[suggestionSlots.category].account_id;
@@ -133,6 +121,9 @@
     if (!pending) router.navigate("/transactions" + router.location.search);
   };
   onMount(() => {
+    const connectivity = () => (online = navigator.onLine);
+    window.addEventListener("online", connectivity);
+    window.addEventListener("offline", connectivity);
     const unguard = router.guard(
       () => !pending && (!dirty || window.confirm("放弃未保存修改？")),
     );
@@ -144,6 +135,8 @@
     };
     window.addEventListener("beforeunload", unload);
     return () => {
+      window.removeEventListener("online", connectivity);
+      window.removeEventListener("offline", connectivity);
       unguard();
       window.removeEventListener("beforeunload", unload);
     };
@@ -152,8 +145,10 @@
     if (errors.length) void tick().then(() => errorRef?.focus());
   });
   function reset(data: Transaction) {
+    formRevision += 1;
     saved = data;
     values = editorPayload(data);
+    business = businessLayout(values, accounts.data ?? []);
     baseline = JSON.stringify(values);
     uncertain = false;
     errors = [];
@@ -172,7 +167,8 @@
     }
   }
   async function submit(next = false) {
-    if (pending || uncertain) return;
+    if (pending || uncertain || !online || accounts.isPending || accounts.error)
+      return;
     success = "";
     errors = validatePost(values);
     if (errors.length) return;
@@ -235,6 +231,7 @@
         accounts.data || [],
         refundAmount,
       );
+      business = null;
       refundOpen = false;
       refundAmount = "";
       refundError = "";
@@ -253,7 +250,7 @@
 >
   <Dialog.Content
     showCloseButton={false}
-    class="flex h-dvh max-h-dvh max-w-full flex-col gap-0 rounded-none p-0 sm:h-auto sm:max-h-[92dvh] sm:max-w-2xl sm:rounded-4xl"
+    class="mobile-panel flex h-dvh max-h-dvh max-w-full flex-col gap-0 rounded-none p-0 sm:h-auto sm:max-h-[92dvh] sm:max-w-2xl sm:rounded-4xl"
     onEscapeKeydown={(e) => {
       e.preventDefault();
       close();
@@ -263,7 +260,9 @@
       close();
     }}
   >
-    <Dialog.Header class="flex-row items-center gap-3 px-5 py-4 text-left">
+    <Dialog.Header
+      class="mobile-panel-header flex-row items-center gap-3 px-5 py-4 text-left"
+    >
       <Button
         variant="ghost"
         size="icon"
@@ -288,6 +287,8 @@
             class="w-full justify-start"
             variant="ghost"
             onclick={() => {
+              if (advanced)
+                business = businessLayout(values, accounts.data ?? []);
               advanced = !advanced;
               moreOpen = false;
             }}>分录明细</Button
@@ -310,7 +311,12 @@
             ><Button
               class="w-full justify-start"
               variant="ghost"
-              disabled={pending || uncertain}
+              disabled={pending ||
+                uncertain ||
+                !online ||
+                accounts.isPending ||
+                !!accounts.error ||
+                !sum.借.eq(sum.贷)}
               onclick={() => {
                 moreOpen = false;
                 submit(true);
@@ -320,7 +326,7 @@
       >
     </Dialog.Header>
     <div
-      class="min-h-0 space-y-5 overflow-y-auto overscroll-contain bg-background px-5 py-5 sm:px-6"
+      class="editor-scroll min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain bg-background px-5 py-5 sm:px-6"
     >
       {#if saved}<section class="finance-card p-5" aria-label="原交易摘要">
           <div class="flex items-start gap-3">
@@ -409,65 +415,22 @@
             >
           </div>
         </section>{/if}
+      {#if !online}<Notice variant="warning">离线</Notice>{/if}
+      {#if accounts.isPending}<Loading />{:else if accounts.error}<Failure
+          error={accounts.error}
+          retry={() => accounts.refetch()}
+        />{:else if business && !advanced}
+        {#key formRevision}<BusinessEntries
+            bind:entries={values.entries}
+            accounts={accounts.data ?? []}
+            initial={business}
+            disabled={pending || uncertain}
+          />{/key}
+      {/if}
       <fieldset
         disabled={pending}
         class="finance-card min-w-0 divide-y px-4 sm:px-5"
       >
-        {#if slots && !advanced}
-          <div class="editor-row">
-            <span class="editor-label"
-              ><ArrowLeftRight aria-hidden="true" />交易类型</span
-            >
-            <div class="flex rounded-xl bg-muted p-1">
-              {#each ["支出", "收入"] as type}<Button
-                  variant={slots.type === type ? "default" : "ghost"}
-                  class="flex-1 rounded-lg"
-                  aria-pressed={slots.type === type}
-                  onclick={() => setType(type as "支出" | "收入")}
-                  >{type}</Button
-                >{/each}
-            </div>
-          </div>
-          <div class="editor-row">
-            <span class="editor-label"><Grid2X2 aria-hidden="true" />分类</span
-            ><AccountPicker
-              compact
-              label="分类"
-              placeholder="待分类"
-              accounts={(accounts.data ?? []).filter(
-                (a) => a.type === slots!.type,
-              )}
-              value={values.entries[slots.category]?.account_id ?? null}
-              onChange={(id) => setSimpleAccount("category", id)}
-              disabled={pending}
-            />
-          </div>
-          <div class="editor-row">
-            <span class="editor-label"><Wallet aria-hidden="true" />账户</span
-            ><AccountPicker
-              compact
-              label="账户"
-              placeholder="待补录账户"
-              accounts={(accounts.data ?? []).filter((a) =>
-                ["资产", "负债"].includes(a.type),
-              )}
-              value={values.entries[slots.account]?.account_id ?? null}
-              onChange={(id) => setSimpleAccount("account", id)}
-              disabled={pending}
-            />
-          </div>
-          <div class="editor-row">
-            <span class="editor-label"><Banknote aria-hidden="true" />金额</span
-            ><Field
-              compact
-              label="金额（人民币）"
-              inputmode="decimal"
-              value={values.entries[0]?.amount ?? ""}
-              placeholder="0.00"
-              oninput={(e) => setSimpleAmount(e.currentTarget.value)}
-            />
-          </div>
-        {/if}
         <div class="editor-row">
           <span class="editor-label"><UserRound aria-hidden="true" />对方</span
           ><Field
@@ -519,11 +482,20 @@
             /><Field label="支付流水号" bind:value={values.payment_id} />
           </div>{/if}
       </fieldset>
-      {#if advanced || !slots}<fieldset
+      {#if advanced || business === null}<fieldset
           disabled={pending}
           class="finance-card min-w-0 space-y-5 p-4 sm:p-5"
         >
           <h2>分录明细</h2>
+          {#if !values.entries.length && accounts.data}<Button
+              class="w-full"
+              variant="outline"
+              onclick={() => {
+                ensurePair();
+                business = businessLayout(values, accounts.data ?? []);
+                advanced = false;
+              }}>开始补录</Button
+            >{/if}
           {#if accounts.isPending}<Loading />{:else if accounts.error}<Failure
               error={accounts.error}
               retry={() => accounts.refetch()}
@@ -579,6 +551,10 @@
           <Button
             variant="outline"
             class="w-full"
+            disabled={pending ||
+              values.entries.length >= 100 ||
+              accounts.isPending ||
+              !!accounts.error}
             onclick={() =>
               values.entries.push({
                 direction: "借",
@@ -615,7 +591,12 @@
         onclick={close}>稍后处理</Button
       ><Button
         class="h-14 rounded-2xl"
-        disabled={pending || uncertain}
+        disabled={pending ||
+          uncertain ||
+          !online ||
+          accounts.isPending ||
+          !!accounts.error ||
+          !sum.借.eq(sum.贷)}
         onclick={() => submit()}
         >{pending ? "正在保存…" : saved ? "保存补录" : "保存交易"}</Button
       ></Dialog.Footer

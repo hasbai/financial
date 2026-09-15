@@ -55,7 +55,9 @@
 </script>
 
 {#if !auth.user}
-  <main class="grid min-h-dvh place-items-center px-5 py-10">
+  <main
+    class="grid min-h-dvh place-items-center px-5 pt-[max(40px,env(safe-area-inset-top))] pb-[max(40px,env(safe-area-inset-bottom))]"
+  >
     <Card.Root class="w-full max-w-md">
       <Card.Content class="space-y-6 p-8 sm:p-10">
         <div
@@ -105,7 +107,7 @@
   </aside>
   <div class="relative min-h-dvh md:ml-56">
     <header
-      class="absolute top-5 right-4 z-20 sm:right-8"
+      class="absolute top-[calc(20px+env(safe-area-inset-top))] right-[max(16px,env(safe-area-inset-right))] z-20 sm:right-8"
       aria-label="应用设置"
     >
       <Popover.Root
@@ -146,7 +148,7 @@
     </header>
     <main
       id="main"
-      class="mx-auto max-w-5xl px-4 pt-5 pb-[calc(156px+env(safe-area-inset-bottom))] sm:px-8"
+      class="mx-auto min-w-0 max-w-5xl pl-[max(16px,env(safe-area-inset-left))] pr-[max(16px,env(safe-area-inset-right))] pt-[calc(20px+env(safe-area-inset-top))] pb-[calc(156px+env(safe-area-inset-bottom))] sm:px-8"
     >
       {#if !authorized}
         <Empty title="当前账号没有访问权限" />
