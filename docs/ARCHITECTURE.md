@@ -26,7 +26,7 @@ Data API 的 JWT 校验发生在 Neon，PostgreSQL 根据 superadmin 的 schema 
 
 ## 应用结构
 
-- `src/pages`：总览、流水、编辑、科目。
+- `src/pages`：总览、流水、编辑、设置与科目。
 - `src/lib/api.ts`：使用 Neon PostgREST SDK，自动取得 Auth0 token。直接 GET balance、balance_history、cashflow、income_statement、transactions 和 account；数值列取十进制字符串，客户端 Decimal 完成汇总、分类、日期分组和首页结构组装。只有保存使用 RPC。
 - `@tanstack/svelte-query`：通过 Svelte 5 accessor 查询缓存、游标分页与保存后刷新。
 - `src/lib/reports.ts`：报表片段与源行共用 QueryClient 内存缓存；首页从现有报表并发读取，后续明细复用源行，不为一次 HTTP 再拼后端 home 视图。关闭金额时不取余额历史。
@@ -73,6 +73,6 @@ Service Worker 只预缓存公开应用资源；不拦截跨域Auth0/Neon、非G
 
 账本查询与token继续只放内存，无离线数据库、离线保存队列或后台写入。编辑期间断网保留当前内存输入，禁用保存；网络恢复允许提交，结果不明确仍沿用待核对状态禁止重复写入。冷启动离线只能取得应用壳，登录/读取需要网络。
 
-mobile-viewport.ts 使用 VisualViewport 高度和offsetTop适配键盘；放大时不覆盖系统缩放。仅正常尺寸更新CSS变量，弹层焦点与滚动锁使用Bits UI。PWA standalone中的真实登录、安装、系统返回和键盘行为需单独真机验收，程序化JWT/API不替代此项。
+mobile-viewport.ts 使用 VisualViewport 高度和offsetTop适配键盘；放大时不覆盖系统缩放。仅正常尺寸更新CSS变量，弹层焦点与滚动锁使用Bits UI。手机交易路由只挂载编辑页面，EditorSurface 在手机渲染普通页面、桌面使用Dialog；手机页面及科目选择均适配VisualViewport，避免应用菜单或底栏覆盖编辑操作。PWA standalone中的真实登录、安装、系统返回和键盘行为需单独真机验收，程序化JWT/API不替代此项。
 
 PWA导航缓存使用规范URL `/`，不预取会被Cloudflare重定向的`/index.html`。导航响应的redirected标记需清除后才能用于redirect=manual的浏览器导航。2026-09-15修复版在install阶段重建旧缓存的redirected /index.html响应，保留旧版正文/资源，允许仍活跃的旧SW恢复导航；不等待新SW激活才修复。回归通过真实HTTP307验证，而非仅比对文件内容。

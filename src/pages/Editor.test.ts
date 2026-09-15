@@ -52,6 +52,53 @@ function setup(
   render(Harness, { api, cache });
   return api;
 }
+it("keeps mobile loading, failure and retry in a page with a return action", async () => {
+  let fail!: (error: Error) => void;
+  setup("/transactions/7?review=needed", (api) => {
+    vi.mocked(api.transaction).mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+  });
+  await screen.findByRole("heading", { name: "交易详情" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fail(new Error("详情加载失败"));
+  await screen.findByText("详情加载失败");
+  expect(screen.getByRole("button", { name: "返回流水" })).toBeTruthy();
+  await fireEvent.click(screen.getByRole("button", { name: "重试" }));
+  await screen.findByDisplayValue("示例消费");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await fireEvent.click(screen.getByRole("button", { name: "关闭编辑" }));
+  expect(router.location.search).toBe("?review=needed");
+});
+it("retains a desktop dialog and protects dirty input when Escape is pressed", async () => {
+  vi.spyOn(window, "matchMedia").mockImplementation(
+    (query) =>
+      ({
+        matches: query === "(min-width: 640px)",
+        media: query,
+        addEventListener() {},
+        removeEventListener() {},
+        onchange: null,
+        addListener() {},
+        removeListener() {},
+        dispatchEvent: () => true,
+      }) as MediaQueryList,
+  );
+  setup();
+  await screen.findByDisplayValue("示例消费");
+  const dialog = screen.getByRole("dialog", { name: "补录交易信息" });
+  await fireEvent.input(screen.getByLabelText("商户 / 交易摘要"), {
+    target: { value: "保留输入" },
+  });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  await fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(confirm).toHaveBeenCalled();
+  expect(router.location.pathname).toBe("/transactions/7");
+  expect(screen.getByDisplayValue("保留输入")).toBeTruthy();
+});
 it("adds refund to the same transaction and preserves original entry IDs", async () => {
   const api = setup();
   await screen.findByDisplayValue("示例消费");

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createMutation, useQueryClient } from "@tanstack/svelte-query";
-  import { Plus } from "@lucide/svelte";
+  import { ArrowLeft, Plus } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
   import { Badge } from "$lib/components/ui/badge";
   import * as Dialog from "$lib/components/ui/dialog";
@@ -43,7 +43,12 @@
 
 <div class="page">
   <div class="page-heading pr-12">
-    <h1>科目设置</h1>
+    <div class="flex items-center gap-2">
+      <Button href="/settings" variant="ghost" size="icon" aria-label="返回设置"
+        ><ArrowLeft aria-hidden="true" /></Button
+      >
+      <h1>科目设置</h1>
+    </div>
     <Button
       onclick={() => edit({ type: "资产", name: "", subtype: "", notes: "" })}
       ><Plus aria-hidden="true" />新增科目</Button

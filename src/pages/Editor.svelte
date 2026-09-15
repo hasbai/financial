@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createQuery } from "@tanstack/svelte-query";
-  import * as Dialog from "$lib/components/ui/dialog";
+  import { ArrowLeft } from "@lucide/svelte";
+  import EditorSurface from "../components/EditorSurface.svelte";
   import { Button } from "$lib/components/ui/button";
   import { useApi } from "$lib/context";
   import { router } from "$lib/router.svelte";
@@ -24,26 +25,22 @@
 {#if id === null || (validId && query.data)}
   <EditorForm original={query.data ?? null} {hidden} />
 {:else}
-  <Dialog.Root
-    open={true}
-    onOpenChange={(v) => {
-      if (!v) close();
-    }}
-    ><Dialog.Content showCloseButton={false}
-      ><Dialog.Header
-        ><Dialog.Title>交易详情</Dialog.Title><Dialog.Description
-          class="sr-only">交易</Dialog.Description
-        ></Dialog.Header
+  <EditorSurface title="交易详情" {close}>
+    <header
+      class="mobile-panel-header flex shrink-0 items-center gap-3 bg-card px-5 py-4"
+    >
+      <Button variant="ghost" size="icon" aria-label="返回流水" onclick={close}
+        ><ArrowLeft aria-hidden="true" /></Button
       >
+      <h1 class="text-xl">交易详情</h1>
+    </header>
+    <div class="editor-scroll min-h-0 flex-1 overflow-y-auto p-5">
       {#if !validId}<Notice variant="error">无效的交易编号。</Notice
         >{:else if query.isPending}<Loading />{:else if query.error}<Failure
           error={query.error}
           retry={() => query.refetch()}
         />{:else}<Notice variant="error">记录不存在或没有访问权限。</Notice
         >{/if}
-      <Dialog.Footer
-        ><Button variant="outline" onclick={close}>关闭</Button></Dialog.Footer
-      >
-    </Dialog.Content></Dialog.Root
-  >
+    </div>
+  </EditorSurface>
 {/if}

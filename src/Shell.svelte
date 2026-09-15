@@ -44,9 +44,16 @@
   const nav = [
     { path: "/", label: "总览", icon: House },
     { path: "/transactions", label: "流水", icon: ReceiptText },
-    { path: "/accounts", label: "科目", icon: Settings },
+    { path: "/settings", label: "设置", icon: Settings },
   ];
   let path = $derived(router.location.pathname);
+  let editingTransaction = $derived(path.startsWith("/transactions/"));
+  function activeNav(destination: string) {
+    return destination === "/"
+      ? path === "/"
+      : path.startsWith(destination) ||
+          (destination === "/settings" && path === "/accounts");
+  }
   let authorized = $derived(auth.user?.sub === config.ownerSubject);
   function toggleAmounts() {
     hidden = !hidden;
@@ -93,13 +100,9 @@
       {#each nav as item}
         <Button
           href={item.path}
-          variant={(
-            item.path === "/" ? path === "/" : path.startsWith(item.path)
-          )
-            ? "default"
-            : "ghost"}
+          variant={activeNav(item.path) ? "default" : "ghost"}
           class="w-full justify-start"
-          aria-current={path === item.path ? "page" : undefined}
+          aria-current={activeNav(item.path) ? "page" : undefined}
           ><item.icon aria-hidden="true" />{item.label}</Button
         >
       {/each}
@@ -107,6 +110,7 @@
   </aside>
   <div class="relative min-h-dvh md:ml-56">
     <header
+      class:transaction-chrome={editingTransaction}
       class="absolute top-[calc(20px+env(safe-area-inset-top))] right-[max(16px,env(safe-area-inset-right))] z-20 sm:right-8"
       aria-label="应用设置"
     >
@@ -148,6 +152,7 @@
     </header>
     <main
       id="main"
+      class:transaction-main={editingTransaction}
       class="mx-auto min-w-0 max-w-5xl pl-[max(16px,env(safe-area-inset-left))] pr-[max(16px,env(safe-area-inset-right))] pt-[calc(20px+env(safe-area-inset-top))] pb-[calc(156px+env(safe-area-inset-bottom))] sm:px-8"
     >
       {#if !authorized}
@@ -158,13 +163,15 @@
             {hidden}
             onToggleAmounts={toggleAmounts}
           />{/await}
-      {:else if path === "/transactions" || path.startsWith("/transactions/")}
+      {:else if path === "/transactions"}
         {#await import("./pages/Transactions.svelte")}<Loading
           />{:then page}<page.default {hidden} />{/await}
-        {#if path.startsWith("/transactions/")}
-          {#await import("./pages/Editor.svelte")}<Loading
-            />{:then page}{#key path}<page.default {hidden} />{/key}{/await}
-        {/if}
+      {:else if editingTransaction}
+        {#await import("./pages/Editor.svelte")}<Loading
+          />{:then page}{#key path}<page.default {hidden} />{/key}{/await}
+      {:else if path === "/settings"}
+        {#await import("./pages/Settings.svelte")}<Loading
+          />{:then page}<page.default />{/await}
       {:else if path === "/accounts"}
         {#await import("./pages/Accounts.svelte")}<Loading
           />{:then page}<page.default />{/await}
@@ -176,21 +183,19 @@
   {#if authorized && !path.startsWith("/transactions/")}
     <Button
       href="/transactions/new"
-      class="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] z-20 h-16 w-16 flex-col gap-0.5 rounded-full p-0 shadow-lg md:right-10 md:bottom-8"
-      ><Plus aria-hidden="true" />记一笔</Button
+      aria-label="记一笔"
+      class="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] z-20 h-16 w-16 rounded-full p-0 shadow-lg md:right-10 md:bottom-8"
+      ><Plus class="size-7" aria-hidden="true" /></Button
     >
   {/if}
   <nav
+    class:transaction-chrome={editingTransaction}
     aria-label="移动导航"
     class="fixed inset-x-0 bottom-0 z-30 flex h-[calc(68px+env(safe-area-inset-bottom))] items-start justify-around border-t bg-card/95 backdrop-blur-md pt-2 pb-[env(safe-area-inset-bottom)] md:hidden"
   >
     {#each nav as item}<a
         href={item.path}
-        aria-current={(
-          item.path === "/" ? path === "/" : path.startsWith(item.path)
-        )
-          ? "page"
-          : undefined}
+        aria-current={activeNav(item.path) ? "page" : undefined}
         class="flex min-h-12 min-w-16 flex-col items-center justify-center gap-1 text-xs text-muted-foreground aria-[current=page]:text-primary"
         ><item.icon class="size-5" aria-hidden="true" />{item.label}</a
       >{/each}

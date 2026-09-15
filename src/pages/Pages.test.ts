@@ -84,11 +84,15 @@ it("uses an inclusive date control while preserving SQL half-open date filters",
   );
 });
 function setup(
-  page: "transactions" | "overview" | "accounts",
+  page: "transactions" | "overview" | "accounts" | "shell",
   hidden = false,
   configure?: (api: Repository) => void,
 ) {
-  router.navigate(page === "overview" ? "/" : "/" + page, true, true);
+  router.navigate(
+    page === "overview" ? "/" : page === "shell" ? "/settings" : "/" + page,
+    true,
+    true,
+  );
   const api: Repository = {
     home: vi.fn(async () => {
       const snapshot = homeSnapshot();
@@ -300,8 +304,8 @@ it("clears all filters through the Bits UI select", async () => {
   await waitFor(() => expect(router.location.search).toBe(""));
 });
 
-it("keeps transaction details off the homepage and offers day-specific cash and balance links", async () => {
-  setup("overview");
+it("keeps cash day links and removes the daily balance list and query", async () => {
+  const { api } = setup("overview");
   await screen.findByText("本期净流入");
   expect(screen.queryByRole("region", { name: "最近交易" })).toBeNull();
   expect(screen.queryByRole("table")).toBeNull();
@@ -315,12 +319,77 @@ it("keeps transaction details off the homepage and offers day-specific cash and 
     Date.parse(params.get("end")!) - Date.parse(params.get("start")!),
   ).toBe(86400000);
   await fireEvent.click(screen.getByRole("button", { name: "资产负债" }));
-  const balances = await screen.findByRole("region", { name: "每日余额" });
+  await screen.findByRole("region", { name: "科目余额" });
+  expect(screen.queryByRole("region", { name: "每日余额" })).toBeNull();
   expect(
-    within(balances)
-      .getByRole("link", { name: "2026-09-01" })
-      .getAttribute("href"),
-  ).toContain("start=");
+    vi
+      .mocked(api.report)
+      .mock.calls.some(([part]) => part === "balanceHistory"),
+  ).toBe(false);
   await fireEvent.click(screen.getByRole("button", { name: "隐藏金额" }));
   expect(screen.queryByRole("region", { name: "每日余额" })).toBeNull();
+});
+
+it("opens asset and liability cards in their own balance filters and restores URL state", async () => {
+  const { rerender } = setup("overview", false, (api) => {
+    vi.mocked(api.report).mockImplementation((async (part) =>
+      part === "accounts"
+        ? [
+            ...overview.accounts,
+            {
+              id: 3,
+              name: "信用卡",
+              type: "负债",
+              subtype: "信用账户",
+              balance: "100.00",
+            },
+          ]
+        : reportParts[part]) as Repository["report"]);
+  });
+  await fireEvent.click(await screen.findByRole("button", { name: /总资产/ }));
+  const assetUrl = router.location.search;
+  expect(router.location.pathname).toBe("/");
+  expect(new URLSearchParams(assetUrl).get("view")).toBe("assets");
+  const region = await screen.findByRole("region", { name: "科目余额" });
+  expect(within(region).getByText("银行卡")).toBeTruthy();
+  expect(within(region).queryByText("信用卡")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "资产" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+  await fireEvent.click(screen.getByRole("button", { name: "总览" }));
+  await fireEvent.click(await screen.findByRole("button", { name: /总负债/ }));
+  expect(new URLSearchParams(router.location.search).get("type")).toBe("负债");
+  expect(await screen.findByText("信用卡")).toBeTruthy();
+  expect(screen.queryByText("银行卡")).toBeNull();
+  router.navigate("/" + assetUrl, true, true);
+  await screen.findByRole("heading", { name: "总资产" });
+  await rerender({ hidden: true });
+  expect(document.body.textContent).not.toContain("¥");
+  await fireEvent.click(screen.getByRole("button", { name: "全部" }));
+  expect(await screen.findByText("银行卡")).toBeTruthy();
+  expect(screen.getByText("信用卡")).toBeTruthy();
+});
+
+it("routes settings to accounts and opens the icon-only add action as a standalone mobile page", async () => {
+  const { api } = setup("shell");
+  await screen.findByRole("heading", { name: "设置" });
+  const add = screen.getByRole("link", { name: "记一笔" });
+  expect(add.textContent?.trim()).toBe("");
+  await fireEvent.click(screen.getByRole("link", { name: "科目" }));
+  await screen.findByRole("heading", { name: "科目设置" });
+  for (const link of screen.getAllByRole("link", { name: /^设置$/ }))
+    expect(link.getAttribute("aria-current")).toBe("page");
+  await fireEvent.click(screen.getByRole("link", { name: "返回设置" }));
+  await screen.findByRole("heading", { name: "设置" });
+  await fireEvent.click(screen.getByRole("link", { name: "记一笔" }));
+  await screen.findByRole("heading", { name: "新增交易" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("heading", { name: "交易流水" })).toBeNull();
+  expect(api.list).not.toHaveBeenCalled();
+  expect(document.querySelector(".editor-page .editor-scroll")).toBeTruthy();
+  await fireEvent.click(screen.getByRole("button", { name: "关闭编辑" }));
+  await fireEvent.click(await screen.findByRole("link", { name: /示例消费/ }));
+  await screen.findByRole("heading", { name: "补录交易信息" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("heading", { name: "交易流水" })).toBeNull();
 });

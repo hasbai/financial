@@ -1,7 +1,6 @@
 <script lang="ts">
   import { useReport, useReportTime } from "$lib/reports";
   import { sessionQueryOptions } from "$lib/query-cache";
-  import { dayLink } from "$lib/cashflow";
   import { effectiveEnd } from "$lib/api";
   import { untrack } from "svelte";
   import { createQuery, useQueryClient } from "@tanstack/svelte-query";
@@ -33,8 +32,30 @@
   }: { hidden: boolean; onToggleAmounts?: () => void } = $props();
   let localHidden = $state(false);
   let masked = $derived(hidden || localHidden);
-  let month = $state(currentMonth());
-  let view = $state("overview");
+  let params = $derived(new URLSearchParams(router.location.search));
+  let month = $derived.by(() => {
+    const value = params.get("month") ?? "";
+    return /^\d{4}-(0[1-9]|1[0-2])$/.test(value) && value <= currentMonth()
+      ? value
+      : currentMonth();
+  });
+  let view = $derived(
+    ["assets", "cash", "profit"].includes(params.get("view") ?? "")
+      ? params.get("view")!
+      : "overview",
+  );
+  let balanceType = $derived(
+    ["资产", "负债"].includes(params.get("type") ?? "")
+      ? params.get("type")!
+      : "",
+  );
+  function showView(next: string, type = "", selectedMonth = month) {
+    const search = new URLSearchParams();
+    if (next !== "overview") search.set("view", next);
+    if (next === "assets" && type) search.set("type", type);
+    if (selectedMonth !== currentMonth()) search.set("month", selectedMonth);
+    router.navigate("/" + (search.size ? "?" + search : ""));
+  }
   let cashMode = $state<"future" | "month">("month");
   const api = useApi();
   const openedAt = useReportTime();
@@ -76,11 +97,6 @@
     () => !current && !!home.data && (view === "overview" || view === "profit"),
   );
   const quality = useReport("quality", period, () => !current && !!home.data);
-  const history = useReport(
-    "balanceHistory",
-    period,
-    () => view === "assets" && !masked,
-  );
   const balances = useReport("accounts", period, () => view === "assets");
   const categories = useReport("categories", period, () => view === "profit");
   const trend = useReport("trend", period, () => view === "profit" && !masked);
@@ -91,7 +107,7 @@
       ? [balance]
       : []),
     ...(!current && (view === "overview" || view === "profit") ? [income] : []),
-    ...(view === "assets" ? [balances, ...(!masked ? [history] : [])] : []),
+    ...(view === "assets" ? [balances] : []),
     ...(view === "profit" ? [categories, ...(!masked ? [trend] : [])] : []),
   ]);
   let query = $derived({
@@ -171,7 +187,7 @@
           class="min-w-0 flex-1 rounded-full px-2"
           variant={view === key ? "default" : "ghost"}
           aria-pressed={view === key}
-          onclick={() => (view = key)}>{label}</Button
+          onclick={() => showView(key)}>{label}</Button
         >{/each}
     </div>
     <div class="hidden max-w-40 sm:block">
@@ -186,11 +202,22 @@
             /^\d{4}-\d{2}$/.test(e.currentTarget.value) &&
             e.currentTarget.value <= currentMonth()
           )
-            month = e.currentTarget.value;
+            showView(view, balanceType, e.currentTarget.value);
         }}
       />
     </div>
   </div>
+  {#if view === "assets"}
+    <div class="flex gap-2" role="group" aria-label="资产负债类型">
+      {#each ["", "资产", "负债"] as type}
+        <Button
+          variant={balanceType === type ? "default" : "outline"}
+          aria-pressed={balanceType === type}
+          onclick={() => showView("assets", type)}>{type || "全部"}</Button
+        >
+      {/each}
+    </div>
+  {/if}
   {#if query.isPending}<Loading />{:else if query.error}<Failure
       error={query.error}
       retry={() => query.refetch()}
@@ -207,11 +234,11 @@
             /^\d{4}-\d{2}$/.test(e.currentTarget.value) &&
             e.currentTarget.value <= currentMonth()
           )
-            month = e.currentTarget.value;
+            showView(view, balanceType, e.currentTarget.value);
         }}
       />
     </div>
-    {#if view === "overview" || view === "assets"}
+    {#if view === "overview"}
       <section
         class="finance-card relative overflow-hidden p-5 sm:p-7"
         aria-label="净资产"
@@ -251,14 +278,7 @@
         {#each [{ type: "资产", title: "总资产", value: data.assets, icon: Wallet, color: "bg-asset/10 text-asset" }, { type: "负债", title: "总负债", value: data.liabilities, icon: Landmark, color: "bg-cash-out/10 text-cash-out" }] as item}
           <button
             class="finance-card min-w-0 p-4 text-left transition-colors hover:bg-accent sm:p-5"
-            onclick={() =>
-              down({
-                account_type: item.type,
-                start: "",
-                end: current ? "" : data.as_of,
-                posted: "",
-                matched: "true",
-              })}
+            onclick={() => showView("assets", item.type)}
             ><span class="flex items-center gap-2"
               ><span class={`icon-tile ${item.color}`}
                 ><item.icon class="size-5" aria-hidden="true" /></span
@@ -276,7 +296,7 @@
     {/if}
     {#if view === "overview"}<Button
         variant="ghost"
-        onclick={() => (view = "cash")}
+        onclick={() => showView("cash")}
         >查看每日现金流<ChevronRight aria-hidden="true" /></Button
       >{/if}
     {#if view === "overview" || view === "cash"}<Cashflow
@@ -300,7 +320,7 @@
               variant="ghost"
               size="icon"
               aria-label="查看损益明细"
-              onclick={() => (view = "profit")}
+              onclick={() => showView("profit")}
               ><ChevronRight aria-hidden="true" /></Button
             >{/if}
         </div>
@@ -357,7 +377,32 @@
         class="finance-card divide-y p-5"
         aria-label="科目余额"
       >
-        {#each data.accounts.filter( (a) => ["资产", "负债"].includes(a.type) ) as a}<button
+        <div class="flex items-center justify-between gap-3 pb-4">
+          <h2>{balanceType ? `总${balanceType}` : "资产负债"}</h2>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={masked ? "显示金额" : "隐藏金额"}
+            onclick={toggleAmounts}
+          >
+            {#if masked}<EyeOff aria-hidden="true" />{:else}<Eye
+                aria-hidden="true"
+              />{/if}
+          </Button>
+        </div>
+        <div class="grid gap-3 py-4" class:grid-cols-2={!balanceType}>
+          {#each [{ type: "资产", value: data.assets }, { type: "负债", value: data.liabilities }].filter((item) => !balanceType || item.type === balanceType) as item}
+            <div class="min-w-0">
+              {#if !balanceType}<p class="text-sm text-muted-foreground">
+                  总{item.type}
+                </p>{/if}
+              <p class="money break-words text-2xl font-semibold">
+                {money(item.value, masked)}
+              </p>
+            </div>
+          {/each}
+        </div>
+        {#each data.accounts.filter((a) => ["资产", "负债"].includes(a.type) && (!balanceType || a.type === balanceType)) as a}<button
             class="flex min-h-16 w-full items-center justify-between gap-3 py-3 text-left"
             onclick={() =>
               down({
@@ -378,31 +423,4 @@
           >{/each}
       </section>{/if}
   {/if}
-  {#if view === "assets" && !masked}<section
-      class="finance-card p-5"
-      aria-label="每日余额"
-    >
-      <h2>每日余额</h2>
-      {#if !history.data?.length}<Empty title="暂无余额历史" />{:else}
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-sm">
-            <thead
-              ><tr><th>日期</th><th>资产</th><th>负债</th><th>净资产</th></tr
-              ></thead
-            ><tbody>
-              {#each history.data as day}<tr class="border-t"
-                  ><td
-                    ><a
-                      class="inline-flex min-h-12 items-center text-primary underline"
-                      href={dayLink(day.date, { posted: "", matched: "true" })}
-                      >{day.date}</a
-                    ></td
-                  ><td class="money">{money(day.assets)}</td><td class="money"
-                    >{money(day.liabilities)}</td
-                  ><td class="money">{money(day.net_assets)}</td></tr
-                >{/each}
-            </tbody>
-          </table>
-        </div>{/if}
-    </section>{/if}
 </div>

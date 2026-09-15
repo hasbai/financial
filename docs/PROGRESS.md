@@ -2,6 +2,14 @@
 
 2026-09-15 更新。006角色授权迁移已应用生产，真实JWT/API及首页核对通过；代码5adabe3已由Cloudflare自动部署。
 
+## 2026-09-15 手机交易页面与导航
+
+- 右下角圆形入口仅显示加号，保留“记一笔”无障碍名称。移动导航改为总览/流水/设置，设置页通过科目入口进入科目设置，保留/accounts地址并提供返回设置。
+- 手机新增、流水详情及其加载/错误状态改为独立路由页面，不挂载流水背景或主Dialog；桌面保留居中Dialog。编辑页顶部返回、底部保存和单一正文滚动区适配VisualViewport与安全区，手机隐藏应用菜单/底栏；原未保存、退款、保存冲突和科目选择逻辑保留。编辑中仍按既有约定显示金额，退出沿用全局隐藏偏好。
+- 总资产和总负债进入资产负债标签并分别选中资产/负债，仅展示对应汇总和科目余额；可切换全部。标签、筛选和月份保存在URL，支持直接打开及返回。移除每日余额详情列表及其面板查询，保留净资产趋势。
+- pnpm test 13文件94项通过，pnpm build、git diff --check通过；覆盖新增/详情路由、加载/失败/重试、桌面Escape未保存保护、资产负债筛选/金额隐藏、设置往返。pnpm typecheck 0错误/0警告；最终复验94项测试、git diff --check通过。日志 /tmp/financial-navigation-validation/ 与 /tmp/financial-navigation-final/；线上版本核验见本轮交付记录。
+- 本次没有数据库或API协议变更，不需要迁移；未使用浏览器，未进行iPhone真机视觉和触控验收。提交推送后由Cloudflare自动部署，不重复手动发布。
+
 ## 2026-09-15 PWA 首页重定向故障修复
 
 - 用户报告首页 FetchEvent network error。已真实HTTP复现：/index.html 返回307到/，默认fetch跟随后Response.redirected=true；旧SW的cache.addAll缓存该响应，导航redirect=manual时浏览器拒绝。此前HTTP200和资源哈希核验未覆盖此响应语义，不能代表SW控制下导航可用。
