@@ -2,6 +2,13 @@
 
 2026-09-15 更新。006角色授权迁移已应用生产，真实JWT/API及首页核对通过；代码5adabe3已由Cloudflare自动部署。
 
+## 2026-09-16 PWA 刷新仍停留旧版
+
+- 重新核验生产b5a1495、Cloudflare版本bb67ead5-d323-4629-9eaf-a16eeaa93cd2、31项预缓存文件及sw.js均与dist一致。用户仍见旧页面的更新路径缺陷在SW：旧导航cache-first，新SW保持waiting，普通刷新期间旧client与新导航重叠，不能保证激活新版。此前只验证线上资源未覆盖已安装PWA更新链路。
+- 新版完整预缓存成功后skipWaiting并claim；导航no-store读取规范/，失败回退完整安装版本，不缓存回调或参数。无自动reload/Client.navigate，保留旧窗口可能使用的哈希资源；仅无打开窗口时清理旧版缓存。启动/前台/恢复网络事件检查更新并合并在途请求。
+- 新增生命周期回归：旧窗口存在时完成更新、下一次导航取线上新版、旧chunk可离线读取、不导航现有表单、失败安装不接管、离线/503回退及无窗口清理边界。沿用API/认证请求排除与真实HTTP307回归。
+- pnpm typecheck 0错误/0警告，pnpm test 14文件96项、pnpm build、git diff --check全部通过。日志/tmp/financial-pwa-update-validation/；上线结果见交付记录；诊断证据/tmp/financial-pwa-diagnosis/。没有数据库变更、未使用浏览器，不能声称已检查用户iPhone上的实际控制器或真机更新结果。
+
 ## 2026-09-15 手机交易页面与导航
 
 - 右下角圆形入口仅显示加号，保留“记一笔”无障碍名称。移动导航改为总览/流水/设置，设置页通过科目入口进入科目设置，保留/accounts地址并提供返回设置。

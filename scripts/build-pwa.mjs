@@ -20,7 +20,7 @@ export async function buildPwa(directory) {
     return result.sort();
   }
   const paths = await files();
-  const hash = createHash("sha256").update("navigation-response-v2");
+  const hash = createHash("sha256").update("navigation-update-v3");
   for (const path of paths) {
     hash.update(path);
     hash.update(await readFile(join(directory, path)));
@@ -48,19 +48,51 @@ self.addEventListener('install', event => {
   event.waitUntil((async () => {
     await repairPreviousNavigationCaches();
     await (await caches.open(CACHE)).addAll(FILES);
+    // Claim future requests only after this release is fully available offline.
+    await self.skipWaiting();
   })());
 });
 self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('financial-static-') && key !== CACHE).map(key => caches.delete(key)))));
+  event.waitUntil((async () => {
+    // Existing documents keep running and may still import old hashed chunks.
+    // Delete old releases only when there are no open windows to depend on them.
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (!windows.length) {
+      await Promise.all((await caches.keys()).filter(key => key.startsWith('financial-static-') && key !== CACHE).map(key => caches.delete(key)));
+    }
+    await self.clients.claim();
+  })());
 });
+async function navigate() {
+  try {
+    // Fetch the canonical public shell, never cache auth callbacks or URL parameters.
+    const response = await fetch('/', { cache: 'no-store' });
+    if (response.ok && response.headers.get('content-type')?.includes('text/html')) {
+      return navigationResponse(response);
+    }
+  } catch { /* Offline: use the last fully installed release. */ }
+  return navigationResponse(await (await caches.open(CACHE)).match('/'));
+}
+async function staticResponse(path, request) {
+  const current = await (await caches.open(CACHE)).match(path);
+  if (current) return current;
+  if (path.startsWith('/assets/')) {
+    for (const key of await caches.keys()) {
+      if (!key.startsWith('financial-static-') || key === CACHE) continue;
+      const previous = await (await caches.open(key)).match(path);
+      if (previous) return previous;
+    }
+  }
+  return fetch(request);
+}
 self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin || request.headers.has('authorization')) return;
   if (request.mode === 'navigate') {
-    event.respondWith(caches.open(CACHE).then(async cache => navigationResponse((await cache.match('/')) || await fetch(request))));
-  } else if (!url.search && FILES.includes(url.pathname)) {
-    event.respondWith(caches.open(CACHE).then(async cache => (await cache.match(url.pathname)) || fetch(request)));
+    event.respondWith(navigate());
+  } else if (!url.search && (FILES.includes(url.pathname) || url.pathname.startsWith('/assets/'))) {
+    event.respondWith(staticResponse(url.pathname, request));
   }
 });
 `;

@@ -24,12 +24,13 @@ it("precache is versioned, contains only static app resources, and never interce
     addAll: vi.fn().mockResolvedValue(undefined),
     match: vi.fn().mockResolvedValue("cached-app"),
   };
-  const fetcher = vi.fn();
+  const fetcher = vi.fn().mockRejectedValue(new Error("offline"));
   runInNewContext(source, {
     URL,
     Response,
     self: {
       location: { origin: "https://financial.hasbai.xyz" },
+      skipWaiting: vi.fn(),
       addEventListener: (name: string, fn: any) => (handlers[name] = fn),
     },
     caches: {
@@ -82,8 +83,7 @@ it("precache is versioned, contains only static app resources, and never interce
     "navigate",
   );
   expect(await response.mock.calls[0][0]).toBe("cached-app");
-  expect(fetcher).not.toHaveBeenCalled();
-  expect(source).not.toContain("skipWaiting");
+  expect(fetcher).toHaveBeenCalledWith("/", { cache: "no-store" });
   await writeFile(join(dir, "assets/app.js"), "updated");
   await buildPwa(dir);
   expect((await readFile(join(dir, "sw.js"), "utf8")).split("\n")[0]).not.toBe(
@@ -145,10 +145,11 @@ it("handles a real HTTP redirect and repairs the still-active worker cache befor
       Response,
       self: {
         location: { origin },
+        skipWaiting: vi.fn(),
         addEventListener: (name: string, fn: any) => (handlers[name] = fn),
       },
       caches: cacheApi,
-      fetch,
+      fetch: () => Promise.reject(new Error("offline")),
     });
     let pending: Promise<unknown> = Promise.resolve();
     handlers.install({ waitUntil: (p: Promise<unknown>) => (pending = p) });
@@ -192,4 +193,137 @@ it("handles a real HTTP redirect and repairs the still-active worker cache befor
       server.close((error) => (error ? reject(error) : resolve())),
     );
   }
+});
+
+it("activates a complete update with old windows open, serves fresh navigations and preserves their lazy chunks", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "financial-pwa-update-"));
+  directories.push(dir);
+  await mkdir(join(dir, "assets"));
+  await writeFile(join(dir, "index.html"), "<html>installed-new</html>");
+  await writeFile(join(dir, "assets/new.js"), "new code");
+  await buildPwa(dir);
+  const source = await readFile(join(dir, "sw.js"), "utf8");
+  const current = JSON.parse(
+    source.split("\n")[0].slice("const CACHE = ".length, -1),
+  );
+  const stores = new Map<string, Map<string, Response>>([
+    [
+      "financial-static-old",
+      new Map([
+        ["/", new Response("<html>old page</html>")],
+        ["/assets/old.js", new Response("old lazy chunk")],
+      ]),
+    ],
+    ["another-app", new Map([["/assets/other.js", new Response("unrelated")]])],
+  ]);
+  let precached = false;
+  let failInstall = false;
+  const cacheApi = {
+    keys: async () => [...stores.keys()],
+    delete: vi.fn(async (key: string) => stores.delete(key)),
+    open: async (key: string) => {
+      if (!stores.has(key)) stores.set(key, new Map());
+      const store = stores.get(key)!;
+      return {
+        match: async (path: string) => store.get(path)?.clone(),
+        addAll: async () => {
+          if (failInstall) throw new Error("incomplete download");
+          store.set("/", new Response("<html>installed-new</html>"));
+          store.set("/assets/new.js", new Response("new code"));
+          precached = true;
+        },
+      };
+    },
+  };
+  const handlers: Record<string, (event: any) => void> = {};
+  const skipWaiting = vi.fn(() => {
+    expect(precached).toBe(true);
+  });
+  const navigateWindow = vi.fn();
+  const clients = {
+    matchAll: vi
+      .fn()
+      .mockResolvedValue([{ id: "old-editor", navigate: navigateWindow }]),
+    claim: vi.fn(),
+  };
+  const fetcher = vi.fn().mockResolvedValue(
+    new Response("<html>latest-online</html>", {
+      headers: { "content-type": "text/html" },
+    }),
+  );
+  runInNewContext(source, {
+    URL,
+    Response,
+    caches: cacheApi,
+    fetch: fetcher,
+    self: {
+      location: { origin: "https://financial.hasbai.xyz" },
+      skipWaiting,
+      clients,
+      addEventListener: (name: string, fn: any) => {
+        handlers[name] = fn;
+      },
+    },
+  });
+  async function lifecycle(name: string) {
+    let pending!: Promise<unknown>;
+    handlers[name]({
+      waitUntil: (promise: Promise<unknown>) => {
+        pending = promise;
+      },
+    });
+    await pending;
+  }
+  async function request(path: string, mode = "navigate") {
+    let result!: Promise<Response>;
+    handlers.fetch({
+      request: {
+        url: "https://financial.hasbai.xyz" + path,
+        method: "GET",
+        mode,
+        headers: new Headers(),
+      },
+      respondWith: (promise: Promise<Response>) => {
+        result = promise;
+      },
+    });
+    return result;
+  }
+  // Reproduce the previous active worker: a newer server does not affect its cache-first refresh.
+  const oldRefresh = await (
+    await cacheApi.open("financial-static-old")
+  ).match("/");
+  expect(await oldRefresh!.text()).toContain("old page");
+  await lifecycle("install");
+  expect(skipWaiting).toHaveBeenCalledTimes(1);
+  await lifecycle("activate");
+  expect(clients.claim).toHaveBeenCalledTimes(1);
+  expect(cacheApi.delete).not.toHaveBeenCalled();
+  expect(navigateWindow).not.toHaveBeenCalled();
+  const page = await request("/auth/callback?code=private&state=private");
+  expect(await page.text()).toContain("latest-online");
+  expect(fetcher).toHaveBeenCalledWith("/", { cache: "no-store" });
+  // Online HTML is never persisted into a cache whose assets belong to a different release.
+  expect(await stores.get(current)!.get("/")!.clone().text()).toContain(
+    "installed-new",
+  );
+  fetcher.mockRejectedValue(new Error("offline"));
+  expect(await (await request("/transactions/new")).text()).toContain(
+    "installed-new",
+  );
+  expect(await (await request("/assets/old.js", "cors")).text()).toBe(
+    "old lazy chunk",
+  );
+  await expect(request("/assets/other.js", "cors")).rejects.toThrow("offline");
+  fetcher.mockResolvedValue(new Response("server error", { status: 503 }));
+  expect(await (await request("/")).text()).toContain("installed-new");
+  clients.matchAll.mockResolvedValue([]);
+  await lifecycle("activate");
+  expect(stores.has("financial-static-old")).toBe(false);
+  expect(stores.has("another-app")).toBe(true);
+  expect(stores.has(current)).toBe(true);
+  failInstall = true;
+  skipWaiting.mockClear();
+  await expect(lifecycle("install")).rejects.toThrow("incomplete download");
+  expect(skipWaiting).not.toHaveBeenCalled();
 });

@@ -69,10 +69,12 @@ GitHub Actions 进行 frozen-lockfile 安装、typecheck、test、build。数据
 
 manifest 声明北极账本、standalone、同源 scope/start_url 和图标；同时提供180px Apple Touch Icon。Vite build 完成后 scripts/build-pwa.mjs 按 index、manifest、icons、assets 的内容生成有版本的 sw.js 和静态资源清单。
 
-Service Worker 只预缓存公开应用资源；不拦截跨域Auth0/Neon、非GET、Authorization请求，也不缓存带查询参数的资源或任何运行时API响应。受控导航使用对应版本的缓存应用壳，避免旧SW与新页面混用；首次未受控导航仍由静态托管服务返回。新SW保持waiting，所有旧客户端关闭后激活，不skipWaiting、不强制刷新正在填写的交易。新版本激活后清理旧版应用缓存。
+Service Worker 只预缓存公开应用资源；不拦截跨域Auth0/Neon、非GET、Authorization请求，也不缓存带查询参数的资源或任何运行时API响应。受控导航优先以no-store请求规范根路径/，失败或非HTML成功响应时回退当前完整安装版本的应用壳；不把在线页面写入另一版本缓存。新SW完整预缓存后skipWaiting并clients.claim，后续刷新取得线上版本；不调用页面reload或Client.navigate，不打断正在填写的交易。旧页面仍可能加载旧哈希chunk，因此有打开窗口时保留旧版本静态缓存并按精确资源路径查找；仅激活时确认没有打开窗口才清理旧financial-static缓存，不触碰其他应用缓存。应用启动、回到前台、恢复网络时检查SW更新，合并在途检查，离线失败等待下次事件重试。
 
 账本查询与token继续只放内存，无离线数据库、离线保存队列或后台写入。编辑期间断网保留当前内存输入，禁用保存；网络恢复允许提交，结果不明确仍沿用待核对状态禁止重复写入。冷启动离线只能取得应用壳，登录/读取需要网络。
 
 mobile-viewport.ts 使用 VisualViewport 高度和offsetTop适配键盘；放大时不覆盖系统缩放。仅正常尺寸更新CSS变量，弹层焦点与滚动锁使用Bits UI。手机交易路由只挂载编辑页面，EditorSurface 在手机渲染普通页面、桌面使用Dialog；手机页面及科目选择均适配VisualViewport，避免应用菜单或底栏覆盖编辑操作。PWA standalone中的真实登录、安装、系统返回和键盘行为需单独真机验收，程序化JWT/API不替代此项。
 
 PWA导航缓存使用规范URL `/`，不预取会被Cloudflare重定向的`/index.html`。导航响应的redirected标记需清除后才能用于redirect=manual的浏览器导航。2026-09-15修复版在install阶段重建旧缓存的redirected /index.html响应，保留旧版正文/资源，允许仍活跃的旧SW恢复导航；不等待新SW激活才修复。回归通过真实HTTP307验证，而非仅比对文件内容。
+
+2026-09-16更新修复：原cache-first + waiting策略会使普通刷新继续命中旧应用壳，线上资源与dist一致不能证明已安装PWA已更新。现已增加安装/激活/导航/旧chunk/离线回退的生命周期回归；旧SW首次检测并安装修复版期间仍可能显示旧页，接管后再刷新即可取得新版。真机已安装客户端的状态仍需单独核验。
