@@ -33,3 +33,5 @@ balance 的纳入规则仅排除同笔科目缺失，包含已录入未来交易
 scripts/test-database.mjs 验证三表字段、退款、精度、保存回滚、角色授权和现金损益。scripts/test-balance-database.mjs 验证历史连续、北京时间边界、回补、pending 与未来交易。所有测试写入均回滚，连接串只从 stdin 获取。首页前端组装由 API/组件测试及 scripts/check-home-api.mjs 验证；原 test-home-database.mjs 随 home 视图移除。
 
 scripts/check-api.mjs 使用真实 Auth0 PKCE 验证顶层 role、直接读取及网关拒绝；DATA_API_URL 指定目标。check-home-api.mjs 用 VITE_DATA_API_URL 指定已迁移分支。迁移先在生产副本验证，生产数据不由开发副本覆盖；数据库/API、前端部署和浏览器验收分别记录。
+
+生产迁移属于代码交付，隔离验证通过后主动迁移生产并核验 API，再提交推送。main 推送触发前端自动部署，需核验自动构建及线上版本；不额外等待迁移或发布授权。006_role_access.sql 已于2026-09-15应用生产，详见 PROGRESS。

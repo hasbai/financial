@@ -45,9 +45,9 @@ Data API 的 JWT 校验发生在 Neon，PostgreSQL 根据 superadmin 的 schema 
 
 ## 发布
 
-`wrangler.jsonc` 配置 Worker financial、dist 静态目录、single-page-application 回退与 financial.hasbai.xyz 自定义域名。`public/_headers` 配置缓存、安全头。`pnpm build` 后用 Wrangler 发布。
+`wrangler.jsonc` 配置 Worker financial、dist 静态目录、single-page-application 回退与 financial.hasbai.xyz 自定义域名。`public/_headers` 配置缓存、安全头。推送 main 后由 Cloudflare Workers Builds 自动构建并部署，不重复执行手动 Wrangler 发布。
 
-GitHub Actions 进行 frozen-lockfile 安装、typecheck、test、build。没有自动生产数据库迁移。006_role_access.sql 删除旧读取封装并切换角色授权，需在已迁移的隔离分支验证 Auth0 role 和 Data API 后再安排生产数据库及前端一起切换；不能把旧前端与清理后的数据库混用。生产发布状态记录在 [PROGRESS](PROGRESS.md)。
+GitHub Actions 进行 frozen-lockfile 安装、typecheck、test、build。数据库迁移由本次交付主动执行：隔离验证通过后迁移生产、核验真实 API，再提交推送，随后核验 Cloudflare 自动部署和线上资源。迁移、提交、推送一并完成，不把迁移留待额外授权。变更存在新旧版本依赖时先安排兼容步骤。006_role_access.sql 已迁移生产，角色授权和原报表直读已通过生产验收。生产发布状态记录在 [PROGRESS](PROGRESS.md)。
 
 回滚优先退回 Worker 版本；数据库不新增字段、不删除原数据。共享 Neon endpoint 的 provider 配置修改前必须核查原消费者；不调整其他 Auth0 application。
 

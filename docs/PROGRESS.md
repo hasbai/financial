@@ -1,6 +1,15 @@
 # 完成情况
 
-2026-09-15 更新。本轮角色授权与前端直接读取已在隔离分支验证；生产尚未切换。
+2026-09-15 更新。006角色授权迁移已应用生产，真实JWT/API及首页核对通过；代码5adabe3已由Cloudflare自动部署。
+
+## 2026-09-15 生产迁移与自动部署验收
+
+- 已补齐生产006_role_access.sql，单事务提交于北京时间13:16—13:18之间。account/transaction/entry分别86/548/1012行，字段、ID和内容指纹前后一致；balance、balance_history、cashflow定义不变。
+- 多余读取函数和页面包装视图已删除，superadmin角色及GRANT生效；三表RLS关闭，应用和SQL不再重复检查JWT身份。生产Data API原本即为.role，无需变更provider或schemas。
+- 生产check-api和check-home-api均通过：真实PKCE登录、原报表直读、十进制字符串、游标/筛选、非法保存、错误签名/audience/无token拒绝；首页6次源GET与完整报表一致。
+- 上轮main提交5adabe386469101f4bf6efaf242e0d069766d219已自动部署成功：Cloudflare版本a9e70a58-e227-429c-a77d-c6a86303b7ce，生产流量100%。线上index及22个assets文件与对应本地构建SHA-256逐一一致，GitHub Check成功。未手动重复部署，未做浏览器视觉验收。
+- 用户明确后续迁移、提交、推送一并交付，main推送自动部署；已写入AGENTS及架构文档。先隔离验证、生产迁移/API验收，再提交推送并核验自动部署。
+- 数据库/API证据：/tmp/financial-production-role-access-evidence.json、/tmp/financial-production-check-api.log、/tmp/financial-production-check-home-api.log。
 
 ## 2026-09-15 取消权限函数和页面包装视图
 
