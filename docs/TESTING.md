@@ -2,6 +2,8 @@
 
 ## 运行
 
+按2026-09-16最新要求，以下命令仅由GitHub Actions runner执行，日常开发不在本地运行测试、覆盖率、Playwright、typecheck或build验收。
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm exec playwright install webkit chromium
@@ -12,9 +14,15 @@ pnpm build
 git diff --check
 ```
 
-无需 Docker。Playwright 使用本机浏览器；CI 的视觉任务固定在 `macos-26` ARM64，单元测试在 Ubuntu。Playwright 精确锁定版本，截图按操作系统、运行环境、项目、测试文件保存，不能跨环境共用图片。GitHub runner 使用 `darwin-ci-*`，本机使用 `darwin-*`；同为 macOS 也存在系统字体栅格化差异。
+无需Docker。CI视觉任务固定在`macos-26` ARM64，单元测试在Ubuntu。Playwright精确锁定版本，使用`darwin-ci-*`截图基线。历史`darwin-*`本机基线保留为旧验收记录，不再在本地运行或更新。
 
-`pnpm test:e2e:update` 只在初次建基线、设计变更或明确的浏览器/系统升级时执行。普通运行使用 `updateSnapshots: none`，缺少图片或超出差异即失败；push/PR 的 CI 不自动更新、不重试掩盖不稳定。显式触发 Check workflow 的 `update_visual_baselines` 可生成 CI 候选图片工件并立即无更新复跑；它不自动提交，取回并核对后提交到仓库。报告保留 expected/actual/diff 截图与失败 trace。每次代码修改运行自动回归，不要求人工或 AI 逐页看图；有意设计变更需核对差异后再提交基线，生成截图本身不是设计质量证明。
+`pnpm test:e2e:update`仅在初次建基线、设计变更或明确的浏览器/系统升级时，由功能分支的显式workflow dispatch执行。普通运行使用`updateSnapshots: none`，缺少图片或超出差异即失败；push/PR的CI不自动更新、不重试掩盖不稳定。显式触发Check workflow的`update_visual_baselines`生成CI候选工件并立即无更新复跑；它不自动提交，取回并核对后提交。报告保留expected/actual/diff和失败trace。日常不要求人工或AI逐页看图，有意设计变更仍需核对差异。
+
+## 推送与合并
+
+主代理编辑/提交后，必须派新子代理负责功能分支推送、创建或更新PR和跟踪CI；主代理处理失败并提交修复，再派新子代理核验。检查必须对应PR最新提交，`Check / check`（类型/单元覆盖率/构建）和`Check / visual`（浏览器/视觉回归）全部成功，且已包含最新main后才能合并。`workflow_dispatch`生成基线的成功不能替代随后普通push/PR的比较结果。不得本地补跑或用管理员绕过失败；合并后继续核验main与Cloudflare自动部署和线上资源。
+
+目标分支保护：强制PR、最新main、必需状态`check`与`visual`（GitHub Actions app），管理员同样受限，不允许force push或删除main。本次GitHub API对私有仓库hasbai/financial的protection/rulesets返回“Upgrade to GitHub Pro or make this repository public to enable this feature”，因此目前只有工作流程约束，不能声称GitHub已阻止手动绕过。保持仓库私有；账户套餐支持后再启用强制保护。
 
 ## 分层边界
 
