@@ -1,5 +1,13 @@
 name: Check
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      update_visual_baselines:
+        description: Generate candidate screenshots for this runner; review and commit the artifact separately
+        type: boolean
+        default: false
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -33,7 +41,15 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install webkit chromium
+      - if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+        run: pnpm test:e2e:update
       - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+        with:
+          name: visual-baseline-candidates
+          path: e2e/__screenshots__/*-ci-*/
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         if: always()
         with:

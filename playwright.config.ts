@@ -9,8 +9,7 @@ export default defineConfig({
   timeout: 30_000,
   // Missing baselines fail normal runs, including CI; updates are always explicit.
   updateSnapshots: "none",
-  snapshotPathTemplate:
-    "{testDir}/__screenshots__/{platform}-{projectName}/{testFilePath}/{arg}{ext}",
+  snapshotPathTemplate: `{testDir}/__screenshots__/{platform}${process.env.GITHUB_ACTIONS ? "-ci" : ""}-{projectName}/{testFilePath}/{arg}{ext}`,
   reporter: [["list"], ["html", { open: "never" }]],
   expect: {
     timeout: 5_000,
