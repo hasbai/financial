@@ -254,7 +254,9 @@
       disabled={pending}
       onclick={close}><ArrowLeft class="size-6" aria-hidden="true" /></Button
     >
-    <h1 class="flex-1 text-xl">{saved ? "补录交易信息" : "新增交易"}</h1>
+    <h1 class="min-w-0 flex-1 text-lg sm:text-xl">
+      {saved ? "补录交易信息" : "新增交易"}
+    </h1>
     <Popover.Root bind:open={moreOpen}
       ><Popover.Trigger
         >{#snippet child({ props })}<Button

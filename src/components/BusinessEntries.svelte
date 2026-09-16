@@ -153,7 +153,10 @@
           ? "支出总额"
           : "转账总额"}</span
     >
-    <strong class="money break-all text-3xl"
+    <strong
+      class={knownTotal
+        ? "money break-all text-2xl sm:text-3xl"
+        : "text-base font-medium text-muted-foreground"}
       >{knownTotal ? money(total.toString()) : "待填写"}</strong
     >
   </div>
