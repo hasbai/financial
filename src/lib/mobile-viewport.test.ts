@@ -33,7 +33,11 @@ it("tracks keyboard viewport offsets, preserves pinch zoom and removes listeners
     document.documentElement.style.getPropertyValue("--visual-height"),
   ).toBe("250px");
   cleanup();
-  expect(viewport.removeEventListener).toHaveBeenCalledTimes(2);
+  for (const event of ["resize", "scroll"])
+    expect(viewport.removeEventListener).toHaveBeenCalledWith(
+      event,
+      events.get(event),
+    );
   expect(
     document.documentElement.style.getPropertyValue("--visual-height"),
   ).toBe("");

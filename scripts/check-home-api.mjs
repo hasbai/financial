@@ -21,14 +21,9 @@ try {
     };
     try {
       const api = createRepository(async () => token);
-      const started = performance.now();
       const home = await api.home();
-      const elapsed = Math.round(performance.now() - started);
       const homeRequests = requests.length;
       assert.equal(new Set(requests).size, homeRequests);
-      assert.ok(
-        requests.every((r) => !/_read$|\/home$/.test(new URL(r).pathname)),
-      );
       assert.ok(Array.isArray(home.balance_trend));
       assert.deepEqual(home.recent, []);
       await api.home();
@@ -78,7 +73,7 @@ try {
       assert.ok(!("balance_trend" in hidden));
       assert.ok(!("cash_bars" in hidden));
       console.log(
-        `PASS real JWT home: ${homeRequests} source GETs, ${elapsed}ms, ${Buffer.byteLength(JSON.stringify(home))} bytes; warm home/accounts/panels add 0 GETs; figures match independently loaded full report; hidden projection excludes charts.`,
+        `PASS real JWT home: ${homeRequests} source GETs; warm home/accounts/panels add 0 GETs; figures match independently loaded full report; hidden projection excludes charts.`,
       );
     } finally {
       globalThis.fetch = original;

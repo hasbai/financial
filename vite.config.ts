@@ -24,5 +24,29 @@ export default defineConfig({
     include: ["src/**/*.test.ts"],
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,svelte}"],
+      exclude: [
+        "src/**/*.test.ts",
+        "src/test/**",
+        "src/lib/components/ui/**",
+        "src/lib/types.ts",
+        "src/vite-env.d.ts",
+      ],
+      reporter: ["text", "html", "json-summary"],
+      thresholds: {
+        statements: 80,
+        branches: 75,
+        functions: 78,
+        lines: 83,
+        "src/lib/{api,finance,business-entries,cashflow,editor}.ts": {
+          statements: 88,
+          branches: 74,
+          functions: 90,
+          lines: 90,
+        },
+      },
+    },
   },
 });

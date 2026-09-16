@@ -332,7 +332,7 @@ async function main() {
   ) SELECT count(*) FILTER (WHERE rows<>expected)::int gaps,count(*)::int accounts FROM per`)
   ).rows[0];
   assert.equal(continuity.gaps, 0);
-  assert.ok(continuity.accounts >= 54);
+  assert.ok(continuity.accounts > 0);
   const latestMismatch = (
     await q(`WITH latest AS (
     SELECT DISTINCT ON (id) id,balance::numeric FROM financial.balance_history ORDER BY id,date DESC

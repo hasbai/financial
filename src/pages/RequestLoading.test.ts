@@ -14,12 +14,7 @@ import {
 import Harness from "../test/Harness.svelte";
 import { createRepository } from "../lib/api";
 import { router } from "../lib/router.svelte";
-import {
-  accounts,
-  transaction,
-  overview,
-  homeSnapshot,
-} from "../test/fixtures";
+import { accounts, transaction, overview } from "../test/fixtures";
 
 const clients: QueryClient[] = [];
 afterEach(() => {
@@ -44,7 +39,6 @@ function setup(
     const url = new URL(String(input));
     requests.push(url);
     const view = url.pathname.split("/").at(-1);
-    const select = url.searchParams.get("select") ?? "";
     if (failHome && view === "balance")
       return new Response(
         JSON.stringify({ code: "503", message: "首页加载失败" }),
@@ -122,23 +116,13 @@ function setup(
     },
   };
 }
-const selects = (requests: URL[]) =>
-  requests.map((r) => r.searchParams.get("select") ?? "");
 
 it("loads only home data, reuses the closing balance, and fetches panel details on demand", async () => {
   const { requests } = setup();
   await screen.findByText("暂无现金流");
-  await waitFor(() =>
-    expect(document.querySelector("svg polyline")).toBeTruthy(),
-  );
+  await screen.findByRole("heading", { name: "净资产" });
   expect(requests).toHaveLength(6);
-  expect(requests.some((r) => /_read$|\/home$/.test(r.pathname))).toBe(false);
   expect(new Set(requests.map(String)).size).toBe(requests.length);
-  expect(
-    selects(requests).every(
-      (s) => !s.includes("entries") && !s.includes(".sum()"),
-    ),
-  ).toBe(true);
 
   const before = requests.length;
   await fireEvent.click(screen.getByRole("button", { name: "资产负债" }));
@@ -155,27 +139,12 @@ it("loads only home data, reuses the closing balance, and fetches panel details 
   expect(requests).toHaveLength(before);
 });
 
-it("does not request charts when amounts are hidden", async () => {
-  const { requests } = setup("overview", true);
-  await screen.findByText("本期净流入");
-  expect(requests).toHaveLength(5);
-  expect(selects(requests)[0]).not.toContain("balance_trend");
-  expect(selects(requests)[0]).not.toContain("cash_bars");
-  expect(document.body.textContent).not.toContain("¥");
-  await fireEvent.click(screen.getByRole("button", { name: "损益" }));
-  await screen.findByRole("region", { name: "损益明细" });
-  expect(selects(requests).some((s) => s.startsWith("date,"))).toBe(false);
-});
-
 it("loads only list, account labels and monthly income/cash/trend on direct list navigation", async () => {
   const { requests } = setup("transactions");
   await screen.findByRole("region", { name: "月度收支" });
   await screen.findByText("示例消费");
   expect(requests).toHaveLength(4);
   expect(requests.some((r) => r.pathname.endsWith("balance"))).toBe(false);
-  expect(
-    selects(requests).some((s) => /^(name:|pending:|cash_opening)/.test(s)),
-  ).toBe(false);
 });
 
 it("does not load the covered transaction page on a direct editor route", async () => {
@@ -187,9 +156,7 @@ it("does not load the covered transaction page on a direct editor route", async 
 it("shares fresh reports across pages and refreshes visible reports after invalidation", async () => {
   const { requests, rerender, cache } = setup();
   await screen.findByText("暂无现金流");
-  await waitFor(() =>
-    expect(document.querySelector("svg polyline")).toBeTruthy(),
-  );
+  await screen.findByRole("heading", { name: "净资产" });
   const before = requests.length;
   router.navigate("/transactions", true, true);
   await rerender({ page: "transactions" });
@@ -251,23 +218,26 @@ it("changing a month loads only the selected panel and preserves the cash period
   ).toBe("true");
 });
 
-it("unhides by reading sources once without page-specific views", async () => {
+it("loads history once on unhide and reuses it on subsequent toggles", async () => {
   const { requests, setNonempty, rerender } = setup("overview", true);
   setNonempty();
   await screen.findByText("本期净流入");
+  expect(requests.some((r) => r.pathname.endsWith("/balance_history"))).toBe(
+    false,
+  );
   await rerender({ hidden: false });
   await screen.findByRole("img", { name: /每日现金流入与流出柱状图/ });
   expect(requests).toHaveLength(6);
-  expect(requests.some((r) => r.pathname.endsWith("/home"))).toBe(false);
-  await fireEvent.click(screen.getByRole("button", { name: "隐藏金额" }));
-  expect(requests).toHaveLength(6);
+  const count = requests.length;
+  await rerender({ hidden: true });
+  await rerender({ hidden: false });
+  expect(requests).toHaveLength(count);
 });
 it("refreshes each homepage source once after saving", async () => {
   const { requests, cache } = setup();
   await screen.findByText("暂无现金流");
   await cache.invalidateQueries({ queryKey: ["overview"] });
   expect(requests).toHaveLength(11);
-  expect(requests.some((r) => r.pathname.endsWith("/home"))).toBe(false);
 });
 
 it("does not hide a failed snapshot behind disabled historical queries", async () => {

@@ -19,12 +19,12 @@ it("recognizes balanced multi-class expenses and transfers without changing entr
       { ...transaction.entries[0], id: 13, amount: "60" },
     ],
   };
-  const before = JSON.stringify(split);
+  const before = structuredClone(split);
   expect(businessLayout(split, all)).toEqual({
     type: "支出",
     roles: ["category", "account", "category"],
   });
-  expect(JSON.stringify(split)).toBe(before);
+  expect(split).toEqual(before);
   expect(
     businessLayout(
       {

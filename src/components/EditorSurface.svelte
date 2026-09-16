@@ -11,6 +11,23 @@
   const desktop = new MediaQuery("(min-width: 640px)");
   function focusPage(node: HTMLElement) {
     node.focus({ preventScroll: true });
+    const scroll = node.querySelector<HTMLElement>(".editor-scroll");
+    if (!scroll) return;
+    // Observe the actual scroll container layout, not the earlier viewport event.
+    // WebKit can commit its new flex height after the viewport resize callback.
+    const observer = new ResizeObserver(() => {
+      const focused = document.activeElement;
+      if (!(focused instanceof HTMLElement) || !scroll.contains(focused))
+        return;
+      const field = focused.getBoundingClientRect();
+      const area = scroll.getBoundingClientRect();
+      if (field.bottom > area.bottom)
+        scroll.scrollTop += field.bottom - area.bottom + 16;
+      else if (field.top < area.top)
+        scroll.scrollTop -= area.top - field.top + 16;
+    });
+    observer.observe(scroll);
+    return { destroy: () => observer.disconnect() };
   }
 </script>
 

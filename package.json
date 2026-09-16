@@ -11,14 +11,19 @@
     "test": "vitest run",
     "preview": "vite preview",
     "deploy": "pnpm build && wrangler deploy",
-    "check:api": "NODE_USE_ENV_PROXY=1 node scripts/check-api.mjs"
+    "check:api": "NODE_USE_ENV_PROXY=1 node scripts/check-api.mjs",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:update": "playwright test --update-snapshots"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.3.0",
     "@internationalized/date": "^3.12.0",
+    "@playwright/test": "1.63.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@testing-library/svelte": "^5.4.2",
     "@types/node": "^26.5.1",
+    "@vitest/coverage-v8": "5.0.0",
     "jsdom": "^30.0.1",
     "pg": "^8.23.0",
     "prettier": "^3.9.6",

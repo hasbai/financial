@@ -27,8 +27,9 @@ await withUserToken(async (token, tokenData) => {
   }
   const accounts = await req("/account?select=id,type,subtype&limit=1000");
   assert.equal(accounts.status, 200);
-  assert.equal(accounts.data.length, 86);
-  console.log("PASS real JWT account read: 86 records");
+  assert.ok(Array.isArray(accounts.data));
+  assert.ok(accounts.data.every((a) => Number.isSafeInteger(a.id)));
+  console.log(`PASS real JWT account read: ${accounts.data.length} records`);
   const query = async (view, params) => {
     const response = await req("/" + view + "?" + new URLSearchParams(params));
     assert.equal(
@@ -68,7 +69,6 @@ await withUserToken(async (token, tokenData) => {
   console.log(
     "PASS real JWT transaction view, detail, cursor, regex and array filters",
   );
-  const cutoff = new Date().toISOString();
   for (const [view, select] of [
     ["balance", "id,balance::text"],
     ["balance_history", "date,id,balance::text"],
@@ -106,10 +106,7 @@ await withUserToken(async (token, tokenData) => {
       undefined,
       tokenData.id_token,
     );
-    assert.ok(
-      wrongAudience.status >= 400 ||
-        (Array.isArray(wrongAudience.data) && wrongAudience.data.length === 0),
-    );
+    assert.ok([400, 401, 403].includes(wrongAudience.status));
   }
   console.log(
     "PASS wrong-audience ID token cannot read accounts or any report view (gateway)",

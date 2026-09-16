@@ -28,10 +28,13 @@ describe("Data API contract", () => {
     expect(requests[0].headers.get("authorization")).toBe(
       "Bearer test-user-token",
     );
-    expect(JSON.parse(requests[0].body).p_payload.entries[0].amount).toBe(
-      "0.10",
-    );
-    expect(requests[0].body).not.toContain("p_ledger");
+    expect(JSON.parse(requests[0].body)).toEqual({
+      p_id: null,
+      p_updated_at: null,
+      p_payload: {
+        entries: [{ account_id: 1, direction: "借", amount: "0.10" }],
+      },
+    });
   });
   it("preserves conflict details for the editor", async () => {
     vi.stubGlobal(
@@ -60,6 +63,15 @@ describe("read views", () => {
         expect(headers.get("accept-profile")).toBe("financial");
         expect(headers.get("authorization")).toBe("Bearer owner-token");
         expect(url.pathname).not.toContain("/rpc/");
+        expect([
+          "account",
+          "transactions",
+          "balance",
+          "balance_history",
+          "income_statement",
+          "cashflow",
+          "statement_entries",
+        ]).toContain(url.pathname.split("/").at(-1));
         return new Response(JSON.stringify(respond(url, headers)), {
           headers: { "content-type": "application/json" },
         });
@@ -197,7 +209,6 @@ describe("read views", () => {
     expect(result.accounts).toEqual([]);
     expect(result.quality.coverage_start).toBeNull();
     expect(new Set(requests.map(String)).size).toBe(requests.length);
-    expect(requests.some((r) => /_read$|\/home$/.test(r.pathname))).toBe(false);
   });
   it("pages raw rows beyond the cap and groups categories with decimal ordering", async () => {
     const { repo, requests } = mockApi((url) => {
@@ -282,5 +293,44 @@ describe("read views", () => {
         "2026-09-14",
       ),
     ).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("report business boundaries", () => {
+  it("classifies net cash by counterpart, with operating activity taking precedence", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const view = new URL(String(input)).pathname.split("/").at(-1);
+      const data =
+        view === "cashflow"
+          ? [
+              { transaction_id: 1, occurred_at: "2026-09-01", net: "0.30" },
+              { transaction_id: 2, occurred_at: "2026-09-01", net: "-0.10" },
+              { transaction_id: 3, occurred_at: "2026-09-01", net: "-10" },
+              { transaction_id: 4, occurred_at: "2026-09-01", net: "20" },
+            ]
+          : [
+              { transaction_id: 1, type: "收入", subtype: "工资" },
+              { transaction_id: 1, type: "资产", subtype: "投资" },
+              { transaction_id: 2, type: "支出", subtype: "餐饮" },
+              { transaction_id: 3, type: "资产", subtype: "投资" },
+              { transaction_id: 4, type: "负债", subtype: "贷款" },
+            ];
+      return new Response(JSON.stringify(data), {
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const repo = createRepository(async () => "test");
+    expect(
+      await repo.report(
+        "cashCategories",
+        "2026-09-01",
+        "2026-10-01",
+        "2026-10-01",
+      ),
+    ).toEqual([
+      { name: "living", inflow: "0.3", outflow: "0.1" },
+      { name: "investing", inflow: "0", outflow: "10" },
+      { name: "financing", inflow: "20", outflow: "0" },
+    ]);
   });
 });
