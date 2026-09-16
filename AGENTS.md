@@ -40,7 +40,7 @@
 
 每次改完代码，由主代理完成修改和提交，必须新派一个子代理负责推送功能分支、创建/更新PR、跟踪该次提交的CI结果。子代理回报失败后由主代理修复；下一轮仍派新子代理推送复核。禁止本地补跑测试代替CI，禁止将未通过的修改直接推送main。只有最新提交的`check`与`visual`均成功，且分支已包含最新main，才允许通过PR合并。合并后由子代理核验main检查、Cloudflare自动部署及线上版本。不得使用`--admin`绕过检查。
 
-视觉基线只在有意设计变更时，显式对功能分支dispatch `Check` workflow并启用`update_visual_baselines`，从CI下载候选工件，核对后提交。随后普通push/PR必须在不更新基线的模式下通过；CI不自动接受变化，无需Docker。详见docs/TESTING.md。GitHub私有仓库的强制分支保护受账户套餐限制；未启用之前必须明确区分本交付流程约束与GitHub已强制执行的规则。
+视觉基线只在有意设计变更时，显式对功能分支dispatch `Check` workflow并启用`update_visual_baselines`，从CI下载候选工件，核对后提交。随后普通push/PR必须在不更新基线的模式下通过；CI不自动接受变化，无需Docker。详见docs/TESTING.md。仓库现为public，main已强制PR、最新main及check/visual成功，管理员也不能绕过；禁止强推和删除main。
 数据库验证用 `scripts/test-database.mjs`，连接串从 stdin 传入，所有测试写入在事务中回滚。不得输出凭据。
 
 独立区分自动化、真实 JWT/API、浏览器与部署验收。完成修改时，必要的生产数据库迁移、提交、推送属于同一次交付，不再另行等待发布授权。涉及数据库时先在隔离 Neon 分支验证，再迁移生产并核验真实 API，然后仅暂存任务文件、提交，由子代理推送功能分支并核验CI。PR合并到main后触发Cloudflare自动部署，必须核验构建结果和线上版本；不要重复手动部署。需要新旧版本兼容的迁移应安排兼容步骤，不能只推前端而遗漏数据库。

@@ -22,7 +22,7 @@ git diff --check
 
 主代理编辑/提交后，必须派新子代理负责功能分支推送、创建或更新PR和跟踪CI；主代理处理失败并提交修复，再派新子代理核验。检查必须对应PR最新提交，`Check / check`（类型/单元覆盖率/构建）和`Check / visual`（浏览器/视觉回归）全部成功，且已包含最新main后才能合并。`workflow_dispatch`生成基线的成功不能替代随后普通push/PR的比较结果。不得本地补跑或用管理员绕过失败；合并后继续核验main与Cloudflare自动部署和线上资源。
 
-目标分支保护：强制PR、最新main、必需状态`check`与`visual`（GitHub Actions app），管理员同样受限，不允许force push或删除main。本次GitHub API对私有仓库hasbai/financial的protection/rulesets返回“Upgrade to GitHub Pro or make this repository public to enable this feature”，因此目前只有工作流程约束，不能声称GitHub已阻止手动绕过。保持仓库私有；账户套餐支持后再启用强制保护。
+已启用分支保护：强制PR、最新main、必需状态`check`与`visual`（限定GitHub Actions app id 15368），管理员同样受限，不允许force push或删除main；单人开发不额外要求人工审批。因私有仓库当前套餐不支持保护，用户已明确授权并完成将hasbai/financial设为public；保护设置已由GitHub API成功返回并确认。
 
 ## 分层边界
 
