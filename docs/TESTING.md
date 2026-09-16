@@ -45,7 +45,7 @@ API 查询参数、numeric 字符串、分页游标以及请求去重数量是�
 
 主矩阵集中在 WebKit，状态组合不在所有设备重复。关键操作额外检查 48px 触控区域、视口内可见与中心命中，避免单纯把现有截图照收为基线。选择器优先 role/label，不复制 DOM 树或给每个控件加 test-id。
 
-`e2e/index.html` 是独立开发入口，复用现有 `src/test/Harness.svelte`、生产样式、Shell、路由、QueryClient 和真正的 Repository；HTTP 层返回合成数据，非本地请求直接失败。日期、时区、语言、动画、主题固定。入口与 fixture 不参与生产构建，生产 App 没有跳过认证的开关。
+`e2e/index.html`是独立测试入口，复用`src/test/Harness.svelte`、Shell、路由、QueryClient和真正的Repository；HTTP层返回合成数据，非测试服务请求直接失败。CI先正常生产构建dist，再以e2e mode将测试入口单独编译到dist-e2e。`prepare-browser-build.mjs`用dist中的原样压缩CSS替换测试入口stylesheet，浏览器通过vite preview读取静态产物，不能再用Vite开发服务代替生产CSS。日期、时区、语言、动画、主题固定；入口与fixture不进入生产dist，生产App没有跳过认证的开关。
 
 Playwright iPhone 项目是 WebKit 设备模拟，不是 iOS Safari 真机。缩小 viewport 验证 VisualViewport/焦点滚动，不声称验证系统软键盘、刘海安全区实际值、PWA 安装或系统返回手势。生产 Service Worker 仍由现有生命周期单测覆盖，此浏览器套件阻止注册 SW 以保证请求隔离。
 
@@ -93,3 +93,9 @@ CI首次跨环境比较检出字体栅格化差异后，单独建立GitHub runne
 新增断言检查弹层四边及贴底位置、搜索和末尾选项命中、滚动后新增入口、缩小/横屏视口、长分类和长科目、空搜索、键盘选择/退出及焦点恢复；覆盖付款/到账/转账/扣款/高级分录/流水筛选/退款/科目类型。字号直接检查computed style；普通动态效果下检查真实animationstart、位移方向和退出动画，减少动态效果单独验证。打开的分类和付款弹层、深色弹层、新增交易页加入截图基线。
 
 新增检查实际检出并修复：搜索输入只有36px触控高度，以及WebKit中SelectField选择关闭后焦点丢失。日常CI仍只比较显式提交的基线，不自动接受截图变化。
+
+## 生产CSS弹层定位回归
+
+用户后续反馈iOS PWA仍大面积裁切。已核对线上资源与main/CI artifact一致，并发现生产压缩将`translate:none`删除，而桌面`-translate-x/y-1/2`仍使用独立translate属性；`transform:none`不能覆盖该位移。原视觉任务启动Vite开发服务，没有验证压缩产物，因此36项通过仍遗漏真实线上错误。
+
+先只切换CI到生产CSS（7048f64，run 35115492795）未修改UI，复现15项移动端四边定位失败，21项通过；截图确认负半宽/半高位移造成裁切。这是行为断言失败，未更新基线。修复将居中位移限定为sm桌面断点，手机不再依赖reset声明。已有贴底/动画/缩小视口/多入口回归继续使用实际生产CSS，并新增手机滚动条隐藏、编辑区及长列表仍可滚动的断言；不声称iOS真机验收。

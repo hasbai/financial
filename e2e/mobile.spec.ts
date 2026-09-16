@@ -6,6 +6,34 @@ import {
   sheetFitsViewport,
 } from "./fixtures";
 
+test("shipping styles hide mobile scrollbars without disabling scrolling", async ({
+  page,
+  app,
+}) => {
+  await app.open("/transactions/new");
+  await expect(
+    page.locator('link[rel="stylesheet"][href^="/production-assets/"]'),
+  ).toHaveCount(1);
+  const scroll = page.locator(".editor-scroll");
+  await expect(page.locator("html")).toHaveCSS("scrollbar-width", "none");
+  await expect(scroll).toHaveCSS("scrollbar-width", "none");
+  await expect(scroll).toHaveCSS("overflow-y", "auto");
+  const notes = page.getByRole("textbox", { name: "备注", exact: true });
+  await notes.scrollIntoViewIfNeeded();
+  await reachable(notes);
+  expect(await scroll.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await page.getByRole("combobox", { name: "账户", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await sheetFitsViewport(dialog);
+  await expect(dialog).toHaveCSS("scrollbar-width", "none");
+  await expect(dialog.locator('[data-slot="command-list"]')).toHaveCSS(
+    "scrollbar-width",
+    "none",
+  );
+  await page.keyboard.press("Escape");
+  await reachable(page.getByRole("button", { name: "保存交易" }));
+});
+
 test("overview, privacy and dark appearance", async ({ page, app }) => {
   await app.open();
   await expect(page.getByRole("heading", { name: "净资产" })).toBeVisible();
