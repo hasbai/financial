@@ -147,6 +147,9 @@ export async function reachable(control: Locator) {
 // Document width alone cannot detect a portaled panel above/below the screen.
 export async function sheetFitsViewport(dialog: Locator) {
   await expect(dialog).toBeVisible();
+  // This checks the shipping CSS, including minification and responsive layers.
+  // Desktop centering must never apply to a mobile sheet.
+  await expect(dialog).toHaveCSS("translate", "none");
   await expect
     .poll(
       () =>

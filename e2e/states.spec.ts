@@ -40,6 +40,9 @@ test("long category groups and accounts scroll inside the sheet", async ({
   });
   await lastItem.scrollIntoViewIfNeeded();
   await reachable(lastItem);
+  const list = dialog.locator('[data-slot="command-list"]');
+  await expect(list).toHaveCSS("scrollbar-width", "none");
+  expect(await list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   await sheetFitsViewport(dialog);
   await lastItem.click();
   await expect(dialog).toHaveCount(0);

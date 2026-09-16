@@ -3,7 +3,7 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 import { buildPwa } from "./scripts/build-pwa.mjs";
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     tailwindcss(),
     svelte(),
@@ -11,6 +11,7 @@ export default defineConfig({
       name: "financial-pwa",
       apply: "build",
       async closeBundle() {
+        if (mode === "e2e") return;
         await buildPwa(fileURLToPath(new URL("./dist", import.meta.url)));
       },
     },
@@ -20,6 +21,15 @@ export default defineConfig({
     conditions: ["browser"],
   },
   server: { port: 5173, strictPort: true },
+  build:
+    mode === "e2e"
+      ? {
+          outDir: "dist-e2e",
+          rollupOptions: {
+            input: fileURLToPath(new URL("./e2e/index.html", import.meta.url)),
+          },
+        }
+      : undefined,
   test: {
     include: ["src/**/*.test.ts"],
     environment: "jsdom",
@@ -49,4 +59,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
