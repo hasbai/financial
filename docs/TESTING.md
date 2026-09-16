@@ -12,9 +12,9 @@ pnpm build
 git diff --check
 ```
 
-无需 Docker。Playwright 使用本机浏览器；CI 的视觉任务固定在 `macos-26` ARM64，单元测试在 Ubuntu。Playwright 精确锁定版本，截图按操作系统、项目、测试文件保存，不能跨平台共用图片。
+无需 Docker。Playwright 使用本机浏览器；CI 的视觉任务固定在 `macos-26` ARM64，单元测试在 Ubuntu。Playwright 精确锁定版本，截图按操作系统、运行环境、项目、测试文件保存，不能跨环境共用图片。GitHub runner 使用 `darwin-ci-*`，本机使用 `darwin-*`；同为 macOS 也存在系统字体栅格化差异。
 
-`pnpm test:e2e:update` 只在初次建基线、设计变更或明确的浏览器/系统升级时执行。普通运行使用 `updateSnapshots: none`，缺少图片或超出差异即失败；CI 不自动更新、不重试掩盖不稳定。报告保留 expected/actual/diff 截图与失败 trace。每次代码修改运行自动回归，不要求人工或 AI 逐页看图；有意设计变更需核对差异后再提交基线，生成截图本身不是设计质量证明。
+`pnpm test:e2e:update` 只在初次建基线、设计变更或明确的浏览器/系统升级时执行。普通运行使用 `updateSnapshots: none`，缺少图片或超出差异即失败；push/PR 的 CI 不自动更新、不重试掩盖不稳定。显式触发 Check workflow 的 `update_visual_baselines` 可生成 CI 候选图片工件并立即无更新复跑；它不自动提交，取回并核对后提交到仓库。报告保留 expected/actual/diff 截图与失败 trace。每次代码修改运行自动回归，不要求人工或 AI 逐页看图；有意设计变更需核对差异后再提交基线，生成截图本身不是设计质量证明。
 
 ## 分层边界
 
@@ -67,9 +67,11 @@ v8 覆盖范围含全部业务 TS/Svelte，排除测试与 fixture、无运行�
 ## 本次验收结果
 
 - 规范后 Vitest：13 文件、91 项全部通过；语句 83.62%、分支 77.04%、函数 81.21%、行 84.94%。相对 96 项基线删去重复/迁移 6 项、新增现金分类业务用例 1 项。行覆盖下降主要来自 Shell/Settings 和移动/桌面表现迁到浏览器，业务代码仍计入覆盖分母。
-- Playwright：25 项、34 张基线，连续三轮 75/75 通过。正常运行没有更新截图。
+- Playwright：25 项、34 个截图场景（本机/CI各一套），连续三轮 75/75 通过。正常运行没有更新截图。
 - 故意给首页加入 12px 横向位移，正常截图比较以 21,390 像素差异失败；已恢复原测试文件，基线未改动。证实视觉检查能拦截布局偏移，不是只生成截图。
 - 实测发现 WebKit 缩小视口后备注字段在屏幕外。修复为 EditorSurface 监听滚动容器实际尺寸变化后定位焦点字段，取代不稳定的 viewport 事件/rAF 时序猜测。上述重复运行包含这条回归。
 - typecheck、build、git diff --check 通过，生产构建不含 e2e 入口与 fixture token。
 - 隔离分支 `financial-role-access-20260915` / `br-divine-frost-b3dv0o2s`：数据库基础 47 项、余额历史 41 项通过，测试写入回滚。真实本人 PKCE/JWT 的 `check-api` 与 `check-home-api` 通过。
 - 未执行 iOS 真机验收；CI、部署结果单独记录于 PROGRESS。
+
+CI首次跨环境比较检出字体栅格化差异后，单独建立GitHub runner基线；显式dispatch在同一runner上25/25生成并25/25正常比较通过，未放宽50像素阈值。后续push/PR仍严格比较仓库内CI基线。
