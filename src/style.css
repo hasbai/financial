@@ -189,11 +189,14 @@
 .page-heading {
   @apply flex flex-wrap items-center justify-between gap-4;
 }
-h1 {
-  @apply text-3xl font-semibold tracking-tight;
-}
-h2 {
-  @apply text-lg font-semibold;
+/* Defaults must remain below utilities so each surface controls its hierarchy. */
+@layer base {
+  h1 {
+    @apply text-2xl font-semibold tracking-tight sm:text-3xl;
+  }
+  h2 {
+    @apply text-lg font-semibold;
+  }
 }
 .skip-link {
   @apply sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-background focus:p-3;
@@ -248,6 +251,25 @@ html {
   overflow-y: auto;
   overscroll-behavior: none;
 }
+[data-slot="dialog-viewport"] {
+  display: contents;
+}
+@keyframes sheet-enter {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes sheet-exit {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
 .editor-scroll,
 .mobile-panel [data-slot="command-list"] {
   overscroll-behavior: none;
@@ -290,19 +312,57 @@ html {
     max-width: 100%;
     min-width: 0;
   }
-  .mobile-panel[data-slot="dialog-content"] {
+  /* Anchor sheets inside the visible viewport, independent of content height
+     and desktop centering transforms. The wrapper does not intercept the scrim. */
+  [data-slot="dialog-viewport"] {
+    position: fixed;
     top: var(--visual-top, 0px);
     left: 0;
+    right: 0;
+    height: var(--visual-height, 100dvh);
+    display: flex;
+    align-items: flex-end;
+    padding-top: max(1rem, env(safe-area-inset-top));
+    pointer-events: none;
+    z-index: 50;
+  }
+  [data-slot="dialog-content"] {
+    position: relative;
+    top: auto;
+    left: auto;
     width: 100%;
     max-width: 100%;
-    height: var(--visual-height, 100dvh);
-    max-height: var(--visual-height, 100dvh);
+    max-height: 100%;
+    min-height: 0;
     translate: none;
     transform: none;
+    border-radius: 1.5rem 1.5rem 0 0;
+    padding-left: max(1.5rem, env(safe-area-inset-left));
+    padding-right: max(1.5rem, env(safe-area-inset-right));
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+    pointer-events: auto;
+  }
+  [data-slot="dialog-content"][data-state="open"] {
+    animation: sheet-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  [data-slot="dialog-content"][data-state="closed"] {
+    animation: sheet-exit 160ms ease-in both;
+  }
+  .mobile-panel[data-slot="dialog-content"] {
+    height: 85%;
     overflow: hidden;
+    padding-top: 0;
+    padding-bottom: 0;
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
-    animation: none;
+  }
+  .mobile-panel [data-slot="dialog-header"],
+  .mobile-panel [data-slot="command-input-wrapper"] {
+    flex-shrink: 0;
+  }
+  .mobile-panel [data-slot="input-group"],
+  .mobile-panel input {
+    min-height: 48px;
   }
   .mobile-panel-header {
     padding-top: max(1rem, env(safe-area-inset-top));

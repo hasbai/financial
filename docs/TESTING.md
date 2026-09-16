@@ -2,6 +2,8 @@
 
 ## 运行
 
+按2026-09-16最新要求，以下命令仅由GitHub Actions runner执行，日常开发不在本地运行测试、覆盖率、Playwright、typecheck或build验收。
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm exec playwright install webkit chromium
@@ -12,9 +14,15 @@ pnpm build
 git diff --check
 ```
 
-无需 Docker。Playwright 使用本机浏览器；CI 的视觉任务固定在 `macos-26` ARM64，单元测试在 Ubuntu。Playwright 精确锁定版本，截图按操作系统、运行环境、项目、测试文件保存，不能跨环境共用图片。GitHub runner 使用 `darwin-ci-*`，本机使用 `darwin-*`；同为 macOS 也存在系统字体栅格化差异。
+无需Docker。CI视觉任务固定在`macos-26` ARM64，单元测试在Ubuntu。Playwright精确锁定版本，使用`darwin-ci-*`截图基线。历史`darwin-*`本机基线保留为旧验收记录，不再在本地运行或更新。
 
-`pnpm test:e2e:update` 只在初次建基线、设计变更或明确的浏览器/系统升级时执行。普通运行使用 `updateSnapshots: none`，缺少图片或超出差异即失败；push/PR 的 CI 不自动更新、不重试掩盖不稳定。显式触发 Check workflow 的 `update_visual_baselines` 可生成 CI 候选图片工件并立即无更新复跑；它不自动提交，取回并核对后提交到仓库。报告保留 expected/actual/diff 截图与失败 trace。每次代码修改运行自动回归，不要求人工或 AI 逐页看图；有意设计变更需核对差异后再提交基线，生成截图本身不是设计质量证明。
+`pnpm test:e2e:update`仅在初次建基线、设计变更或明确的浏览器/系统升级时，由功能分支的显式workflow dispatch执行。普通运行使用`updateSnapshots: none`，缺少图片或超出差异即失败；push/PR的CI不自动更新、不重试掩盖不稳定。显式触发Check workflow的`update_visual_baselines`生成CI候选工件并立即无更新复跑；它不自动提交，取回并核对后提交。报告保留expected/actual/diff和失败trace。日常不要求人工或AI逐页看图，有意设计变更仍需核对差异。
+
+## 推送与合并
+
+主代理编辑/提交后，必须派新子代理负责功能分支推送、创建或更新PR和跟踪CI；主代理处理失败并提交修复，再派新子代理核验。检查必须对应PR最新提交，`Check / check`（类型/单元覆盖率/构建）和`Check / visual`（浏览器/视觉回归）全部成功，且已包含最新main后才能合并。`workflow_dispatch`生成基线的成功不能替代随后普通push/PR的比较结果。不得本地补跑或用管理员绕过失败；合并后继续核验main与Cloudflare自动部署和线上资源。
+
+已启用分支保护：强制PR、最新main、必需状态`check`与`visual`（限定GitHub Actions app id 15368），管理员同样受限，不允许force push或删除main；单人开发不额外要求人工审批。因私有仓库当前套餐不支持保护，用户已明确授权并完成将hasbai/financial设为public；保护设置已由GitHub API成功返回并确认。
 
 ## 分层边界
 
@@ -75,3 +83,13 @@ v8 覆盖范围含全部业务 TS/Svelte，排除测试与 fixture、无运行�
 - 未执行 iOS 真机验收；CI、部署结果单独记录于 PROGRESS。
 
 CI首次跨环境比较检出字体栅格化差异后，单独建立GitHub runner基线；显式dispatch在同一runner上25/25生成并25/25正常比较通过，未放宽50像素阈值。后续push/PR仍严格比较仓库内CI基线。
+
+## 2026-09-16 弹层回归补充
+
+此前 `account-picker.png` 实际包含已有交易的分类弹层，但没有新增交易付款账户、拆分/多账户入口或弹层打开后缩小视口的检查。`fitsViewport` 只检查文档横向宽度，不能发现 portal 弹层的纵向越界；固定fixture只有少量科目，未覆盖长列表。全局减少动态效果及截图禁用动画，也不能验收滑入/退出。标题30px和窄屏换行已经存在于旧基线，截图一致不代表字号合理。
+
+本次在原代码的WebKit/iPhone SE和Chromium固定视口中，分类及账户弹层均位于视口内，未复现用户实际设备的越界，不能把潜在键盘/视口因素当作已证明根因。修复统一使用可见视口底部容器，打开时不自动聚焦输入框；实际iOS软键盘/浏览器平移仍属于真机边界。
+
+新增断言检查弹层四边及贴底位置、搜索和末尾选项命中、滚动后新增入口、缩小/横屏视口、长分类和长科目、空搜索、键盘选择/退出及焦点恢复；覆盖付款/到账/转账/扣款/高级分录/流水筛选/退款/科目类型。字号直接检查computed style；普通动态效果下检查真实animationstart、位移方向和退出动画，减少动态效果单独验证。打开的分类和付款弹层、深色弹层、新增交易页加入截图基线。
+
+新增检查实际检出并修复：搜索输入只有36px触控高度，以及WebKit中SelectField选择关闭后焦点丢失。日常CI仍只比较显式提交的基线，不自动接受截图变化。

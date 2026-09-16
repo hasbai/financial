@@ -1,4 +1,10 @@
-import { test, expect, fitsViewport, reachable } from "./fixtures";
+import {
+  test,
+  expect,
+  fitsViewport,
+  reachable,
+  sheetFitsViewport,
+} from "./fixtures";
 
 test("overview, privacy and dark appearance", async ({ page, app }) => {
   await app.open();
@@ -38,12 +44,174 @@ test("transaction list opens a mobile editor and searchable account picker", asy
   const category = page.getByRole("combobox", { name: "分类", exact: true });
   await category.click();
   await expect(page.getByRole("dialog")).toBeVisible();
+  await sheetFitsViewport(page.getByRole("dialog"));
   await expect(page).toHaveScreenshot("account-picker.png");
   await page.getByRole("combobox", { name: "搜索分类" }).fill("餐饮");
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(category).toBeFocused();
+});
+
+test("new transaction category and payment sheets remain reachable after scrolling and resizing", async ({
+  page,
+  app,
+}) => {
+  await app.open("/transactions/new");
+  const title = page.getByRole("heading", { name: "新增交易" });
+  await expect(title).toHaveCSS("font-size", "18px");
+  await expect(page.getByText("待填写", { exact: true })).toHaveCSS(
+    "font-size",
+    "16px",
+  );
+  await expect(page).toHaveScreenshot("new-transaction.png");
+  for (const [label, choice] of [
+    ["分类", "餐饮"],
+    ["账户", "银行卡"],
+  ]) {
+    const trigger = page.getByRole("combobox", { name: label, exact: true });
+    await trigger.scrollIntoViewIfNeeded();
+    await reachable(trigger);
+    await trigger.click();
+    const dialog = page.getByRole("dialog");
+    await sheetFitsViewport(dialog);
+    const search = dialog.getByRole("combobox", { name: `搜索${label}` });
+    await expect(dialog).toBeFocused();
+    await expect(search).not.toBeFocused();
+    await expect(search).toHaveCSS("font-size", "16px");
+    await reachable(search);
+    await expect(page).toHaveScreenshot(
+      label === "分类" ? "new-category-sheet.png" : "new-payment-sheet.png",
+    );
+    const original = page.viewportSize()!;
+    await page.setViewportSize({ width: original.width, height: 360 });
+    await sheetFitsViewport(dialog);
+    await reachable(search);
+    await search.fill(choice);
+    const option = dialog.getByRole("option", { name: new RegExp(choice) });
+    await reachable(option);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await expect(trigger).toContainText(choice);
+    await page.setViewportSize(original);
+  }
+  await page.getByRole("button", { name: "拆分分类" }).click();
+  await page.getByRole("button", { name: "添加账户" }).click();
+  for (const label of ["分类 2", "付款账户 2"]) {
+    const trigger = page.getByRole("combobox", { name: label, exact: true });
+    await trigger.scrollIntoViewIfNeeded();
+    await reachable(trigger);
+    await trigger.click();
+    await sheetFitsViewport(page.getByRole("dialog"));
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  }
+  await reachable(page.getByRole("button", { name: "保存交易" }));
+  await fitsViewport(page);
+});
+
+test("income, transfers and advanced entries share bounded account sheets", async ({
+  page,
+  app,
+}) => {
+  await app.open("/transactions/new");
+  await page.getByRole("button", { name: "收入", exact: true }).click();
+  await page.getByRole("button", { name: "添加扣款" }).click();
+  for (const label of ["分类", "账户", "扣款 1"]) {
+    await page.getByRole("combobox", { name: label, exact: true }).click();
+    await sheetFitsViewport(page.getByRole("dialog"));
+    await page.keyboard.press("Escape");
+  }
+  await page.getByRole("button", { name: "删除扣款 1" }).click();
+  await page.getByRole("button", { name: "转账", exact: true }).click();
+  for (const label of ["转出账户 1", "转入账户 1"]) {
+    await page.getByRole("combobox", { name: label, exact: true }).click();
+    await sheetFitsViewport(page.getByRole("dialog"));
+    await page.keyboard.press("Escape");
+  }
+  await page.getByRole("button", { name: "交易操作" }).click();
+  await page.getByRole("button", { name: "分录明细", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "会计科目", exact: true })
+    .last()
+    .click();
+  await sheetFitsViewport(page.getByRole("dialog"));
+  await page.keyboard.press("Escape");
+  await page.getByRole("combobox", { name: "方向 2", exact: true }).click();
+  await sheetFitsViewport(page.getByRole("dialog"));
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "借", exact: true })
+    .click();
+  await expect(
+    page.getByRole("combobox", { name: "方向 2", exact: true }),
+  ).toBeFocused();
+});
+
+test("sheets animate from the bottom and respect reduced motion in dark mode", async ({
+  page,
+  app,
+}) => {
+  await page.emulateMedia({
+    reducedMotion: "no-preference",
+    colorScheme: "dark",
+  });
+  await app.open("/transactions/new");
+  await page.evaluate(() => {
+    (window as any).sheetAnimations = [];
+    document.addEventListener("animationstart", (event) => {
+      const target = event.target as HTMLElement;
+      if (target.matches('[data-slot="dialog-content"]')) {
+        const style = getComputedStyle(target);
+        (window as any).sheetAnimations.push({
+          name: event.animationName,
+          duration: parseFloat(style.animationDuration),
+          transform: style.transform,
+        });
+      }
+    });
+  });
+  const category = page.getByRole("combobox", { name: "分类", exact: true });
+  await category.click();
+  const dialog = page.getByRole("dialog");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).sheetAnimations.some(
+          (a: any) =>
+            a.name === "sheet-enter" &&
+            a.duration >= 0.2 &&
+            new DOMMatrix(a.transform).m42 > 0,
+        ),
+      ),
+    )
+    .toBe(true);
+  await sheetFitsViewport(dialog);
+  await expect(page).toHaveScreenshot("category-sheet-dark.png");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).sheetAnimations.some(
+          (a: any) => a.name === "sheet-exit" && a.duration >= 0.1,
+        ),
+      ),
+    )
+    .toBe(true);
+  await expect(category).toBeFocused();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await category.click();
+  await sheetFitsViewport(dialog);
+  expect(
+    await dialog.evaluate((el) =>
+      parseFloat(getComputedStyle(el).animationDuration),
+    ),
+  ).toBeLessThan(0.01);
+  await page.keyboard.press("Escape");
 });
 
 test("settings, accounts and new transaction navigation", async ({

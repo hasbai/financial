@@ -96,7 +96,7 @@
           event.preventDefault();
           document.getElementById(id)?.focus({ preventScroll: true });
         }}
-        class="mobile-panel flex h-dvh max-h-dvh max-w-full flex-col gap-0 rounded-none p-0 sm:h-[min(600px,85dvh)] sm:max-w-md sm:rounded-3xl"
+        class="mobile-panel flex h-[min(600px,85dvh)] flex-col gap-0 p-0 sm:max-w-md sm:rounded-3xl"
       >
         <Dialog.Header
           class="mobile-panel-header flex-row items-center gap-2 border-b px-4 py-3 text-left"

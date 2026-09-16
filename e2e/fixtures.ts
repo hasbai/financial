@@ -120,19 +120,53 @@ export async function fitsViewport(page: Page) {
 }
 export async function reachable(control: Locator) {
   await expect(control).toBeInViewport({ ratio: 1 });
+  // Closing animations and Bits UI's deferred scroll/pointer unlock can finish
+  // after the panel detaches. Require eventual hitability without a fixed sleep.
+  await expect
+    .poll(
+      () =>
+        control.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const top = document.elementFromPoint(
+            r.x + r.width / 2,
+            r.y + r.height / 2,
+          );
+          return top === el || el.contains(top);
+        }),
+      { message: "Control must not be covered by fixed chrome" },
+    )
+    .toBe(true);
   const target = await control.evaluate((el) => {
     const r = el.getBoundingClientRect();
-    const top = document.elementFromPoint(
-      r.x + r.width / 2,
-      r.y + r.height / 2,
-    );
-    return {
-      hit: top === el || el.contains(top),
-      width: r.width,
-      height: r.height,
-    };
+    return { width: r.width, height: r.height };
   });
-  expect(target.hit, "Control must not be covered by fixed chrome").toBe(true);
   expect(target.width).toBeGreaterThanOrEqual(48);
   expect(target.height).toBeGreaterThanOrEqual(48);
+}
+
+// Document width alone cannot detect a portaled panel above/below the screen.
+export async function sheetFitsViewport(dialog: Locator) {
+  await expect(dialog).toBeVisible();
+  await expect
+    .poll(
+      () =>
+        dialog.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const v = window.visualViewport;
+          const top = v?.offsetTop ?? 0;
+          const bottom = top + (v?.height ?? innerHeight);
+          return (
+            r.left >= -1 &&
+            r.right <= innerWidth + 1 &&
+            r.top >= top - 1 &&
+            r.height > 0 &&
+            Math.abs(r.bottom - bottom) <= 1
+          );
+        }),
+      {
+        message:
+          "Sheet must fit and be anchored to the visible viewport bottom",
+      },
+    )
+    .toBe(true);
 }

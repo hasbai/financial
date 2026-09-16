@@ -278,15 +278,12 @@ it("edits only the existing account fields and retains its ID", async () => {
     }),
   );
 });
-it("clears all filters through the Bits UI select", async () => {
+it("clears all filters after selecting a mobile filter", async () => {
   const { api } = setup("transactions");
   await screen.findByText("示例消费");
   await fireEvent.click(screen.getByRole("button", { name: "展开筛选" }));
-  await fireEvent.keyDown(screen.getByRole("button", { name: "交易状态" }), {
-    key: "ArrowDown",
-  });
-  const option = await screen.findByRole("option", { name: "已退款" });
-  await fireEvent.pointerUp(option, { button: 0, pointerType: "mouse" });
+  await fireEvent.click(screen.getByRole("combobox", { name: "交易状态" }));
+  await fireEvent.click(await screen.findByRole("button", { name: "已退款" }));
   await waitFor(() =>
     expect(api.list).toHaveBeenLastCalledWith({ status: "refund" }, null),
   );

@@ -2,7 +2,7 @@
 
 单人个人财务系统：Svelte 5 SPA、Bits UI、shadcn-svelte（preset `b6sUj31yy`）、Tailwind CSS 4、Lucide、pnpm。Auth0 北极小站登录，浏览器直连 Neon Data API，Cloudflare Worker `financial` 托管。
 
-目标地址：[financial.hasbai.xyz](https://financial.hasbai.xyz) · 私有仓库：[hasbai/financial](https://github.com/hasbai/financial)
+目标地址：[financial.hasbai.xyz](https://financial.hasbai.xyz) · 公开仓库：[hasbai/financial](https://github.com/hasbai/financial)
 
 ## 功能
 
@@ -18,14 +18,13 @@
 ```sh
 pnpm install --frozen-lockfile
 pnpm dev
-pnpm typecheck
-pnpm test
-pnpm build
 ```
+
+自动化验收统一在GitHub CI运行，本地不跑测试或构建验收。每次改完并提交后，由子代理推送功能分支、跟踪单元测试和浏览器集成测试；两项必需检查均成功后通过PR合并。main已启用强制保护，管理员不能绕过。视觉基线及详细交付流程见[测试规范](docs/TESTING.md)。
 
 前端公开配置在 `src/lib/config.ts`。本地 `.env` 仅存程序化验证所需的邮箱/密码，被 Git 忽略，不使用 `VITE_` 前缀，不进入前端构建。
 
-`NODE_USE_ENV_PROXY=1 node scripts/check-api.mjs` 执行程序化 Auth0 登录和生产只读 API 校验；脚本需要已登录的 Auth0 CLI，短暂开启测试所需的 password grant，结束后恢复原配置，不输出 token 或密码。
+真实JWT/API的专项核验方式见[接入与发布](docs/ARCHITECTURE.md)，不属于CI合成数据浏览器测试，也不向GitHub上传本地凭据。
 
 ## 文档
 
