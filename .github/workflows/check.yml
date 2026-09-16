@@ -52,6 +52,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install webkit chromium
+      - run: pnpm build
+      - run: pnpm exec vite build --mode e2e
+        env:
+          VITE_DATA_API_URL: http://127.0.0.1:4173/test-api
+      - run: node scripts/prepare-browser-build.mjs
       - if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
         run: pnpm test:e2e:update
       - run: pnpm test:e2e

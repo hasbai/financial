@@ -1,4 +1,4 @@
-// A separate Vite entry. Never imported by src/main.ts or included in dist.
+// A separate compiled test entry in dist-e2e, never included in shipping dist.
 import { mount } from "svelte";
 import { QueryClient } from "@tanstack/svelte-query";
 import "../src/style.css";
