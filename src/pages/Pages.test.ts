@@ -266,16 +266,18 @@ it("hides amounts in the report, trend and accessible data table", async () => {
   expect(screen.queryByRole("table")).toBeNull();
   expect(document.body.textContent).not.toContain("¥");
 });
-it("edits only the existing account fields and retains its ID", async () => {
-  const { api } = setup("accounts");
+it("edits the account name while retaining its ID", async () => {
+  const { api } = setup("accounts", false, (api) =>
+    vi.mocked(api.accounts).mockResolvedValue(codedAccounts),
+  );
   await fireEvent.click(await screen.findByRole("button", { name: /银行卡/ }));
   await fireEvent.input(screen.getByLabelText("科目名称"), {
     target: { value: "主银行卡" },
   });
   await fireEvent.click(screen.getByRole("button", { name: "保存科目" }));
   await waitFor(() =>
-    expect(api.saveAccount).toHaveBeenCalledWith(2, {
-      ...accounts[1],
+    expect(api.saveAccount).toHaveBeenCalledWith(10101, {
+      ...codedAccounts[0],
       name: "主银行卡",
     }),
   );

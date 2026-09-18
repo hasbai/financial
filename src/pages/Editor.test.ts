@@ -537,7 +537,7 @@ it("disables saving when account loading fails", async () => {
 it("returns a newly saved transaction to the filtered list", async () => {
   const api = setup("/transactions/new?review=needed");
   await screen.findByRole("heading", { name: "新增交易" });
-  await fireEvent.input(screen.getByLabelText("金额（人民币）"), {
+  await fireEvent.input(await screen.findByLabelText("金额（人民币）"), {
     target: { value: "10" },
   });
   await fireEvent.click(screen.getByRole("button", { name: "保存交易" }));

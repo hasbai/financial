@@ -211,3 +211,30 @@ for (const route of [
     });
   }
 }
+
+test("account hierarchy searches by ID, edits identity and deletes after confirmation", async ({
+  page,
+  app,
+}) => {
+  await app.open("/accounts");
+  await page.getByRole("searchbox", { name: "搜索科目" }).fill("10101");
+  const row = page.getByRole("button", { name: /10101.*银行卡/ });
+  await expect(row).toBeVisible();
+  await row.click();
+  const dialog = page.getByRole("dialog", { name: "修改科目" });
+  await sheetFitsViewport(dialog);
+  await dialog.getByRole("textbox", { name: "科目 ID" }).fill("10102");
+  const saved = page.waitForRequest("**/test-api/rpc/save_account");
+  await dialog.getByRole("button", { name: "保存科目" }).click();
+  expect((await saved).postDataJSON()).toMatchObject({
+    p_id: 10101,
+    p_payload: { id: 10102 },
+  });
+  await expect(dialog).toHaveCount(0);
+  await row.click();
+  page.once("dialog", (d) => d.accept());
+  const deleted = page.waitForRequest("**/test-api/rpc/delete_account");
+  await dialog.getByRole("button", { name: "删除科目" }).click();
+  expect((await deleted).postDataJSON()).toEqual({ p_id: 10101 });
+  await expect(dialog).toHaveCount(0);
+});
