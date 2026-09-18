@@ -14,7 +14,7 @@
     "check:api": "NODE_USE_ENV_PROXY=1 node scripts/check-api.mjs",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "test:e2e:update": "playwright test --update-snapshots",
+    "test:e2e:update": "playwright test --update-snapshots=all",
     "check:visual-coverage": "node scripts/check-visual-coverage.mjs",
     "visual:baseline:import": "node scripts/visual-baselines.mjs import",
     "test:ci-tools": "node --test scripts/tests/visual-ci.test.mjs"
