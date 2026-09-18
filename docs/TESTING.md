@@ -118,3 +118,9 @@ CI首次跨环境比较检出字体栅格化差异后，单独建立GitHub runne
 用户后续反馈iOS PWA仍大面积裁切。已核对线上资源与main/CI artifact一致，并发现生产压缩将`translate:none`删除，而桌面`-translate-x/y-1/2`仍使用独立translate属性；`transform:none`不能覆盖该位移。原视觉任务启动Vite开发服务，没有验证压缩产物，因此36项通过仍遗漏真实线上错误。
 
 先只切换CI到生产CSS（7048f64，run 35115492795）未修改UI，复现15项移动端四边定位失败，21项通过；截图确认负半宽/半高位移造成裁切。这是行为断言失败，未更新基线。修复将居中位移限定为sm桌面断点，手机不再依赖reset声明。已有贴底/动画/缩小视口/多入口回归继续使用实际生产CSS，并新增手机滚动条隐藏、编辑区及长列表仍可滚动的断言；不声称iOS真机验收。
+
+## Baseline 前置与覆盖清单（2026-09-18）
+
+候选运行 [35300447734](https://github.com/hasbai/financial/actions/runs/35300447734) 对应 `c25a067d94914cb5af750c9c6204e19bfc3ea1e5`，check、候选生成及不更新复跑均通过。新增 iPhone 13、iPhone SE、Android 的设置页基线，6 个业务 URL 家族均有正常态截图；原有 iPhone 异常状态登记到门禁。清单共 18 个状态场景，既有桌面覆盖仍按实际测试标注，不宣称桌面全覆盖。
+
+候选导入实际校验了 HEAD 和 PNG 哈希。仅接受 3 张新增 settings.png，旧 account-picker、accounts、new-payment-sheet 的候选变化不属于本次视觉修改，保留原有 46 张基线。全部新增截图已核对文字、导航和窄屏布局；普通 PR/main 仍须比较通过。
