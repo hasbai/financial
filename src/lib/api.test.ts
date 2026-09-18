@@ -36,6 +36,35 @@ describe("Data API contract", () => {
       },
     });
   });
+  it("sends original account identity and versioned deletions through restricted RPCs", async () => {
+    const requests: { url: string; body: unknown }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({
+          url: String(input),
+          body: JSON.parse(String(init?.body)),
+        });
+        return new Response("null", {
+          headers: { "content-type": "application/json" },
+        });
+      },
+    );
+    const api = createRepository(async () => "token");
+    await api.saveAccount(10101, { id: 10102 });
+    await api.deleteAccount(10102);
+    await api.deleteTransaction(7, "2026-09-01T00:00:00Z");
+    expect(requests.map((r) => r.url.split("/").at(-1))).toEqual([
+      "save_account",
+      "delete_account",
+      "delete_transaction",
+    ]);
+    expect(requests.map((r) => r.body)).toEqual([
+      { p_id: 10101, p_payload: { id: 10102 } },
+      { p_id: 10102 },
+      { p_id: 7, p_updated_at: "2026-09-01T00:00:00Z" },
+    ]);
+  });
   it("preserves conflict details for the editor", async () => {
     vi.stubGlobal(
       "fetch",

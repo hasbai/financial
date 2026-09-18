@@ -37,7 +37,7 @@ Data API 的 JWT 校验发生在 Neon，PostgreSQL 根据 superadmin 的 schema 
 - Decimal.js + SQL numeric：金额输入与计算。
 - Svelte SVG：趋势展示及逐日可访问明细；坐标用 Number，仅用于呈现，基础报表金额来自 SQL，页面汇总采用 Decimal。
 
-- `src/lib/auth.svelte.ts`：Auth0 初始化、回调、登录/退出及取 Access Token，SDK 按需加载。
+- `src/lib/auth.svelte.ts`：Auth0 初始化、回调、登录/退出及取 Access Token。SDK 随入口加载，静默恢复超时为3秒；没有恢复会话则自动通过顶层 Auth0 跳转登录，sessionStorage 仅存防循环与主动退出标记，不存 token。主动退出后保留手动登录入口；回调错误不自动重试。
 - `src/lib/router.svelte.ts`：History API 路由、查询字符串、返回与未保存提醒；保持原 SPA 路径。
 - `src/lib/context.ts`：Svelte context 注入 Repository；测试注入替身，不加入生产绕过认证开关。
 - `src/lib/editor.ts`：表单初始化和退款分录输入；SQL 负责最终保存校验。

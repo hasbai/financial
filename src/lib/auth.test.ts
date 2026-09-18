@@ -26,6 +26,7 @@ vi.mock("@auth0/auth0-spa-js", () => ({
 }));
 beforeEach(() => {
   vi.resetAllMocks();
+  sessionStorage.clear();
   router.navigate("/", true, true);
   sdk.getUser.mockResolvedValue({ sub: config.ownerSubject });
 });
@@ -99,4 +100,47 @@ it("reports callback errors and leaves the user signed out", async () => {
   expect(auth.loading).toBe(false);
   expect(auth.user).toBeUndefined();
   expect(clear).toHaveBeenCalled();
+});
+
+it("automatically redirects once when no local session can be restored", async () => {
+  sdk.getUser.mockResolvedValue(undefined);
+  router.navigate("/accounts", true, true);
+  const auth = createAuth();
+  await auth.init(vi.fn());
+  expect(sdk.checkSession).toHaveBeenCalledWith({ timeoutInSeconds: 3 });
+  expect(sdk.loginWithRedirect).toHaveBeenCalledWith({
+    appState: { returnTo: "/accounts" },
+  });
+  expect(auth.loading).toBe(true);
+  const retry = createAuth();
+  await retry.init(vi.fn());
+  expect(sdk.loginWithRedirect).toHaveBeenCalledTimes(1);
+  expect(retry.loading).toBe(false);
+});
+it("continues login after a silent iframe timeout and permits manual retry on failure", async () => {
+  sdk.getUser.mockResolvedValue(undefined);
+  sdk.checkSession.mockRejectedValue({ error: "timeout" });
+  sdk.loginWithRedirect.mockRejectedValueOnce(new Error("网络不可用"));
+  const auth = createAuth();
+  await auth.init(vi.fn());
+  expect(auth.loading).toBe(false);
+  expect(auth.error).toBe("网络不可用");
+  sdk.loginWithRedirect.mockResolvedValue(undefined);
+  await auth.login();
+  expect(auth.loading).toBe(true);
+  expect(sdk.loginWithRedirect).toHaveBeenCalledTimes(2);
+});
+it("does not automatically sign in again after explicit logout", async () => {
+  const auth = createAuth();
+  await auth.init(vi.fn());
+  await auth.logout(vi.fn());
+  sdk.getUser.mockResolvedValue(undefined);
+  sdk.checkSession.mockClear();
+  const next = createAuth();
+  await next.init(vi.fn());
+  expect(next.loading).toBe(false);
+  expect(sdk.checkSession).not.toHaveBeenCalled();
+  expect(sdk.loginWithRedirect).not.toHaveBeenCalled();
+  await next.login();
+  expect(sdk.loginWithRedirect).toHaveBeenCalledTimes(1);
 });

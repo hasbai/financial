@@ -89,9 +89,7 @@ test("reduced viewport keeps editor field and save action reachable", async ({
   app,
 }) => {
   await app.open("/transactions/7");
-  await expect(
-    page.getByRole("heading", { name: "补录交易信息" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "修改交易" })).toBeVisible();
   // Exercises VisualViewport resize; this is not an emulated iOS software keyboard.
   await expect(page.locator("html")).toHaveCSS(
     "--visual-height",
@@ -105,7 +103,7 @@ test("reduced viewport keeps editor field and save action reachable", async ({
   await notes.fill("自动化输入");
   await expect(notes).toBeFocused();
   await expect(notes).toBeInViewport();
-  await reachable(page.getByRole("button", { name: "保存补录" }));
+  await reachable(page.getByRole("button", { name: "保存修改" }));
   await fitsViewport(page);
   await expect(page).toHaveScreenshot("editor-reduced-viewport.png");
 });
@@ -126,6 +124,7 @@ test("account create keeps input after failure and saves on retry", async ({
   await expect(
     page.getByRole("combobox", { name: "类型", exact: true }),
   ).toBeFocused();
+  await page.getByRole("textbox", { name: "科目 ID" }).fill("10102");
   await page.getByRole("textbox", { name: "科目名称" }).fill("日常账户");
   await page
     .getByRole("textbox", { name: "子类", exact: true })
@@ -165,7 +164,7 @@ test("refund and transaction filter sheets fit short and landscape viewports", a
   await sheetFitsViewport(refund);
   await page.setViewportSize({ width: 568, height: 320 });
   await sheetFitsViewport(refund);
-  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await refund.getByRole("button", { name: "取消", exact: true }).click();
   await expect(refund).toHaveCount(0);
   await app.open("/transactions");
   await page.getByRole("button", { name: "展开筛选", exact: true }).click();
@@ -206,9 +205,36 @@ for (const route of [
         app.recover();
         await page.getByRole("button", { name: "重试" }).click();
         await expect(
-          page.getByRole("heading", { name: "补录交易信息" }),
+          page.getByRole("heading", { name: "修改交易" }),
         ).toBeVisible();
       }
     });
   }
 }
+
+test("account hierarchy searches by ID, edits identity and deletes after confirmation", async ({
+  page,
+  app,
+}) => {
+  await app.open("/accounts");
+  await page.getByRole("searchbox", { name: "搜索科目" }).fill("10101");
+  const row = page.getByRole("button", { name: /10101.*银行卡/ });
+  await expect(row).toBeVisible();
+  await row.click();
+  const dialog = page.getByRole("dialog", { name: "修改科目" });
+  await sheetFitsViewport(dialog);
+  await dialog.getByRole("textbox", { name: "科目 ID" }).fill("10102");
+  const saved = page.waitForRequest("**/test-api/rpc/save_account");
+  await dialog.getByRole("button", { name: "保存科目" }).click();
+  expect((await saved).postDataJSON()).toMatchObject({
+    p_id: 10101,
+    p_payload: { id: 10102 },
+  });
+  await expect(dialog).toHaveCount(0);
+  await row.click();
+  page.once("dialog", (d) => d.accept());
+  const deleted = page.waitForRequest("**/test-api/rpc/delete_account");
+  await dialog.getByRole("button", { name: "删除科目" }).click();
+  expect((await deleted).postDataJSON()).toEqual({ p_id: 10101 });
+  await expect(dialog).toHaveCount(0);
+});

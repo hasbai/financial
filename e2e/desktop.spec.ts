@@ -22,15 +22,11 @@ test("Escape preserves dirty editor input when discard is declined", async ({
   app,
 }) => {
   await app.open("/transactions/7");
-  await expect(
-    page.getByRole("dialog", { name: "补录交易信息" }),
-  ).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "修改交易" })).toBeVisible();
   await page.getByRole("textbox", { name: "商户 / 交易摘要" }).fill("保留输入");
   page.once("dialog", (dialog) => dialog.dismiss());
   await page.keyboard.press("Escape");
-  await expect(
-    page.getByRole("dialog", { name: "补录交易信息" }),
-  ).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "修改交易" })).toBeVisible();
   await expect(
     page.getByRole("textbox", { name: "商户 / 交易摘要" }),
   ).toHaveValue("保留输入");

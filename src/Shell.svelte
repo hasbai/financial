@@ -61,7 +61,11 @@
   }
 </script>
 
-{#if !auth.user}
+{#if auth.loading}
+  <main class="grid min-h-dvh place-items-center" aria-label="正在登录">
+    <Loading />
+  </main>
+{:else if !auth.user}
   <main
     class="grid min-h-dvh place-items-center px-5 pt-[max(40px,env(safe-area-inset-top))] pb-[max(40px,env(safe-area-inset-bottom))]"
   >
@@ -180,7 +184,7 @@
       {/if}
     </main>
   </div>
-  {#if authorized && !path.startsWith("/transactions/")}
+  {#if authorized && path !== "/accounts" && !path.startsWith("/transactions/")}
     <Button
       href="/transactions/new"
       aria-label="记一笔"

@@ -214,16 +214,38 @@
           true,
         );
       } else if (!original)
-        router.navigate(
-          "/transactions/" + data.id + router.location.search,
-          true,
-          true,
-        );
+        router.navigate("/transactions" + router.location.search, true, true);
     } catch (e) {
       errors = ["已保存，下一笔加载失败"];
     } finally {
       pending = false;
     }
+  }
+  async function removeTransaction() {
+    if (!saved || pending || uncertain || !online) return;
+    moreOpen = false;
+    if (!window.confirm("删除这笔交易及全部分录？")) return;
+    pending = true;
+    errors = [];
+    try {
+      await api.deleteTransaction(saved.id, saved.updated_at);
+    } catch (e) {
+      errors = [errorMessage(e)];
+      uncertain = /fetch|network|timeout|Failed|Load failed/i.test(
+        e instanceof Error ? e.message : "",
+      );
+      pending = false;
+      return;
+    }
+    baseline = JSON.stringify(values);
+    await cache.invalidateQueries({
+      predicate: (q) =>
+        ["transactions", "transaction", "overview"].includes(
+          String(q.queryKey[0]),
+        ),
+    });
+    pending = false;
+    router.navigate("/transactions" + router.location.search, true, true);
   }
   function addRefund() {
     try {
@@ -243,7 +265,7 @@
   }
 </script>
 
-<EditorSurface title={saved ? "补录交易信息" : "新增交易"} {close}>
+<EditorSurface title={saved ? "修改交易" : "新增交易"} {close}>
   <header
     class="mobile-panel-header flex shrink-0 items-center gap-3 bg-card px-5 py-4 text-left"
   >
@@ -255,7 +277,7 @@
       onclick={close}><ArrowLeft class="size-6" aria-hidden="true" /></Button
     >
     <h1 class="min-w-0 flex-1 text-lg sm:text-xl">
-      {saved ? "补录交易信息" : "新增交易"}
+      {saved ? "修改交易" : "新增交易"}
     </h1>
     <Popover.Root bind:open={moreOpen}
       ><Popover.Trigger
@@ -304,6 +326,12 @@
               moreOpen = false;
               submit(true);
             }}>保存并下一笔</Button
+          ><Button
+            class="w-full justify-start text-destructive"
+            variant="ghost"
+            disabled={pending || uncertain || !online}
+            onclick={removeTransaction}
+            ><Trash2 aria-hidden="true" />删除交易</Button
           >{/if}</Popover.Content
       ></Popover.Root
     >
@@ -363,7 +391,7 @@
         >
       </div>{/if}
     {#if uncertain}<Notice variant="warning"
-        >保存待核对<Button variant="link" onclick={close}>查看流水</Button
+        >操作待核对<Button variant="link" onclick={close}>查看流水</Button
         ></Notice
       >{/if}
     {#if success}<Notice variant="success">{success}</Notice>{/if}
@@ -567,7 +595,7 @@
       class="h-14 rounded-2xl"
       variant="secondary"
       disabled={pending}
-      onclick={close}>稍后处理</Button
+      onclick={close}>取消</Button
     ><Button
       class="h-14 rounded-2xl"
       disabled={pending ||
@@ -577,7 +605,7 @@
         !!accounts.error ||
         !sum.借.eq(sum.贷)}
       onclick={() => submit()}
-      >{pending ? "正在保存…" : saved ? "保存补录" : "保存交易"}</Button
+      >{pending ? "正在保存…" : saved ? "保存修改" : "保存交易"}</Button
     >
   </footer>
 </EditorSurface>
