@@ -24,7 +24,6 @@
   let validation = $state("");
   let uncertain = $state(false);
   let open = $derived(editing !== null);
-  const busy = $derived(save.isPending || remove.isPending);
   async function updated() {
     editing = null;
     await cache.invalidateQueries();
@@ -43,6 +42,7 @@
     onSuccess: updated,
     onError: failed,
   }));
+  const busy = $derived(save.isPending || remove.isPending);
   let accounts = $derived(
     query.data?.filter((a) =>
       `${a.id}${a.type}${a.subtype}${a.name}`.includes(search.trim()),
@@ -211,7 +211,7 @@
             bind:value={id}
             inputmode="numeric"
             maxlength={5}
-            pattern="[1-5][0-9]{4}"
+            pattern={"[1-5][0-9]{4}"}
             required
           />
           <Field

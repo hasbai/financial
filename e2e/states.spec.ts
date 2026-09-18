@@ -164,7 +164,7 @@ test("refund and transaction filter sheets fit short and landscape viewports", a
   await sheetFitsViewport(refund);
   await page.setViewportSize({ width: 568, height: 320 });
   await sheetFitsViewport(refund);
-  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await refund.getByRole("button", { name: "取消", exact: true }).click();
   await expect(refund).toHaveCount(0);
   await app.open("/transactions");
   await page.getByRole("button", { name: "展开筛选", exact: true }).click();
