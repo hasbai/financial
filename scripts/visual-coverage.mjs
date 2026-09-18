@@ -50,6 +50,19 @@ export function validateManifest(manifest, root = process.cwd(), { allowMissingB
     if (!page.scenarios?.length && !page.exemption?.trim()) errors.push(`Page needs evidence or an explicit exemption: ${page.source}`);
     for (const id of page.scenarios ?? []) if (!ids.includes(id)) errors.push(`Unknown scenario ${id}: ${page.source}`);
   }
+  // Financial has a small conditional router rather than a route registry.
+  // Track its literal dispatch branches as well as page modules, so a new URL
+  // reusing an existing component cannot silently bypass the inventory.
+  if (manifest.router) {
+    const text = readFileSync(join(root, manifest.router.source), 'utf8');
+    const paths = new Set([...text.matchAll(/\bpath\s*(?:===\s*|\.startsWith\(\s*)["']([^"']+)["']/g)].map(match => match[1]));
+    if (!paths.size) errors.push('Router dispatch syntax changed; update route discovery');
+    for (const path of paths) if (!manifest.router.paths[path]?.length) errors.push(`Unlisted router path: ${path}`);
+    for (const [path, scenarios] of Object.entries(manifest.router.paths)) {
+      if (!paths.has(path)) errors.push(`Stale router path: ${path}`);
+      for (const id of scenarios) if (!ids.includes(id)) errors.push(`Unknown router scenario: ${id}`);
+    }
+  }
   for (const registry of manifest.registries ?? []) {
     const actualIds = registryIds(root, registry);
     for (const id of actualIds) if (!registry.scenarios[id]) errors.push(`Unlisted view: ${registry.export}.${id}`);
@@ -85,8 +98,8 @@ export function validateManifest(manifest, root = process.cwd(), { allowMissingB
     exemptPages: manifest.pages.filter(p => p.exemption).length };
 }
 
-function screenshotStep(steps) {
-  return steps.some(step => (!step.error && step.category === 'expect' && step.title.includes('toHaveScreenshot')) || screenshotStep(step.steps ?? []));
+function screenshotStep(steps, snapshot) {
+  return steps.some(step => (!step.error && step.category === 'expect' && step.title.includes(`toHaveScreenshot(${snapshot})`)) || screenshotStep(step.steps ?? [], snapshot));
 }
 export function validateExecution(manifest, records) {
   const errors = [];
@@ -94,7 +107,9 @@ export function validateExecution(manifest, records) {
     for (const evidence of scene.evidence) for (const project of evidence.projects) {
       const record = records.find(item => item.spec === evidence.spec && item.title === evidence.test && item.project === project);
       if (!record || record.status !== 'passed') errors.push(`Coverage did not pass: ${scene.id} / ${project} / ${evidence.test}`);
-      else if (scene.kind === 'screenshot' && !screenshotStep(record.steps)) errors.push(`No successful screenshot assertion: ${scene.id} / ${project}`);
+      else if (scene.kind === 'screenshot') for (const snapshot of evidence.snapshots) {
+        if (!screenshotStep(record.steps, snapshot)) errors.push(`No successful screenshot assertion: ${scene.id} / ${project} / ${snapshot}`);
+      }
     }
   }
   if (errors.length) throw new Error(errors.join('\n'));

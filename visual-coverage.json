@@ -414,5 +414,26 @@
         }
       ]
     }
-  ]
+  ],
+  "router": {
+    "source": "src/Shell.svelte",
+    "paths": {
+      "/": [
+        "overview"
+      ],
+      "/transactions": [
+        "transactions"
+      ],
+      "/transactions/": [
+        "new",
+        "editor"
+      ],
+      "/settings": [
+        "settings"
+      ],
+      "/accounts": [
+        "accounts"
+      ]
+    }
+  }
 }

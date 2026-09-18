@@ -45,8 +45,10 @@ test('skipped or removed tests and raw screenshot capture cannot claim visual co
   assert.throws(() => validateExecution(manifest(), [record]), /No successful screenshot/);
   record.steps = [{ category: 'pw:api', title: 'page.screenshot', steps: [] }];
   assert.throws(() => validateExecution(manifest(), [record]), /No successful screenshot/);
-  record.steps = [{ category: 'expect', title: 'Expect "toHaveScreenshot"', steps: [] }];
+  record.steps = [{ category: 'expect', title: 'Expect "toHaveScreenshot(home.png)"', steps: [] }];
   assert.doesNotThrow(() => validateExecution(manifest(), [record]));
+  const two = manifest(); two.scenarios[0].evidence[0].snapshots.push('missing.png');
+  assert.throws(() => validateExecution(two, [record]), /missing.png/);
   record.status = 'skipped';
   assert.throws(() => validateExecution(manifest(), [record]), /did not pass/);
 });
@@ -58,4 +60,11 @@ test('candidate import rejects changed code, tampered bytes and paths outside CI
   assert.throws(() => verifyCandidate(candidate, 'abc', ['snapshots'], () => Buffer.from('changed')), /checksum mismatch/);
   candidate.files[0].path = 'snapshots/../src/home.png';
   assert.throws(() => verifyCandidate(candidate, 'abc', ['snapshots'], () => bytes), /Unexpected candidate path/);
+});
+
+test('new conditional-router URL cannot hide behind an existing component', t => {
+  const root = setup(t); const data = manifest();
+  writeFileSync(join(root, 'Shell.svelte'), `path === "/"; path.startsWith("/new/")`);
+  data.router = { source: 'Shell.svelte', paths: { '/': ['home'] } };
+  assert.throws(() => validateManifest(data, root), /Unlisted router path: \/new\//);
 });
