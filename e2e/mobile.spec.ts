@@ -245,6 +245,9 @@ test("settings, accounts and new transaction navigation", async ({
   app,
 }) => {
   await app.open("/settings");
+  await expect(page.getByRole("heading", { name: "设置", exact: true })).toBeVisible();
+  await fitsViewport(page);
+  await expect(page).toHaveScreenshot("settings.png", { fullPage: true });
   await page.getByRole("link", { name: "科目", exact: true }).click();
   await expect(page.getByRole("heading", { name: "科目设置" })).toBeVisible();
   await expect(page.getByRole("link", { name: "记一笔" })).toHaveCount(0);

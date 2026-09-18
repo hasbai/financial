@@ -1,0 +1,418 @@
+{
+  "version": 1,
+  "scope": "真实Shell、路由与Repository的合成数据测试；正常态门禁，不代表全部设备状态组合或真实登录。",
+  "inventory": {
+    "root": "src/pages",
+    "suffix": ".svelte"
+  },
+  "baselineTemplate": "e2e/__screenshots__/darwin-ci-{project}/{spec}/{snapshot}",
+  "baselineDirectories": [
+    "e2e/__screenshots__/darwin-ci-iphone",
+    "e2e/__screenshots__/darwin-ci-iphone-se",
+    "e2e/__screenshots__/darwin-ci-android",
+    "e2e/__screenshots__/darwin-ci-desktop"
+  ],
+  "pages": [
+    {
+      "source": "src/pages/Overview.svelte",
+      "scenarios": [
+        "overview",
+        "overview-loading",
+        "overview-empty",
+        "overview-error"
+      ]
+    },
+    {
+      "source": "src/pages/Transactions.svelte",
+      "scenarios": [
+        "transactions",
+        "transactions-loading",
+        "transactions-empty",
+        "transactions-error"
+      ]
+    },
+    {
+      "source": "src/pages/Editor.svelte",
+      "scenarios": [
+        "new",
+        "editor",
+        "editor-loading",
+        "editor-empty",
+        "editor-error"
+      ]
+    },
+    {
+      "source": "src/pages/EditorForm.svelte",
+      "scenarios": [
+        "new",
+        "editor",
+        "editor-loading",
+        "editor-empty",
+        "editor-error"
+      ]
+    },
+    {
+      "source": "src/pages/Settings.svelte",
+      "scenarios": [
+        "settings"
+      ]
+    },
+    {
+      "source": "src/pages/Accounts.svelte",
+      "scenarios": [
+        "accounts",
+        "accounts-loading",
+        "accounts-empty",
+        "accounts-error"
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "overview",
+      "url": "/",
+      "kind": "screenshot",
+      "state": "normal",
+      "evidence": [
+        {
+          "spec": "e2e/mobile.spec.ts",
+          "test": "overview, privacy and dark appearance",
+          "projects": [
+            "iphone",
+            "iphone-se",
+            "android"
+          ],
+          "snapshots": [
+            "overview.png"
+          ]
+        },
+        {
+          "spec": "e2e/desktop.spec.ts",
+          "test": "desktop overview and keyboard editor dialog",
+          "projects": [
+            "desktop"
+          ],
+          "snapshots": [
+            "overview.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "transactions",
+      "url": "/transactions",
+      "kind": "screenshot",
+      "state": "normal",
+      "evidence": [
+        {
+          "spec": "e2e/mobile.spec.ts",
+          "test": "transaction list opens a mobile editor and searchable account picker",
+          "projects": [
+            "iphone",
+            "iphone-se",
+            "android"
+          ],
+          "snapshots": [
+            "transactions.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "new",
+      "url": "/transactions/new",
+      "kind": "screenshot",
+      "state": "normal",
+      "evidence": [
+        {
+          "spec": "e2e/mobile.spec.ts",
+          "test": "new transaction category and payment sheets remain reachable after scrolling and resizing",
+          "projects": [
+            "iphone",
+            "iphone-se",
+            "android"
+          ],
+          "snapshots": [
+            "new-transaction.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "editor",
+      "url": "/transactions/:id",
+      "kind": "screenshot",
+      "state": "normal",
+      "evidence": [
+        {
+          "spec": "e2e/mobile.spec.ts",
+          "test": "transaction list opens a mobile editor and searchable account picker",
+          "projects": [
+            "iphone",
+            "iphone-se",
+            "android"
+          ],
+          "snapshots": [
+            "editor.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "settings",
+      "url": "/settings",
+      "kind": "screenshot",
+      "state": "normal",
+      "evidence": [
+        {
+          "spec": "e2e/mobile.spec.ts",
+          "test": "settings, accounts and new transaction navigation",
+          "projects": [
+            "iphone",
+            "iphone-se",
+            "android"
+          ],
+          "snapshots": [
+            "settings.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "accounts",
+      "url": "/accounts",
+      "kind": "screenshot",
+      "state": "normal",
+      "evidence": [
+        {
+          "spec": "e2e/mobile.spec.ts",
+          "test": "settings, accounts and new transaction navigation",
+          "projects": [
+            "iphone",
+            "iphone-se",
+            "android"
+          ],
+          "snapshots": [
+            "accounts.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "overview-loading",
+      "url": "/",
+      "kind": "screenshot",
+      "state": "loading",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "overview loading",
+          "projects": [
+            "iphone"
+          ],
+          "snapshots": [
+            "overview-loading.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "overview-empty",
+      "url": "/",
+      "kind": "screenshot",
+      "state": "empty",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "overview empty",
+          "projects": [
+            "iphone"
+          ],
+          "snapshots": [
+            "overview-empty.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "overview-error",
+      "url": "/",
+      "kind": "screenshot",
+      "state": "error",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "overview error",
+          "projects": [
+            "iphone"
+          ],
+          "snapshots": [
+            "overview-error.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "transactions-loading",
+      "url": "/transactions",
+      "kind": "screenshot",
+      "state": "loading",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "transactions loading",
+          "projects": [
+            "iphone"
+          ],
+          "snapshots": [
+            "transactions-loading.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "transactions-empty",
+      "url": "/transactions",
+      "kind": "screenshot",
+      "state": "empty",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "transactions empty",
+          "projects": [
+            "iphone"
+          ],
+          "snapshots": [
+            "transactions-empty.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "transactions-error",
+      "url": "/transactions",
+      "kind": "screenshot",
+      "state": "error",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "transactions error",
+          "projects": [
+            "iphone"
+          ],
+          "snapshots": [
+            "transactions-error.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "editor-loading",
+      "url": "/transactions/:id",
+      "kind": "screenshot",
+      "state": "loading",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "editor loading",
+          "projects": [
+            "iphone"
+          ],
+          "snapshots": [
+            "editor-loading.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "editor-empty",
+      "url": "/transactions/:id",
+      "kind": "screenshot",
+      "state": "empty",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "editor empty",
+          "projects": [
+            "iphone"
+          ],
+          "snapshots": [
+            "editor-empty.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "editor-error",
+      "url": "/transactions/:id",
+      "kind": "screenshot",
+      "state": "error",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "editor error",
+          "projects": [
+            "iphone"
+          ],
+          "snapshots": [
+            "editor-error.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "accounts-loading",
+      "url": "/accounts",
+      "kind": "screenshot",
+      "state": "loading",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "accounts loading",
+          "projects": [
+            "iphone"
+          ],
+          "snapshots": [
+            "accounts-loading.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "accounts-empty",
+      "url": "/accounts",
+      "kind": "screenshot",
+      "state": "empty",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "accounts empty",
+          "projects": [
+            "iphone"
+          ],
+          "snapshots": [
+            "accounts-empty.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "accounts-error",
+      "url": "/accounts",
+      "kind": "screenshot",
+      "state": "error",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "accounts error",
+          "projects": [
+            "iphone"
+          ],
+          "snapshots": [
+            "accounts-error.png"
+          ]
+        }
+      ]
+    }
+  ]
+}
