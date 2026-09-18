@@ -1,4 +1,4 @@
-import type { Auth0Client, User } from "@auth0/auth0-spa-js";
+import { Auth0Client, type User } from "@auth0/auth0-spa-js";
 import { config } from "./config";
 import { safeReturnPath } from "./finance";
 import { router } from "./router.svelte";
@@ -9,6 +9,19 @@ export function createAuth() {
   let user = $state<User | undefined>();
   let error = $state("");
   let client: Auth0Client;
+  const attemptKey = "financial.loginAttempt";
+  const logoutKey = "financial.loggedOut";
+  async function redirect() {
+    sessionStorage.removeItem(logoutKey);
+    sessionStorage.setItem(attemptKey, "true");
+    await client.loginWithRedirect({
+      appState: {
+        returnTo: safeReturnPath(
+          router.location.pathname + router.location.search,
+        ),
+      },
+    });
+  }
   return {
     get loading() {
       return loading;
@@ -20,12 +33,13 @@ export function createAuth() {
       return error;
     },
     async init(clearCache: () => void) {
+      let redirecting = false;
       try {
-        const { Auth0Client } = await import("@auth0/auth0-spa-js");
         client = new Auth0Client({
           domain: config.domain,
           clientId: config.clientId,
           cacheLocation: "memory",
+          authorizeTimeoutInSeconds: 3,
           authorizationParams: {
             redirect_uri: window.location.origin + "/auth/callback",
             audience: config.audience,
@@ -48,30 +62,51 @@ export function createAuth() {
             true,
           );
         } else {
-          await client.checkSession();
+          if (!sessionStorage.getItem(logoutKey)) {
+            try {
+              await client.checkSession({ timeoutInSeconds: 3 });
+            } catch (e) {
+              const code = (e as { error?: string }).error;
+              if (
+                ![
+                  "login_required",
+                  "consent_required",
+                  "interaction_required",
+                  "timeout",
+                ].includes(code ?? "")
+              )
+                throw e;
+            }
+          }
           if (window.location.pathname === "/auth/callback")
             router.navigate("/", true, true);
         }
         user = await client.getUser();
-        if (!user) clearCache();
+        if (user) {
+          sessionStorage.removeItem(attemptKey);
+          sessionStorage.removeItem(logoutKey);
+        } else {
+          clearCache();
+          if (
+            !sessionStorage.getItem(logoutKey) &&
+            !sessionStorage.getItem(attemptKey)
+          ) {
+            await redirect();
+            redirecting = true;
+          }
+        }
       } catch (e) {
         error = errorMessage(e);
         clearCache();
       } finally {
-        loading = false;
+        loading = redirecting;
       }
     },
     async login() {
       loading = true;
       error = "";
       try {
-        await client.loginWithRedirect({
-          appState: {
-            returnTo: safeReturnPath(
-              router.location.pathname + router.location.search,
-            ),
-          },
-        });
+        await redirect();
       } catch (e) {
         error = errorMessage(e);
         loading = false;
@@ -81,6 +116,8 @@ export function createAuth() {
       if (!router.confirmLeave()) return;
       clearCache();
       user = undefined;
+      sessionStorage.setItem(logoutKey, "true");
+      sessionStorage.removeItem(attemptKey);
       try {
         await client.logout({
           logoutParams: { returnTo: window.location.origin },

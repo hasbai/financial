@@ -4,13 +4,23 @@ import {
   type Page,
   type Locator,
 } from "@playwright/test";
-import { accounts as baseAccounts, transaction } from "../src/test/fixtures";
+import {
+  accounts as baseAccounts,
+  transaction as baseTransaction,
+} from "../src/test/fixtures";
 
+const transaction = {
+  ...baseTransaction,
+  entries: baseTransaction.entries.map((e) => ({
+    ...e,
+    account_id: e.account_id === 1 ? 50101 : 10101,
+  })),
+};
 // Synthetic data only. HTTP is intercepted before mounting the actual Repository.
 const accounts = [
-  ...baseAccounts,
-  { id: 3, type: "收入", subtype: "工资", name: "工资收入", notes: null },
-  { id: 4, type: "负债", subtype: "信用卡", name: "信用卡", notes: null },
+  ...baseAccounts.map((a) => ({ ...a, id: a.id === 1 ? 50101 : 10101 })),
+  { id: 40101, type: "收入", subtype: "工资", name: "工资收入", notes: null },
+  { id: 20101, type: "负债", subtype: "信用卡", name: "信用卡", notes: null },
 ];
 const balances = [
   { ...accounts[1], balance: "12345.67" },
@@ -25,7 +35,7 @@ const rows = {
       balances.map((b) => ({
         ...b,
         date,
-        balance: b.id === 2 ? String(12000 + i * 172.835) : b.balance,
+        balance: b.id === 10101 ? String(12000 + i * 172.835) : b.balance,
       })),
   ),
   income_statement: [
@@ -84,9 +94,14 @@ export const test = base.extend<{
       if (view === "save_account") {
         const body = route.request().postDataJSON();
         return route.fulfill({
-          json: { ...body.p_payload, id: body.p_id ?? 10 },
+          json: {
+            ...body.p_payload,
+            id: body.p_payload.id ?? body.p_id ?? 10102,
+          },
         });
       }
+      if (view === "delete_transaction" || view === "delete_account")
+        return route.fulfill({ json: null });
       if (view === "save_transaction")
         return route.fulfill({ json: transaction });
       if (!(view in rows)) throw new Error(`Unimplemented fixture: ${view}`);

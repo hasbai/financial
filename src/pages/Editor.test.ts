@@ -42,6 +42,8 @@ function setup(
     overview: vi.fn(),
     report: vi.fn(),
     home: vi.fn(),
+    deleteTransaction: vi.fn().mockResolvedValue(undefined),
+    deleteAccount: vi.fn().mockResolvedValue(undefined),
     saveAccount: vi.fn(),
   };
   const cache = new QueryClient({
@@ -66,11 +68,11 @@ it("adds refund to the same transaction and preserves original entry IDs", async
   );
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
-  await fireEvent.click(screen.getByRole("button", { name: "保存补录" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
   const [id, at, p] = vi.mocked(api.save).mock.calls[0];
   expect(id).toBe(7);
@@ -89,11 +91,11 @@ it("uses compact category/account fields and synchronizes an edited amount witho
   });
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
-  await fireEvent.click(screen.getByRole("button", { name: "保存补录" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
   expect(vi.mocked(api.save).mock.calls[0][2].entries).toEqual(
     t.entries.map((e) => ({ ...e, amount: "25.30" })),
@@ -105,11 +107,11 @@ it("keeps invalid amount input in the compact form and rejects saving it", async
   await fireEvent.input(field, { target: { value: "1.234" } });
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
-  await fireEvent.click(screen.getByRole("button", { name: "保存补录" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   expect(api.save).not.toHaveBeenCalled();
   expect(
     (screen.getByLabelText("金额（人民币）") as HTMLInputElement).value,
@@ -132,11 +134,11 @@ it("switches transaction direction while preserving the payment account and entr
   await fireEvent.click(await screen.findByRole("option", { name: "工资" }));
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
-  await fireEvent.click(screen.getByRole("button", { name: "保存补录" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
   expect(vi.mocked(api.save).mock.calls[0][2].entries).toEqual([
     { ...t.entries[0], account_id: 3, direction: "贷" },
@@ -170,11 +172,11 @@ it("applies real same-merchant account suggestions only on request", async () =>
   await fireEvent.click(screen.getByRole("button", { name: "一键应用" }));
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
-  await fireEvent.click(screen.getByRole("button", { name: "保存补录" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
   expect(vi.mocked(api.save).mock.calls[0][2].entries.map((e) => e.id)).toEqual(
     [11, 12],
@@ -208,17 +210,17 @@ it("keeps input after failed save and allows a confirmed failure to retry", asyn
   });
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
-  await fireEvent.click(screen.getByRole("button", { name: "保存补录" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   await screen.findByText("服务暂不可用");
   expect((screen.getByLabelText("备注") as HTMLTextAreaElement).value).toBe(
     "保留输入",
   );
   expect(
-    (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
       .disabled,
   ).toBe(false);
 });
@@ -228,14 +230,14 @@ it("blocks duplicate saves when the network leaves the result uncertain", async 
   await screen.findByDisplayValue("示例消费");
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
-  await fireEvent.click(screen.getByRole("button", { name: "保存补录" }));
-  await screen.findByText(/保存待核对/);
+  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+  await screen.findByText(/操作待核对/);
   expect(
-    (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
   expect(api.save).toHaveBeenCalledTimes(1);
@@ -269,9 +271,9 @@ it("keeps the saved record identity if loading the next record fails", async () 
   await fireEvent.click(screen.getByRole("button", { name: "交易操作" }));
   await fireEvent.click(screen.getByRole("button", { name: "保存并下一笔" }));
   await screen.findByText(/已保存，下一笔加载失败/);
-  expect(screen.queryByText(/保存待核对/)).toBeNull();
+  expect(screen.queryByText(/操作待核对/)).toBeNull();
   expect(
-    (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
       .disabled,
   ).toBe(false);
 });
@@ -291,11 +293,11 @@ it("searches and selects an account using the Bits UI picker", async () => {
   await fireEvent.click(option);
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
-  await fireEvent.click(screen.getByRole("button", { name: "保存补录" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
   expect(vi.mocked(api.save).mock.calls[0][2].entries[0].account_id).toBe(2);
 });
@@ -371,11 +373,11 @@ it("records gross salary, tax and net receipts in the same transaction with orig
   ).toBe("9500.00");
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
-  await fireEvent.click(screen.getByRole("button", { name: "保存补录" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
   expect(vi.mocked(api.save).mock.calls[0][2].entries).toEqual([
     { id: 11, account_id: 3, direction: "贷", amount: "10000" },
@@ -405,7 +407,7 @@ it("reopens salary splits as business fields and prevents saving an allocation g
     target: { value: "3000" },
   });
   expect(
-    (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
   await fireEvent.input(screen.getByLabelText("到账账户金额 1"), {
@@ -413,11 +415,11 @@ it("reopens salary splits as business fields and prevents saving an allocation g
   });
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
-  await fireEvent.click(screen.getByRole("button", { name: "保存补录" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
   const entries = vi.mocked(api.save).mock.calls[0][2].entries;
   expect(entries.map((e) => e.id)).toEqual([11, 12, 13, undefined]);
@@ -434,7 +436,7 @@ it("retains edits offline and enables saving when connectivity returns", async (
   vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
   await fireEvent(window, new Event("offline"));
   expect(
-    (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
   await fireEvent.input(screen.getByLabelText("备注"), {
@@ -444,11 +446,11 @@ it("retains edits offline and enables saving when connectivity returns", async (
   await fireEvent(window, new Event("online"));
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
-  await fireEvent.click(screen.getByRole("button", { name: "保存补录" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
   expect(vi.mocked(api.save).mock.calls[0][2].notes).toBe("离线填写");
 });
@@ -468,11 +470,11 @@ it("splits an expense between categories and recalculates its sole payment accou
   });
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
-  await fireEvent.click(screen.getByRole("button", { name: "保存补录" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
   expect(vi.mocked(api.save).mock.calls[0][2].entries).toEqual([
     { ...t.entries[0], amount: "40.10" },
@@ -497,11 +499,11 @@ it("records a transfer with correctly directed accounts and restores focus after
   });
   await waitFor(() =>
     expect(
-      (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false),
   );
-  await fireEvent.click(screen.getByRole("button", { name: "保存补录" }));
+  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
   expect(vi.mocked(api.save).mock.calls[0][2].entries).toEqual([
     { id: 11, account_id: 5, direction: "借", amount: "80.01" },
@@ -526,8 +528,57 @@ it("disables saving when account loading fails", async () => {
   );
   await screen.findByText("科目加载失败");
   expect(
-    (screen.getByRole("button", { name: "保存补录" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
   expect(api.save).not.toHaveBeenCalled();
+});
+
+it("returns a newly saved transaction to the filtered list", async () => {
+  const api = setup("/transactions/new?review=needed");
+  await screen.findByRole("heading", { name: "新增交易" });
+  await fireEvent.input(screen.getByLabelText("金额（人民币）"), {
+    target: { value: "10" },
+  });
+  await fireEvent.click(screen.getByRole("button", { name: "保存交易" }));
+  await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(router.location).toEqual({
+      pathname: "/transactions",
+      search: "?review=needed",
+    }),
+  );
+});
+it("deletes an existing transaction only after confirmation and returns to the list", async () => {
+  const api = setup("/transactions/7?review=needed");
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  await screen.findByRole("heading", { name: "修改交易" });
+  await fireEvent.click(screen.getByRole("button", { name: "交易操作" }));
+  await fireEvent.click(screen.getByRole("button", { name: "删除交易" }));
+  expect(api.deleteTransaction).not.toHaveBeenCalled();
+  confirm.mockReturnValue(true);
+  await fireEvent.click(screen.getByRole("button", { name: "交易操作" }));
+  await fireEvent.click(screen.getByRole("button", { name: "删除交易" }));
+  await waitFor(() =>
+    expect(api.deleteTransaction).toHaveBeenCalledWith(t.id, t.updated_at),
+  );
+  await waitFor(() => expect(router.location.pathname).toBe("/transactions"));
+  expect(router.location.search).toBe("?review=needed");
+});
+it("keeps edits when transaction deletion conflicts", async () => {
+  const api = setup(undefined, (api) =>
+    vi.mocked(api.deleteTransaction).mockRejectedValue(new Error("CONFLICT")),
+  );
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  await screen.findByLabelText("备注");
+  await fireEvent.input(screen.getByLabelText("备注"), {
+    target: { value: "保留" },
+  });
+  await fireEvent.click(screen.getByRole("button", { name: "交易操作" }));
+  await fireEvent.click(screen.getByRole("button", { name: "删除交易" }));
+  await screen.findByText("记录已更新");
+  expect((screen.getByLabelText("备注") as HTMLTextAreaElement).value).toBe(
+    "保留",
+  );
+  expect(router.location.pathname).toBe("/transactions/7");
 });

@@ -35,3 +35,9 @@ scripts/test-database.mjs 验证三表字段、退款、精度、保存回滚、
 scripts/check-api.mjs 使用真实 Auth0 PKCE 验证顶层 role、直接读取及网关拒绝；DATA_API_URL 指定目标。check-home-api.mjs 用 VITE_DATA_API_URL 指定已迁移分支。迁移先在生产副本验证，生产数据不由开发副本覆盖；数据库/API、前端部署和浏览器验收分别记录。
 
 生产迁移属于代码交付，隔离验证通过后主动迁移生产并核验 API，再提交推送。main 推送触发前端自动部署，需核验自动构建及线上版本；不额外等待迁移或发布授权。006_role_access.sql 已于2026-09-15应用生产，详见 PROGRESS。
+
+## 2026-09-18 科目编号与删除
+
+007 保留三表和既有字段，`save_account(integer,jsonb)` 的 payload 支持显式五位 ID；p_id 始终是修改前 ID。首位对应资产1、负债2、净资产3、收入4、支出5，中间两位为子类，末两位为序号；已有同名子类保持相同前三位。旧客户端未传新增 ID 时从对应子类分配空闲编号，不再使用与历史编号脱节的 identity 序列。迁移本身不修改既有记录或编号。
+
+用户明确请求的单科目改号通过既有 ON UPDATE CASCADE 同步 entry.account_id，分录和交易 ID 不变，并更新关联交易 updated_at 阻止旧编辑器覆盖。`delete_transaction(integer,timestamptz)` 按 updated_at 检查后级联删除所有分录，包括退款分录；`delete_account(integer)` 仅删除无分录引用的科目。两者固定 search_path、以 financial_writer 执行、仅授予 superadmin EXECUTE，基表 DML 继续禁止。保存和删除同事务刷新余额。

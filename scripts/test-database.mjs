@@ -281,9 +281,106 @@ try {
     () => db.query("SELECT financial.refresh_balances()"),
     /permission denied/,
   );
+  // Explicit IDs, FK cascade and safe deletion, entirely inside this rollback.
+  const freeIds = (
+    await db.query(`SELECT n FROM generate_series(10000,19999) n
+    WHERE NOT EXISTS(SELECT 1 FROM financial.account WHERE id/100=n/100) ORDER BY n LIMIT 2`)
+  ).rows.map((r) => r.n);
+  assert.equal(freeIds.length, 2);
+  const custom = await rpc("save_account", [
+    null,
+    { id: freeIds[0], type: "资产", subtype: "ID回归", name: "临时科目" },
+  ]);
+  assert.equal(custom.id, freeIds[0]);
+  checks++;
+  await denied(() => rpc("save_account", [null, { ...custom }]), /ID 已存在/);
+  await denied(
+    () => rpc("save_account", [null, { ...custom, id: 1234 }]),
+    /五位/,
+  );
+  await denied(
+    () => rpc("save_account", [null, { ...custom, id: 20198 }]),
+    /首位/,
+  );
+  const linked = await save(payload(entries(custom, bank, "1.00")));
+  const renamed = await rpc("save_account", [
+    custom.id,
+    { ...custom, id: freeIds[1] },
+  ]);
+  const afterRename = (
+    await db.query("SELECT * FROM financial.transactions WHERE id=$1", [
+      linked.id,
+    ])
+  ).rows[0];
+  assert.equal(renamed.id, freeIds[1]);
+  assert.deepEqual(
+    afterRename.entries.map((e) => e.id),
+    linked.entries.map((e) => e.id),
+  );
+  assert.equal(
+    afterRename.entries.find((e) => e.id === linked.entries[0].id).account_id,
+    renamed.id,
+  );
+  assert.notEqual(afterRename.updated_at.toISOString(), linked.updated_at);
+  checks++;
+  await denied(() => rpc("delete_account", [renamed.id]), /被交易使用/);
+  await denied(
+    () => rpc("delete_transaction", [linked.id, linked.updated_at]),
+    /CONFLICT/,
+  );
+  // Pass the exact Postgres timestamp string, retaining sub-millisecond precision.
+  const stamp = (
+    await db.query(
+      "SELECT updated_at::text at FROM financial.transaction WHERE id=$1",
+      [linked.id],
+    )
+  ).rows[0].at;
+  await rpc("delete_transaction", [linked.id, stamp]);
+  assert.equal(
+    (
+      await db.query(
+        "SELECT count(*) n FROM financial.entry WHERE transaction_id=$1",
+        [linked.id],
+      )
+    ).rows[0].n,
+    "0",
+  );
+  assert.equal(
+    (
+      await db.query(
+        "SELECT count(*) n FROM financial.transaction WHERE id=$1",
+        [linked.id],
+      )
+    ).rows[0].n,
+    "0",
+  );
+  checks++;
+  await rpc("delete_account", [renamed.id]);
+  assert.equal(
+    (
+      await db.query("SELECT count(*) n FROM financial.account WHERE id=$1", [
+        renamed.id,
+      ])
+    ).rows[0].n,
+    "0",
+  );
+  checks++;
+  await denied(
+    () => db.query("DELETE FROM financial.account WHERE id=-1"),
+    /permission denied/,
+  );
+  await denied(
+    () => db.query("DELETE FROM financial.transaction WHERE id=-1"),
+    /permission denied/,
+  );
   for (const role of ["anonymous", "authenticated"]) {
     await db.query("RESET ROLE");
     await db.query(`SET LOCAL ROLE ${role}`);
+    await denied(() => rpc("delete_account", [-1]), /permission denied/);
+    await denied(
+      () => rpc("delete_transaction", [-1, null]),
+      /permission denied/,
+    );
     for (const view of [...views, "balance", "balance_history", "account"])
       await denied(
         () => db.query(`SELECT * FROM financial.${view} LIMIT 1`),

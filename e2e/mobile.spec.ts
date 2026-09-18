@@ -61,12 +61,10 @@ test("transaction list opens a mobile editor and searchable account picker", asy
   await expect(page.getByText("示例消费", { exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot("transactions.png", { fullPage: true });
   await page.getByRole("link", { name: /示例消费/ }).click();
-  await expect(
-    page.getByRole("heading", { name: "补录交易信息" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "修改交易" })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "移动导航" })).toBeHidden();
-  await reachable(page.getByRole("button", { name: "保存补录" }));
+  await reachable(page.getByRole("button", { name: "保存修改" }));
   await fitsViewport(page);
   await expect(page).toHaveScreenshot("editor.png");
   const category = page.getByRole("combobox", { name: "分类", exact: true });
@@ -249,7 +247,13 @@ test("settings, accounts and new transaction navigation", async ({
   await app.open("/settings");
   await page.getByRole("link", { name: "科目", exact: true }).click();
   await expect(page.getByRole("heading", { name: "科目设置" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /银行卡/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: "记一笔" })).toHaveCount(0);
+  await reachable(page.getByRole("button", { name: "新增科目" }));
+  await page.locator("summary").filter({ hasText: "资产" }).first().click();
+  await page.locator("summary").filter({ hasText: "现金及等价物" }).click();
+  await expect(
+    page.getByRole("button", { name: /10101.*银行卡/ }),
+  ).toBeVisible();
   await fitsViewport(page);
   await expect(page).toHaveScreenshot("accounts.png", { fullPage: true });
   await page.getByRole("link", { name: "返回设置" }).click();
@@ -257,4 +261,22 @@ test("settings, accounts and new transaction navigation", async ({
   await expect(page.getByRole("heading", { name: "新增交易" })).toBeVisible();
   await reachable(page.getByRole("button", { name: "保存交易" }));
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("new transaction saves to list and existing transaction can be deleted", async ({
+  page,
+  app,
+}) => {
+  await app.open("/transactions/new");
+  await page.getByRole("textbox", { name: "金额（人民币）" }).fill("10");
+  await page.getByRole("button", { name: "保存交易" }).click();
+  await expect(page.getByRole("heading", { name: "交易流水" })).toBeVisible();
+  await page.getByRole("link", { name: /示例消费/ }).click();
+  await expect(page.getByRole("heading", { name: "修改交易" })).toBeVisible();
+  await page.getByRole("button", { name: "交易操作" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  const request = page.waitForRequest("**/test-api/rpc/delete_transaction");
+  await page.getByRole("button", { name: "删除交易", exact: true }).click();
+  expect((await request).postDataJSON()).toMatchObject({ p_id: 7 });
+  await expect(page.getByRole("heading", { name: "交易流水" })).toBeVisible();
 });

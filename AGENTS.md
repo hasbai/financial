@@ -9,7 +9,7 @@
 - 现金范围直接用资产下的“现金及等价物”子类。退款补在同一 transaction 内。视图不用 v_ 前缀。
 - 所有业务视图、函数、类型均在 `financial`。不新增业务 schema，不加 ledger、member、draft、audit 或其他扩展表。
 - 不为多用户、家庭共享、审计平台或草稿工作流做预设计。修改围绕总览、流水补录、科目匹配。
-- 原有记录和 ID 必须保留。迁移先在隔离 Neon 分支验证，不能用开发分支数据覆盖生产。
+- 迁移须保留原有记录和 ID；2026-09-18 用户明确授权通过界面修改科目 ID、删除单笔交易及分录、删除无引用科目。迁移先在隔离 Neon 分支验证，不能用开发分支数据覆盖生产。
 - 浏览器只含公开配置和本人 Access Token；不保存数据库连接串、Auth0 密码/client secret、管理 API key。
 - 权限由 Auth0 签发的顶层 role claim 映射 PostgreSQL superadmin，Data API 验证 JWT 签名、有效期和 audience，数据库使用 schema/对象 GRANT。禁止添加应用层或 SQL 的 subject/issuer/audience 重复检查、is_owner 或 read_* 权限封装。读视图 security_invoker，写函数固定 search_path，客户端无基表 DML。
 - 数据库金额使用 numeric，接口取十进制字符串。保留现有业务报表定义和保存校验；前端以 Decimal 完成合计、分组、日期和页面格式转换。禁止为前端形状再添加 home、*_read、*_daily 等包装视图或读取 RPC。

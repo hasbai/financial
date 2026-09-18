@@ -89,9 +89,7 @@ test("reduced viewport keeps editor field and save action reachable", async ({
   app,
 }) => {
   await app.open("/transactions/7");
-  await expect(
-    page.getByRole("heading", { name: "补录交易信息" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "修改交易" })).toBeVisible();
   // Exercises VisualViewport resize; this is not an emulated iOS software keyboard.
   await expect(page.locator("html")).toHaveCSS(
     "--visual-height",
@@ -105,7 +103,7 @@ test("reduced viewport keeps editor field and save action reachable", async ({
   await notes.fill("自动化输入");
   await expect(notes).toBeFocused();
   await expect(notes).toBeInViewport();
-  await reachable(page.getByRole("button", { name: "保存补录" }));
+  await reachable(page.getByRole("button", { name: "保存修改" }));
   await fitsViewport(page);
   await expect(page).toHaveScreenshot("editor-reduced-viewport.png");
 });
@@ -126,6 +124,7 @@ test("account create keeps input after failure and saves on retry", async ({
   await expect(
     page.getByRole("combobox", { name: "类型", exact: true }),
   ).toBeFocused();
+  await page.getByRole("textbox", { name: "科目 ID" }).fill("10102");
   await page.getByRole("textbox", { name: "科目名称" }).fill("日常账户");
   await page
     .getByRole("textbox", { name: "子类", exact: true })
@@ -206,7 +205,7 @@ for (const route of [
         app.recover();
         await page.getByRole("button", { name: "重试" }).click();
         await expect(
-          page.getByRole("heading", { name: "补录交易信息" }),
+          page.getByRole("heading", { name: "修改交易" }),
         ).toBeVisible();
       }
     });

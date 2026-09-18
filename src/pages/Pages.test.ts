@@ -114,6 +114,8 @@ function setup(
     ) as Repository["report"],
     transaction: vi.fn().mockResolvedValue(transaction),
     save: vi.fn(),
+    deleteTransaction: vi.fn().mockResolvedValue(undefined),
+    deleteAccount: vi.fn().mockResolvedValue(undefined),
     saveAccount: vi.fn().mockResolvedValue(accounts[0]),
   };
   configure?.(api);
@@ -345,4 +347,98 @@ it("opens asset and liability cards in their own balance filters and restores UR
   await fireEvent.click(screen.getByRole("button", { name: "全部" }));
   expect(await screen.findByText("银行卡")).toBeTruthy();
   expect(screen.getByText("信用卡")).toBeTruthy();
+});
+
+const codedAccounts = [
+  {
+    id: 10101,
+    type: "资产" as const,
+    subtype: "现金及等价物",
+    name: "银行卡",
+    notes: null,
+  },
+  {
+    id: 50101,
+    type: "支出" as const,
+    subtype: "餐饮",
+    name: "餐饮",
+    notes: null,
+  },
+];
+it("searches account IDs and saves an edited ID against the original identity", async () => {
+  const { api } = setup("accounts", false, (api) =>
+    vi.mocked(api.accounts).mockResolvedValue(codedAccounts),
+  );
+  await screen.findByText("资产");
+  await fireEvent.input(screen.getByLabelText("搜索科目"), {
+    target: { value: "10101" },
+  });
+  await fireEvent.click(
+    await screen.findByRole("button", { name: /10101.*银行卡/ }),
+  );
+  await screen.findByRole("dialog", { name: "修改科目" });
+  await fireEvent.input(screen.getByLabelText("科目 ID"), {
+    target: { value: "10102" },
+  });
+  await fireEvent.click(screen.getByRole("button", { name: "保存科目" }));
+  await waitFor(() =>
+    expect(api.saveAccount).toHaveBeenCalledWith(
+      10101,
+      expect.objectContaining({ id: 10102 }),
+    ),
+  );
+});
+it("creates an account with an explicit ID and keeps input on a rejected save", async () => {
+  const { api } = setup("accounts", false, (api) => {
+    vi.mocked(api.accounts).mockResolvedValue(codedAccounts);
+    vi.mocked(api.saveAccount).mockRejectedValueOnce(
+      new Error("VALIDATION: 科目 ID 已存在"),
+    );
+  });
+  await screen.findByText("资产");
+  await fireEvent.click(screen.getByRole("button", { name: "新增科目" }));
+  await fireEvent.input(screen.getByLabelText("科目 ID"), {
+    target: { value: "10102" },
+  });
+  await fireEvent.input(screen.getByLabelText("科目名称"), {
+    target: { value: "钱包" },
+  });
+  await fireEvent.input(screen.getByLabelText("子类"), {
+    target: { value: "现金及等价物" },
+  });
+  await fireEvent.click(screen.getByRole("button", { name: "保存科目" }));
+  await screen.findByText("科目 ID 已存在");
+  expect((screen.getByLabelText("科目 ID") as HTMLInputElement).value).toBe(
+    "10102",
+  );
+  await fireEvent.click(screen.getByRole("button", { name: "保存科目" }));
+  await waitFor(() => expect(api.saveAccount).toHaveBeenCalledTimes(2));
+  expect(api.saveAccount).toHaveBeenLastCalledWith(
+    null,
+    expect.objectContaining({ id: 10102, name: "钱包" }),
+  );
+});
+it("retains a referenced account on delete rejection and deletes only after confirmation", async () => {
+  const { api } = setup("accounts", false, (api) => {
+    vi.mocked(api.accounts).mockResolvedValue(codedAccounts);
+    vi.mocked(api.deleteAccount).mockRejectedValueOnce(
+      new Error("VALIDATION: 科目已被交易使用，无法删除"),
+    );
+  });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  await screen.findByText("资产");
+  await fireEvent.input(screen.getByLabelText("搜索科目"), {
+    target: { value: "10101" },
+  });
+  await fireEvent.click(
+    await screen.findByRole("button", { name: /10101.*银行卡/ }),
+  );
+  await fireEvent.click(screen.getByRole("button", { name: "删除科目" }));
+  expect(api.deleteAccount).not.toHaveBeenCalled();
+  confirm.mockReturnValue(true);
+  await fireEvent.click(screen.getByRole("button", { name: "删除科目" }));
+  await screen.findByText("科目已被交易使用，无法删除");
+  expect(screen.getByRole("dialog", { name: "修改科目" })).toBeTruthy();
+  await fireEvent.click(screen.getByRole("button", { name: "删除科目" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });

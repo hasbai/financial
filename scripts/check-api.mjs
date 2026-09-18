@@ -90,6 +90,24 @@ await withUserToken(async (token, tokenData) => {
   assert.ok(invalid.status >= 400);
   console.log("PASS malformed write rejected without data changes");
 
+  for (const [name, body] of [
+    ["delete_account", { p_id: -1 }],
+    ["delete_transaction", { p_id: -1, p_updated_at: null }],
+    [
+      "save_account",
+      {
+        p_id: null,
+        p_payload: { id: 1, type: "资产", subtype: "测试", name: "测试" },
+      },
+    ],
+  ]) {
+    const response = await req("/rpc/" + name, body);
+    assert.equal(response.status, 400);
+    assert.match(response.data.message, /CONFLICT|五位/);
+  }
+  console.log(
+    "PASS account-ID and deletion RPCs reachable with real JWT; invalid writes rejected",
+  );
   const bad = token.slice(0, -12) + "AAAAAAAAAAAA";
   assert.ok((await req("/account?select=id", undefined, bad)).status >= 400);
   console.log("PASS invalid signature rejected");

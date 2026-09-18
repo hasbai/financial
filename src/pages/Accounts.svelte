@@ -1,11 +1,12 @@
 <script lang="ts">
   import { createMutation, useQueryClient } from "@tanstack/svelte-query";
-  import { ArrowLeft, Plus } from "@lucide/svelte";
+  import { ArrowLeft, Plus, ChevronRight, Trash2 } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
   import { Badge } from "$lib/components/ui/badge";
   import * as Dialog from "$lib/components/ui/dialog";
   import { useApi, useAccounts } from "$lib/context";
   import { errorMessage } from "$lib/api";
+  import { accountTypes, accountIdError, accountGroups } from "$lib/accounts";
   import type { Account } from "$lib/types";
   import Field from "../components/Field.svelte";
   import SelectField from "../components/SelectField.svelte";
@@ -18,27 +19,49 @@
   const cache = useQueryClient();
   let search = $state("");
   let editing = $state<Partial<Account> | null>(null);
+  let originalId = $state<number | null>(null);
+  let id = $state("");
+  let validation = $state("");
+  let uncertain = $state(false);
   let open = $derived(editing !== null);
+  const busy = $derived(save.isPending || remove.isPending);
+  async function updated() {
+    editing = null;
+    await cache.invalidateQueries();
+  }
+  function failed(e: Error) {
+    uncertain = /fetch|network|timeout|Failed|Load failed/i.test(e.message);
+  }
   const save = createMutation(() => ({
-    mutationFn: () => api.saveAccount(editing?.id ?? null, editing!),
-    onSuccess: async () => {
-      editing = null;
-      await cache.invalidateQueries();
-    },
+    mutationFn: () =>
+      api.saveAccount(originalId, { ...editing, id: Number(id) }),
+    onSuccess: updated,
+    onError: failed,
+  }));
+  const remove = createMutation(() => ({
+    mutationFn: () => api.deleteAccount(originalId!),
+    onSuccess: updated,
+    onError: failed,
   }));
   let accounts = $derived(
     query.data?.filter((a) =>
-      `${a.type}${a.subtype}${a.name}`.includes(search),
+      `${a.id}${a.type}${a.subtype}${a.name}`.includes(search.trim()),
     ) || [],
   );
+  let groups = $derived(accountGroups(accounts));
   function edit(account: Partial<Account>) {
     save.reset();
+    remove.reset();
+    originalId = account.id ?? null;
+    id = account.id?.toString() ?? "";
+    validation = "";
+    uncertain = false;
     editing = { ...account };
   }
-  const types = ["资产", "负债", "净资产", "收入", "支出"].map((value) => ({
-    value,
-    label: value,
-  }));
+  function add() {
+    edit({ type: "资产", name: "", subtype: "", notes: "" });
+  }
+  const types = accountTypes.map((value) => ({ value, label: value }));
 </script>
 
 <div class="page">
@@ -49,50 +72,108 @@
       >
       <h1>科目设置</h1>
     </div>
-    <Button
-      onclick={() => edit({ type: "资产", name: "", subtype: "", notes: "" })}
-      ><Plus aria-hidden="true" />新增科目</Button
-    >
   </div>
   <Field label="搜索科目" type="search" bind:value={search} />
   {#if query.isPending}<Loading />{:else if query.error}<Failure
       error={query.error}
       retry={() => query.refetch()}
-    />{:else if accounts.length === 0}<Empty title="没有匹配的科目" />{:else}
+    />
+  {:else if accounts.length === 0}<Empty title="没有匹配的科目" />
+  {:else}
     <div class="space-y-3">
-      {#each accounts as account (account.id)}<button
-          class="flex w-full items-center justify-between gap-4 rounded-xl border bg-card p-5 text-left transition-colors hover:bg-muted"
-          onclick={() => edit(account)}
-          ><span
-            ><span class="block font-medium">{account.name}</span><span
-              class="text-sm text-muted-foreground"
-              >{account.type} / {account.subtype}</span
-            ></span
-          >{#if account.type === "资产" && account.subtype === "现金及等价物"}<Badge
-              variant="outline">现金范围</Badge
-            >{/if}</button
-        >{/each}
+      {#each groups as group (group.type)}
+        <details
+          class="group/category rounded-2xl border bg-card"
+          open={search.trim() ? true : undefined}
+        >
+          <summary
+            class="flex min-h-14 cursor-pointer list-none items-center gap-3 p-4 [&::-webkit-details-marker]:hidden"
+          >
+            <ChevronRight
+              class="size-5 shrink-0 transition-transform group-open/category:rotate-90"
+              aria-hidden="true"
+            />
+            <span class="font-mono text-muted-foreground">{group.code}</span>
+            <span class="flex-1 font-semibold">{group.type}</span><Badge
+              variant="secondary">{group.count}</Badge
+            >
+          </summary>
+          <div class="space-y-2 border-t p-3">
+            {#each group.subtypes as subtype (subtype.name)}
+              <details
+                class="group/subtype rounded-xl bg-muted/40"
+                open={search.trim() ? true : undefined}
+              >
+                <summary
+                  class="flex min-h-14 cursor-pointer list-none items-center gap-3 px-3 py-2 [&::-webkit-details-marker]:hidden"
+                >
+                  <ChevronRight
+                    class="size-4 shrink-0 transition-transform group-open/subtype:rotate-90"
+                    aria-hidden="true"
+                  />
+                  <span class="font-mono text-sm text-muted-foreground"
+                    >{subtype.prefix}</span
+                  >
+                  <span class="min-w-0 flex-1 font-medium wrap-anywhere"
+                    >{subtype.name}</span
+                  ><Badge variant="outline">{subtype.items.length}</Badge>
+                </summary>
+                <div class="divide-y border-t">
+                  {#each subtype.items as account (account.id)}
+                    <button
+                      class="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                      onclick={() => edit(account)}
+                    >
+                      <span class="font-mono text-sm text-muted-foreground"
+                        >{account.id}</span
+                      >
+                      <span class="min-w-0 flex-1 wrap-anywhere"
+                        >{account.name}</span
+                      >
+                      {#if account.type === "资产" && account.subtype === "现金及等价物"}<Badge
+                          variant="outline">现金范围</Badge
+                        >{/if}
+                      <ChevronRight
+                        class="size-4 shrink-0 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  {/each}
+                </div>
+              </details>
+            {/each}
+          </div>
+        </details>
+      {/each}
     </div>
   {/if}
 </div>
+<Button
+  onclick={add}
+  aria-label="新增科目"
+  disabled={query.isPending || !!query.error}
+  class="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] z-20 h-16 w-16 rounded-full p-0 shadow-lg md:right-10 md:bottom-8"
+  ><Plus class="size-7" aria-hidden="true" /></Button
+>
 <Dialog.Root
   {open}
   onOpenChange={(v) => {
-    if (!v && !save.isPending) editing = null;
+    if (!v && !busy) editing = null;
   }}
 >
   <Dialog.Content
     showCloseButton={false}
     class="max-h-[90dvh] overflow-y-auto"
     onEscapeKeydown={(e) => {
-      if (save.isPending) e.preventDefault();
+      if (busy) e.preventDefault();
     }}
     onInteractOutside={(e) => {
-      if (save.isPending) e.preventDefault();
+      if (busy) e.preventDefault();
     }}
   >
     <Dialog.Header
-      ><Dialog.Title>{editing?.id ? "编辑科目" : "新增科目"}</Dialog.Title
+      ><Dialog.Title
+        >{originalId !== null ? "修改科目" : "新增科目"}</Dialog.Title
       ><Dialog.Description class="sr-only">科目</Dialog.Description
       ></Dialog.Header
     >
@@ -100,13 +181,39 @@
         class="space-y-5"
         onsubmit={(e) => {
           e.preventDefault();
-          if (!save.isPending) save.mutate();
+          if (busy || uncertain) return;
+          validation = accountIdError(
+            id,
+            editing!.type!,
+            editing!.subtype || "",
+            query.data || [],
+            originalId,
+          );
+          if (!validation) save.mutate();
         }}
       >
-        {#if save.error}<Notice variant="error"
-            >{errorMessage(save.error)}</Notice
+        {#if validation}<Notice variant="error">{validation}</Notice>{/if}
+        {#if save.error || remove.error}<Notice variant="error"
+            >{errorMessage(save.error || remove.error)}</Notice
           >{/if}
-        <fieldset disabled={save.isPending} class="min-w-0 space-y-4">
+        {#if uncertain}<Notice variant="warning"
+            >操作待核对<Button
+              variant="link"
+              onclick={() => {
+                editing = null;
+                void cache.invalidateQueries();
+              }}>查看科目</Button
+            ></Notice
+          >{/if}
+        <fieldset disabled={busy || uncertain} class="min-w-0 space-y-4">
+          <Field
+            label="科目 ID"
+            bind:value={id}
+            inputmode="numeric"
+            maxlength={5}
+            pattern="[1-5][0-9]{4}"
+            required
+          />
           <Field
             label="科目名称"
             value={editing.name || ""}
@@ -114,21 +221,25 @@
               if (editing) editing.name = e.currentTarget.value;
             }}
             required
-          /><SelectField
+          />
+          <SelectField
             label="类型"
             value={editing.type || "资产"}
             options={types}
-            disabled={save.isPending}
+            disabled={busy || uncertain}
             onchange={(v) => {
               if (editing) editing.type = v as Account["type"];
             }}
-          /><Field
+          />
+          <Field
             label="子类"
             value={editing.subtype || ""}
             oninput={(e) => {
               if (editing) editing.subtype = e.currentTarget.value;
             }}
-          /><Field
+            required
+          />
+          <Field
             label="说明"
             value={editing.notes || ""}
             oninput={(e) => {
@@ -136,15 +247,24 @@
             }}
           />
         </fieldset>
-        <Dialog.Footer
-          ><Button
+        <Dialog.Footer>
+          {#if originalId !== null}<Button
+              variant="destructive"
+              disabled={busy || uncertain}
+              onclick={() => {
+                if (window.confirm(`删除科目 ${originalId} ${editing?.name}？`))
+                  remove.mutate();
+              }}><Trash2 aria-hidden="true" />删除科目</Button
+            >{/if}
+          <Button
             variant="outline"
-            disabled={save.isPending}
+            disabled={busy}
             onclick={() => (editing = null)}>取消</Button
-          ><Button type="submit" disabled={save.isPending}
+          >
+          <Button type="submit" disabled={busy || uncertain}
             >{save.isPending ? "正在保存…" : "保存科目"}</Button
-          ></Dialog.Footer
-        >
+          >
+        </Dialog.Footer>
       </form>{/if}
   </Dialog.Content>
 </Dialog.Root>

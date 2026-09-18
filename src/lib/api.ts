@@ -483,6 +483,9 @@ export function createRepository(
         p_updated_at: updatedAt,
         p_payload: payload,
       }),
+    deleteTransaction: (id: number, updatedAt: string) =>
+      rpc<void>("delete_transaction", { p_id: id, p_updated_at: updatedAt }),
+    deleteAccount: (id: number) => rpc<void>("delete_account", { p_id: id }),
     saveAccount: (id: number | null, payload: Partial<Account>) =>
       rpc<Account>("save_account", { p_id: id, p_payload: payload }),
   };
