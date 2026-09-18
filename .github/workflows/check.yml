@@ -1,6 +1,7 @@
 name: Check
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -11,8 +12,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -25,6 +26,9 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm test:ci-tools
+      - name: Check page coverage inventory
+        run: pnpm check:visual-coverage ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && '--candidate' || '' }}
       - run: pnpm typecheck
       - run: pnpm test:coverage
       - run: pnpm build
@@ -44,6 +48,9 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 20
     steps:
+      - name: Require a task branch for candidates
+        if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+        run: test "$GITHUB_REF" != refs/heads/main
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -59,12 +66,20 @@ jobs:
       - run: node scripts/prepare-browser-build.mjs
       - if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
         run: pnpm test:e2e:update
+        env:
+          VISUAL_COVERAGE_GATE: '1'
       - run: pnpm test:e2e
+        env:
+          VISUAL_COVERAGE_GATE: '1'
+      - if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+        run: node scripts/visual-baselines.mjs record
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
         with:
           name: visual-baseline-candidates
-          path: e2e/__screenshots__/*-ci-*/
+          path: |
+            e2e/__screenshots__/*-ci-*/
+            test-results/visual-baseline-candidate.json
           retention-days: 14
       - uses: actions/upload-artifact@v4
         if: always()

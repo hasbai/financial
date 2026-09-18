@@ -10,7 +10,7 @@ export default defineConfig({
   // Missing baselines fail normal runs, including CI; updates are always explicit.
   updateSnapshots: "none",
   snapshotPathTemplate: `{testDir}/__screenshots__/{platform}${process.env.GITHUB_ACTIONS ? "-ci" : ""}-{projectName}/{testFilePath}/{arg}{ext}`,
-  reporter: [["list"], ["html", { open: "never" }]],
+  reporter: [["list"], ["html", { open: "never" }], ["./scripts/visual-coverage-reporter.mjs"]],
   expect: {
     timeout: 5_000,
     toHaveScreenshot: {

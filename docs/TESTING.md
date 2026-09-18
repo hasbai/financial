@@ -16,13 +16,32 @@ git diff --check
 
 无需Docker。CI视觉任务固定在`macos-26` ARM64，单元测试在Ubuntu。Playwright精确锁定版本，使用`darwin-ci-*`截图基线。历史`darwin-*`本机基线保留为旧验收记录，不再在本地运行或更新。
 
-`pnpm test:e2e:update`仅在初次建基线、设计变更或明确的浏览器/系统升级时，由功能分支的显式workflow dispatch执行。普通运行使用`updateSnapshots: none`，缺少图片或超出差异即失败；push/PR的CI不自动更新、不重试掩盖不稳定。显式触发Check workflow的`update_visual_baselines`生成CI候选工件并立即无更新复跑；它不自动提交，取回并核对后提交。报告保留expected/actual/diff和失败trace。日常不要求人工或AI逐页看图，有意设计变更仍需核对差异。
+`pnpm test:e2e:update`仅在初次建基线、设计变更或明确的浏览器/系统升级时，由功能分支的显式workflow dispatch执行。普通运行使用`updateSnapshots: none`，缺少图片或超出差异即失败；PR/main的CI不自动更新、不重试掩盖不稳定。显式触发Check workflow的`update_visual_baselines`生成CI候选工件并立即无更新复跑；它不自动提交，取回并核对后提交。报告保留expected/actual/diff和失败trace。日常不要求人工或AI逐页看图，有意设计变更仍需核对差异。
 
 ## 推送与合并
 
-主代理编辑/提交后，必须派新子代理负责功能分支推送、创建或更新PR和跟踪CI；主代理处理失败并提交修复，再派新子代理核验。检查必须对应PR最新提交，`Check / check`（类型/单元覆盖率/构建）和`Check / visual`（浏览器/视觉回归）全部成功，且已包含最新main后才能合并。`workflow_dispatch`生成基线的成功不能替代随后普通push/PR的比较结果。不得本地补跑或用管理员绕过失败；合并后继续核验main与Cloudflare自动部署和线上资源。
+主代理编辑/提交后，必须派新子代理负责功能分支推送、创建或更新PR和跟踪CI；主代理处理失败并提交修复，再派新子代理核验。检查必须对应PR最新提交，`Check / check`（类型/单元覆盖率/构建）和`Check / visual`（浏览器/视觉回归）全部成功，且已包含最新main后才能合并。`workflow_dispatch`生成基线的成功不能替代随后普通PR/main的比较结果。不得本地补跑或用管理员绕过失败；合并后继续核验main与Cloudflare自动部署和线上资源。
 
 已启用分支保护：强制PR、最新main、必需状态`check`与`visual`（限定GitHub Actions app id 15368），管理员同样受限，不允许force push或删除main；单人开发不额外要求人工审批。因私有仓库当前套餐不支持保护，用户已明确授权并完成将hasbai/financial设为public；保护设置已由GitHub API成功返回并确认。
+
+## 视觉变更的提交前准备
+
+先判断是否改变页面视觉，列出影响的页面、状态和设备；更新 `visual-coverage.json` 的对应场景。无意视觉变化时不更新 baseline，差异须先定位根因。需要更新时，由交付子代理先推送功能分支，**先生成候选、后创建 PR**，不要等待比较失败才补截图。普通分支 push 不触发完整验收；所有 PR（含草稿）及 main push 仍运行必需检查，不能跳过视觉比较。
+
+```sh
+gh workflow run check.yml --ref <task-branch> -f update_visual_baselines=true
+gh run download <candidate-run-id> -n visual-baseline-candidates -D <outside-checkout-directory>
+# 主代理核对候选与旧图及变化范围后执行；不会自动提交。
+pnpm visual:baseline:import <outside-checkout-directory> --reviewed
+```
+
+工件记录生成 SHA、run ID、各 CI PNG 的 SHA-256。导入要求工作树干净、HEAD 与生成 SHA 一致，并验证路径和校验和；代码变化后必须重新生成。候选严禁直接写 main，不自动提交，不替代随后 PR 普通比较。既有 PR 内有视觉变更时主动生成候选，最终只接受最新提交的严格比较成功；不要为避免红灯关闭必需检查。
+
+## 页面覆盖清单门禁
+
+`visual-coverage.json` 是页面、URL 场景、状态、设备、测试标题与活跃 CI 截图的可检查清单。`check:visual-coverage` 比对真实页面文件；新增页面、清单遗留项、缺少证据或 baseline 会失败。候选准备只允许暂缺 PNG，不能绕过清单与测试要求。Dashboard 另核对现有导航 registry 的动态视图；Financial 另核对 Shell 的 URL 分支，新 view/URL 不会因复用同一页面组件而漏掉。
+
+全量 CI 设置 `VISUAL_COVERAGE_GATE=1`，reporter 再核对声明的测试确实在指定设备执行并通过；截图条目必须逐一实际执行清单所列文件名的 `toHaveScreenshot`，单纯 `page.screenshot`、跳过或删去测试不计作覆盖。`test-results/visual-coverage.json` 保留清单、豁免及结果。该清单不是代码覆盖率，单个正常态不代表所有状态；已有缺口必须写明豁免原因，不计入已覆盖，修改相应页面时重新评估。常规有覆盖页面不需要新增重复测试。局部排障可不启用全量门禁，不替代 CI。
 
 ## 分层边界
 
@@ -99,3 +118,9 @@ CI首次跨环境比较检出字体栅格化差异后，单独建立GitHub runne
 用户后续反馈iOS PWA仍大面积裁切。已核对线上资源与main/CI artifact一致，并发现生产压缩将`translate:none`删除，而桌面`-translate-x/y-1/2`仍使用独立translate属性；`transform:none`不能覆盖该位移。原视觉任务启动Vite开发服务，没有验证压缩产物，因此36项通过仍遗漏真实线上错误。
 
 先只切换CI到生产CSS（7048f64，run 35115492795）未修改UI，复现15项移动端四边定位失败，21项通过；截图确认负半宽/半高位移造成裁切。这是行为断言失败，未更新基线。修复将居中位移限定为sm桌面断点，手机不再依赖reset声明。已有贴底/动画/缩小视口/多入口回归继续使用实际生产CSS，并新增手机滚动条隐藏、编辑区及长列表仍可滚动的断言；不声称iOS真机验收。
+
+## Baseline 前置与覆盖清单（2026-09-18）
+
+候选运行 [35300447734](https://github.com/hasbai/financial/actions/runs/35300447734) 对应 `c25a067d94914cb5af750c9c6204e19bfc3ea1e5`，check、候选生成及不更新复跑均通过。新增 iPhone 13、iPhone SE、Android 的设置页基线，6 个业务 URL 家族均有正常态截图；原有 iPhone 异常状态登记到门禁。清单共 18 个状态场景，既有桌面覆盖仍按实际测试标注，不宣称桌面全覆盖。
+
+候选导入实际校验了 HEAD 和 PNG 哈希。仅接受 3 张新增 settings.png，旧 account-picker、accounts、new-payment-sheet 的候选变化不属于本次视觉修改，保留原有 46 张基线。全部新增截图已核对文字、导航和窄屏布局；普通 PR/main 仍须比较通过。
