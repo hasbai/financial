@@ -62,6 +62,7 @@
   let allocated = $derived(
     roleTotal(entries, layout.roles, layout.type === "转账" ? "to" : "account"),
   );
+  const typeLabel = (type: BusinessType) => (type === "转账" ? "划转" : type);
   const heading = (role: EntryRole) =>
     role === "category"
       ? "分类"
@@ -129,7 +130,7 @@
 
 <fieldset
   {disabled}
-  class="finance-card min-w-0 space-y-5 p-4 sm:p-5"
+  class="finance-card min-w-0 space-y-3 p-3 sm:p-4"
   aria-label="交易收支"
 >
   <div
@@ -141,7 +142,8 @@
         variant={layout.type === type ? "default" : "ghost"}
         aria-pressed={layout.type === type}
         disabled={disabled || entries.length > 2}
-        onclick={() => changeType(type as BusinessType)}>{type}</Button
+        onclick={() => changeType(type as BusinessType)}
+        >{typeLabel(type as BusinessType)}</Button
       >
     {/each}
   </div>
@@ -151,7 +153,7 @@
         ? "收入总额"
         : layout.type === "支出"
           ? "支出总额"
-          : "转账总额"}</span
+          : "划转总额"}</span
     >
     <strong
       class={knownTotal
@@ -161,56 +163,60 @@
     >
   </div>
   {#each groups as role}
-    <section class="min-w-0 space-y-3 border-t pt-4" aria-label={heading(role)}>
+    <section class="min-w-0 space-y-2 border-t pt-3" aria-label={heading(role)}>
       <h2 class="text-base">{heading(role)}</h2>
-      {#each entries as entry, i}
-        {#if layout.roles[i] === role}
-          <div class="min-w-0 space-y-2 rounded-xl bg-background p-2">
-            <div class="flex min-w-0 items-center gap-1">
-              <div class="min-w-0 flex-1">
-                <AccountPicker
-                  compact
-                  label={role === "category" && count(role) === 1
-                    ? "分类"
-                    : role === "account" && count(role) === 1
-                      ? "账户"
-                      : `${heading(role)} ${layout.roles.slice(0, i + 1).filter((r) => r === role).length}`}
-                  placeholder={`选择${heading(role)}`}
-                  accounts={roleAccounts(layout.type, role, accounts)}
-                  bind:value={entry.account_id}
-                  {disabled}
-                />
+      <div class="min-w-0 divide-y">
+        {#each entries as entry, i}
+          {#if layout.roles[i] === role}
+            <div class="min-w-0 py-1">
+              <div class="flex min-w-0 items-center gap-1">
+                <div class="min-w-0 flex-1">
+                  <AccountPicker
+                    compact
+                    label={role === "category" && count(role) === 1
+                      ? "分类"
+                      : role === "account" && count(role) === 1
+                        ? "账户"
+                        : `${heading(role)} ${layout.roles.slice(0, i + 1).filter((r) => r === role).length}`}
+                    placeholder={`选择${heading(role)}`}
+                    accounts={roleAccounts(layout.type, role, accounts)}
+                    bind:value={entry.account_id}
+                    {disabled}
+                  />
+                </div>
+                {#if !(entries.length === 2 && role === "account")}
+                  <div class="w-28 shrink-0">
+                    <Field
+                      compact
+                      label={entries.length === 2 && role === "category"
+                        ? "金额（人民币）"
+                        : `${heading(role)}金额 ${layout.roles.slice(0, i + 1).filter((r) => r === role).length}`}
+                      aria-invalid={entry.amount !== "" &&
+                        !amountSchema.safeParse(entry.amount).success}
+                      inputmode="decimal"
+                      placeholder="0.00"
+                      value={entry.amount}
+                      oninput={(e) => amountChanged(i, e.currentTarget.value)}
+                    />
+                  </div>
+                {/if}
+                {#if role === "deduction" || count(role) > 1}<Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`删除${heading(role)} ${layout.roles.slice(0, i + 1).filter((r) => r === role).length}`}
+                    onclick={() => remove(i)}
+                    ><Trash2 aria-hidden="true" /></Button
+                  >{/if}
               </div>
-              {#if role === "deduction" || count(role) > 1}<Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`删除${heading(role)} ${layout.roles.slice(0, i + 1).filter((r) => r === role).length}`}
-                  onclick={() => remove(i)}
-                  ><Trash2 aria-hidden="true" /></Button
-                >{/if}
-            </div>
-            {#if !(entries.length === 2 && role === "account")}
-              <Field
-                compact
-                label={entries.length === 2 && role === "category"
-                  ? "金额（人民币）"
-                  : `${heading(role)}金额 ${layout.roles.slice(0, i + 1).filter((r) => r === role).length}`}
-                aria-invalid={entry.amount !== "" &&
-                  !amountSchema.safeParse(entry.amount).success}
-                inputmode="decimal"
-                placeholder="0.00"
-                value={entry.amount}
-                oninput={(e) => amountChanged(i, e.currentTarget.value)}
-              />
-              {#if entry.amount !== "" && !amountSchema.safeParse(entry.amount).success}<p
+              {#if !(entries.length === 2 && role === "account") && entry.amount !== "" && !amountSchema.safeParse(entry.amount).success}<p
                   class="px-3 text-sm text-destructive"
                 >
                   请输入正数金额，最多两位小数
                 </p>{/if}
-            {/if}
-          </div>
-        {/if}
-      {/each}
+            </div>
+          {/if}
+        {/each}
+      </div>
       <Button
         class="w-full"
         variant="ghost"
@@ -228,7 +234,7 @@
   {/each}
   {#if layout.type === "收入" || entries.length > 2 || layout.type === "转账"}
     <div
-      class="flex flex-wrap justify-between gap-2 rounded-xl bg-muted p-3"
+      class="flex flex-wrap justify-between gap-2 rounded-xl bg-muted p-2"
       role="status"
     >
       <span

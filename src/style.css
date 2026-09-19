@@ -178,7 +178,7 @@
   animation: page-in 180ms ease-out;
 }
 .editor-row {
-  @apply grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-x-2 py-3 sm:grid-cols-[7.5rem_minmax(0,1fr)];
+  @apply grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-x-2 py-1 sm:grid-cols-[7.5rem_minmax(0,1fr)];
 }
 .editor-label {
   @apply flex items-center gap-2 text-base font-medium;

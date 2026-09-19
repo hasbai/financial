@@ -11,12 +11,14 @@
     options,
     onchange,
     disabled = false,
+    compact = false,
   }: {
     label: string;
     value?: string;
     options: { value: string; label: string }[];
     onchange?: (value: string) => void;
     disabled?: boolean;
+    compact?: boolean;
   } = $props();
   const id = $props.id();
   const desktop = new MediaQuery("(min-width: 640px)");
@@ -25,8 +27,8 @@
   let selected = $derived(value || "__all__");
 </script>
 
-<div class="min-w-0 space-y-2">
-  <Label for={id}>{label}</Label>
+<div class={compact ? "min-w-0" : "min-w-0 space-y-2"}>
+  <Label for={id} class={compact ? "sr-only" : ""}>{label}</Label>
   {#if !desktop.current}
     <Dialog.Root bind:open>
       <Dialog.Trigger {id} {disabled}>
@@ -38,7 +40,11 @@
             role="combobox"
             aria-haspopup="dialog"
             aria-expanded={open}
-            class="h-auto min-h-12 w-full justify-between whitespace-normal text-left"
+            class={[
+              "h-auto min-h-12 w-full justify-between whitespace-normal text-left",
+              compact &&
+                "rounded-xl border-transparent bg-transparent px-3 shadow-none",
+            ]}
           >
             <span class="min-w-0 break-words"
               >{options.find((o) => o.value === value)?.label ?? "请选择"}</span
@@ -89,7 +95,11 @@
         onchange?.(value);
       }}
     >
-      <Select.Trigger {id} class="w-full"
+      <Select.Trigger
+        {id}
+        class={compact
+          ? "w-full rounded-xl border-transparent bg-transparent shadow-none"
+          : "w-full"}
         >{options.find((o) => o.value === value)?.label ??
           "请选择"}</Select.Trigger
       >

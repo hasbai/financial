@@ -89,7 +89,7 @@ test("reduced viewport keeps editor field and save action reachable", async ({
   app,
 }) => {
   await app.open("/transactions/7");
-  await expect(page.getByRole("heading", { name: "修改交易" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "示例消费" })).toBeVisible();
   // Exercises VisualViewport resize; this is not an emulated iOS software keyboard.
   await expect(page.locator("html")).toHaveCSS(
     "--visual-height",
@@ -205,7 +205,7 @@ for (const route of [
         app.recover();
         await page.getByRole("button", { name: "重试" }).click();
         await expect(
-          page.getByRole("heading", { name: "修改交易" }),
+          page.getByRole("heading", { name: "示例消费" }),
         ).toBeVisible();
       }
     });

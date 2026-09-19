@@ -27,11 +27,14 @@
   let search = $state("");
   const id = $props.id();
   const key = (a: Account) => JSON.stringify([a.type, a.subtype]);
-  let chosen = $derived(accounts.find((a) => a.id === value));
-  let multipleTypes = $derived(new Set(accounts.map((a) => a.type)).size > 1);
+  let orderedAccounts = $derived([...accounts].sort((a, b) => a.id - b.id));
+  let chosen = $derived(orderedAccounts.find((a) => a.id === value));
+  let multipleTypes = $derived(
+    new Set(orderedAccounts.map((a) => a.type)).size > 1,
+  );
   let groups = $derived([
     ...new Map(
-      accounts.map((a) => [
+      orderedAccounts.map((a) => [
         key(a),
         {
           key: key(a),
@@ -41,7 +44,7 @@
     ).values(),
   ]);
   let visible = $derived(
-    accounts.filter((a) =>
+    orderedAccounts.filter((a) =>
       search.trim()
         ? `${a.type} ${a.subtype} ${a.name} ${a.notes ?? ""}`
             .toLocaleLowerCase()
@@ -148,7 +151,8 @@
                   class="min-h-14 gap-3 whitespace-normal"
                   ><span class="min-w-0 flex-1 break-words">{item.label}</span
                   ><span class="text-muted-foreground"
-                    >{accounts.filter((a) => key(a) === item.key).length}</span
+                    >{orderedAccounts.filter((a) => key(a) === item.key)
+                      .length}</span
                   ><ChevronRight
                     class="size-4"
                     aria-hidden="true"

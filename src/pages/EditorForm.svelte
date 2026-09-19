@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
-  import { useQueryClient, createQuery } from "@tanstack/svelte-query";
+  import { useQueryClient } from "@tanstack/svelte-query";
   import {
     Plus,
     Trash2,
@@ -11,7 +11,9 @@
     NotebookPen,
     Check,
     CircleAlert,
-    Sparkles,
+    CircleCheck,
+    CreditCard,
+    Hash,
   } from "@lucide/svelte";
   import * as Popover from "$lib/components/ui/popover";
   import * as Dialog from "$lib/components/ui/dialog";
@@ -24,7 +26,7 @@
   import EditorSurface from "../components/EditorSurface.svelte";
   import BusinessEntries from "../components/BusinessEntries.svelte";
   import { businessLayout, type BusinessLayout } from "$lib/business-entries";
-  import { editorPayload, appendRefund, simpleEntrySlots } from "$lib/editor";
+  import { editorPayload, appendRefund } from "$lib/editor";
   import {
     localDateTime,
     fromLocalDateTime,
@@ -33,8 +35,6 @@
     statusLabels,
     validatePost,
   } from "$lib/finance";
-  import { transactionMoney } from "$lib/presentation";
-  import TransactionIcon from "../components/TransactionIcon.svelte";
   import type { Transaction } from "$lib/types";
   import Field from "../components/Field.svelte";
   import SelectField from "../components/SelectField.svelte";
@@ -54,7 +54,6 @@
   let business = $state<BusinessLayout | null | undefined>(undefined);
   let online = $state(navigator.onLine);
   let moreOpen = $state(false);
-  let sourceOpen = $state(false);
   let formRevision = $state(0);
   let errors = $state<string[]>([]);
   let success = $state("");
@@ -68,48 +67,20 @@
   const accounts = useAccounts();
   const cache = useQueryClient();
   let sum = $derived(totals(values.entries));
-  let slots = $derived(simpleEntrySlots(values, accounts.data ?? []));
+  let editorTitle = $derived(
+    values.merchant.trim() || (saved ? "未命名交易" : "新增交易"),
+  );
   $effect(() => {
     if (accounts.data && business === undefined) {
       business = businessLayout(values, accounts.data);
     }
   });
-  const suggestions = createQuery(() => ({
-    queryKey: ["transactions", "suggestions", saved?.merchant],
-    queryFn: () => api.list({ search: saved!.merchant, posted: "true" }, null),
-    enabled: !!saved?.merchant && !!accounts.data,
-    staleTime: 300_000,
-  }));
-  let suggestion = $derived(
-    suggestions.data?.items.find(
-      (t) =>
-        t.id !== saved?.id &&
-        values.merchant === saved?.merchant &&
-        t.merchant === saved?.merchant &&
-        t.complete &&
-        simpleEntrySlots(t, accounts.data ?? [])?.type === slots?.type,
-    ),
-  );
-  let suggestionSlots = $derived(
-    suggestion ? simpleEntrySlots(suggestion, accounts.data ?? []) : null,
-  );
   function ensurePair() {
     if (!values.entries.length)
       values.entries = [
         { account_id: null, direction: "借", amount: "" },
         { account_id: null, direction: "贷", amount: "" },
       ];
-  }
-  function setSimpleAccount(which: "category" | "account", id: number | null) {
-    ensurePair();
-    if (slots) values.entries[slots[which]].account_id = id;
-  }
-  function applySuggestion() {
-    if (!suggestion || !suggestionSlots || !slots) return;
-    const category = suggestion.entries[suggestionSlots.category].account_id;
-    const account = suggestion.entries[suggestionSlots.account].account_id;
-    setSimpleAccount("category", category);
-    setSimpleAccount("account", account);
   }
   const statuses = Object.entries(statusLabels).map(([value, label]) => ({
     value,
@@ -265,9 +236,9 @@
   }
 </script>
 
-<EditorSurface title={saved ? "修改交易" : "新增交易"} {close}>
+<EditorSurface title={editorTitle} {close}>
   <header
-    class="mobile-panel-header flex shrink-0 items-center gap-3 bg-card px-5 py-4 text-left"
+    class="mobile-panel-header flex shrink-0 items-center gap-2 bg-card px-4 py-2 text-left sm:px-5 sm:py-3"
   >
     <Button
       variant="ghost"
@@ -276,8 +247,8 @@
       disabled={pending}
       onclick={close}><ArrowLeft class="size-6" aria-hidden="true" /></Button
     >
-    <h1 class="min-w-0 flex-1 text-lg sm:text-xl">
-      {saved ? "修改交易" : "新增交易"}
+    <h1 class="min-w-0 flex-1 wrap-anywhere text-lg sm:text-xl">
+      {editorTitle}
     </h1>
     <Popover.Root bind:open={moreOpen}
       ><Popover.Trigger
@@ -297,13 +268,6 @@
             advanced = !advanced;
             moreOpen = false;
           }}>分录明细</Button
-        ><Button
-          class="w-full justify-start"
-          variant="ghost"
-          onclick={() => {
-            sourceOpen = !sourceOpen;
-            moreOpen = false;
-          }}>交易来源</Button
         >{#if saved}<Button
             class="w-full justify-start"
             variant="ghost"
@@ -337,44 +301,8 @@
     >
   </header>
   <div
-    class="editor-scroll min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain bg-background px-5 py-5 sm:px-6"
+    class="editor-scroll min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-background px-4 py-3 sm:px-5 sm:py-4"
   >
-    {#if saved}<section class="finance-card p-5" aria-label="原交易摘要">
-        <div class="flex items-start gap-3">
-          <TransactionIcon kind={saved.kind} />
-          <div class="min-w-0 flex-1">
-            <p class="font-semibold wrap-anywhere">
-              {saved.merchant || "未命名交易"}
-            </p>
-            <p class="mt-2 text-sm text-muted-foreground">
-              {new Date(saved.occurred_at).toLocaleString("zh-CN", {
-                timeZone: "Asia/Shanghai",
-                month: "long",
-                day: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </p>
-            <p class="mt-1 text-sm text-muted-foreground">
-              {saved.payment_method || "未填渠道"}
-            </p>
-          </div>
-          <div class="max-w-[45%] text-right">
-            <p class="money break-words text-xl font-semibold">
-              {saved.amount === null ? "待补录" : transactionMoney(saved)}
-            </p>
-            {#if !saved.complete || saved.status !== "success"}<span
-                class="mt-3 inline-block rounded-full bg-profit/10 px-3 py-1 text-sm text-profit"
-                >{!saved.complete
-                  ? "待补录"
-                  : statusLabels[saved.status] || "待核对"}</span
-              >{/if}
-          </div>
-        </div>
-        {#if saved.notes}<blockquote class="mt-4 text-muted-foreground">
-            “{saved.notes}”
-          </blockquote>{/if}
-      </section>{/if}
     {#if errors.length}<div
         bind:this={errorRef}
         tabindex="-1"
@@ -396,34 +324,6 @@
       >{/if}
     {#if success}<Notice variant="success">{success}</Notice>{/if}
 
-    {#if suggestion && suggestionSlots && slots && !advanced}<section
-        class="finance-card bg-asset/5 p-4"
-        aria-label="科目建议"
-      >
-        <div class="mb-3 flex items-center justify-between">
-          <h2 class="flex items-center gap-2">
-            <Sparkles class="size-5 text-asset" aria-hidden="true" />科目建议
-          </h2>
-          <Button variant="outline" disabled={pending} onclick={applySuggestion}
-            >一键应用</Button
-          >
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <span class="rounded-xl bg-card p-3"
-            >{accounts.data?.find(
-              (a) =>
-                a.id ===
-                suggestion!.entries[suggestionSlots!.category].account_id,
-            )?.name}</span
-          ><span class="rounded-xl bg-card p-3"
-            >{accounts.data?.find(
-              (a) =>
-                a.id ===
-                suggestion!.entries[suggestionSlots!.account].account_id,
-            )?.name}</span
-          >
-        </div>
-      </section>{/if}
     {#if !online}<Notice variant="warning">离线</Notice>{/if}
     {#if accounts.isPending}<Loading />{:else if accounts.error}<Failure
         error={accounts.error}
@@ -438,7 +338,7 @@
     {/if}
     <fieldset
       disabled={pending}
-      class="finance-card min-w-0 divide-y px-4 sm:px-5"
+      class="finance-card min-w-0 divide-y px-3 sm:px-4"
     >
       <div class="editor-row">
         <span class="editor-label"><UserRound aria-hidden="true" />对方</span
@@ -475,23 +375,39 @@
           placeholder="添加备注"
         />
       </div>
-      {#if sourceOpen}<div class="space-y-4 py-4">
-          <SelectField
-            label="交易状态"
-            bind:value={values.status}
-            options={statuses}
-            disabled={pending}
-          /><SelectField
-            label="支付渠道"
-            bind:value={values.payment_method}
-            options={channels}
-            disabled={pending}
-          /><Field label="支付流水号" bind:value={values.payment_id} />
-        </div>{/if}
+      <div class="editor-row">
+        <span class="editor-label"><CircleCheck aria-hidden="true" />状态</span
+        ><SelectField
+          compact
+          label="交易状态"
+          bind:value={values.status}
+          options={statuses}
+          disabled={pending}
+        />
+      </div>
+      <div class="editor-row">
+        <span class="editor-label"><CreditCard aria-hidden="true" />渠道</span
+        ><SelectField
+          compact
+          label="支付渠道"
+          bind:value={values.payment_method}
+          options={channels}
+          disabled={pending}
+        />
+      </div>
+      <div class="editor-row">
+        <span class="editor-label"><Hash aria-hidden="true" />流水号</span
+        ><Field
+          compact
+          label="支付流水号"
+          placeholder="添加流水号"
+          bind:value={values.payment_id}
+        />
+      </div>
     </fieldset>
     {#if advanced || business === null}<fieldset
         disabled={pending}
-        class="finance-card min-w-0 space-y-5 p-4 sm:p-5"
+        class="finance-card min-w-0 space-y-3 p-3 sm:p-4"
       >
         <h2>分录明细</h2>
         {#if !values.entries.length && accounts.data}<Button
@@ -589,15 +505,15 @@
       </fieldset>{/if}
   </div>
   <footer
-    class="grid shrink-0 grid-cols-2 gap-3 border-t bg-card px-5 py-4 pb-[max(16px,env(safe-area-inset-bottom))]"
+    class="grid shrink-0 grid-cols-2 gap-2 border-t bg-card px-4 py-2 pb-[max(8px,env(safe-area-inset-bottom))] sm:px-5 sm:py-3"
   >
     <Button
-      class="h-14 rounded-2xl"
+      class="h-12 rounded-xl"
       variant="secondary"
       disabled={pending}
       onclick={close}>取消</Button
     ><Button
-      class="h-14 rounded-2xl"
+      class="h-12 rounded-xl"
       disabled={pending ||
         uncertain ||
         !online ||

@@ -18,9 +18,9 @@ test("shipping styles hide mobile scrollbars without disabling scrolling", async
   await expect(page.locator("html")).toHaveCSS("scrollbar-width", "none");
   await expect(scroll).toHaveCSS("scrollbar-width", "none");
   await expect(scroll).toHaveCSS("overflow-y", "auto");
-  const notes = page.getByRole("textbox", { name: "备注", exact: true });
-  await notes.scrollIntoViewIfNeeded();
-  await reachable(notes);
+  const paymentId = page.getByRole("textbox", { name: "支付流水号" });
+  await paymentId.scrollIntoViewIfNeeded();
+  await reachable(paymentId);
   expect(await scroll.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   await page.getByRole("combobox", { name: "账户", exact: true }).click();
   const dialog = page.getByRole("dialog");
@@ -61,9 +61,13 @@ test("transaction list opens a mobile editor and searchable account picker", asy
   await expect(page.getByText("示例消费", { exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot("transactions.png", { fullPage: true });
   await page.getByRole("link", { name: /示例消费/ }).click();
-  await expect(page.getByRole("heading", { name: "修改交易" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "示例消费" })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "移动导航" })).toBeHidden();
+  await expect(page.getByRole("combobox", { name: "交易状态" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "支付渠道" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "支付流水号" })).toBeVisible();
+  await expect(page.getByText("科目建议", { exact: true })).toHaveCount(0);
   await reachable(page.getByRole("button", { name: "保存修改" }));
   await fitsViewport(page);
   await expect(page).toHaveScreenshot("editor.png");
@@ -152,7 +156,7 @@ test("income, transfers and advanced entries share bounded account sheets", asyn
     await page.keyboard.press("Escape");
   }
   await page.getByRole("button", { name: "删除扣款 1" }).click();
-  await page.getByRole("button", { name: "转账", exact: true }).click();
+  await page.getByRole("button", { name: "划转", exact: true }).click();
   for (const label of ["转出账户 1", "转入账户 1"]) {
     await page.getByRole("combobox", { name: label, exact: true }).click();
     await sheetFitsViewport(page.getByRole("dialog"));
@@ -275,7 +279,7 @@ test("new transaction saves to list and existing transaction can be deleted", as
   await page.getByRole("button", { name: "保存交易" }).click();
   await expect(page.getByRole("heading", { name: "交易流水" })).toBeVisible();
   await page.getByRole("link", { name: /示例消费/ }).click();
-  await expect(page.getByRole("heading", { name: "修改交易" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "示例消费" })).toBeVisible();
   await page.getByRole("button", { name: "交易操作" }).click();
   page.once("dialog", (dialog) => dialog.accept());
   const request = page.waitForRequest("**/test-api/rpc/delete_transaction");
