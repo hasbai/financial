@@ -18,9 +18,9 @@ test("shipping styles hide mobile scrollbars without disabling scrolling", async
   await expect(page.locator("html")).toHaveCSS("scrollbar-width", "none");
   await expect(scroll).toHaveCSS("scrollbar-width", "none");
   await expect(scroll).toHaveCSS("overflow-y", "auto");
-  const notes = page.getByRole("textbox", { name: "备注", exact: true });
-  await notes.scrollIntoViewIfNeeded();
-  await reachable(notes);
+  const paymentId = page.getByRole("textbox", { name: "支付流水号" });
+  await paymentId.scrollIntoViewIfNeeded();
+  await reachable(paymentId);
   expect(await scroll.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   await page.getByRole("combobox", { name: "账户", exact: true }).click();
   const dialog = page.getByRole("dialog");
