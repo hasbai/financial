@@ -145,7 +145,7 @@ it("switches transaction direction while preserving the payment account and entr
     { ...t.entries[1], direction: "借" },
   ]);
 });
-it("applies real same-merchant account suggestions only on request", async () => {
+it("uses the current transaction name as title and keeps source fields directly editable", async () => {
   const api = setup("/transactions/7", (api) => {
     vi.mocked(api.accounts).mockResolvedValue([
       ...accounts,
@@ -165,23 +165,22 @@ it("applies real same-merchant account suggestions only on request", async () =>
       next_cursor: null,
     });
   });
-  await screen.findByRole("button", { name: "一键应用" });
-  expect(screen.getByRole("combobox", { name: "分类" }).textContent).toContain(
-    "餐饮",
+  await screen.findByRole("heading", { name: "示例消费" });
+  expect(screen.queryByLabelText("原交易摘要")).toBeNull();
+  expect(screen.queryByText("科目建议")).toBeNull();
+  expect(screen.getByRole("combobox", { name: "交易状态" })).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "支付渠道" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "支付流水号" })).toBeTruthy();
+  await fireEvent.click(screen.getByRole("button", { name: "交易操作" }));
+  expect(screen.queryByRole("button", { name: "交易来源" })).toBeNull();
+  await fireEvent.input(
+    screen.getByRole("textbox", { name: "商户 / 交易摘要" }),
+    {
+      target: { value: "周末午餐" },
+    },
   );
-  await fireEvent.click(screen.getByRole("button", { name: "一键应用" }));
-  await waitFor(() =>
-    expect(
-      (screen.getByRole("button", { name: "保存修改" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(false),
-  );
-  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
-  await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
-  expect(vi.mocked(api.save).mock.calls[0][2].entries.map((e) => e.id)).toEqual(
-    [11, 12],
-  );
-  expect(vi.mocked(api.save).mock.calls[0][2].entries[0].account_id).toBe(3);
+  await screen.findByRole("heading", { name: "周末午餐" });
+  expect(api.list).not.toHaveBeenCalled();
 });
 it("keeps a complex transaction in the full entry editor without flattening it", async () => {
   const complex = {
@@ -300,6 +299,37 @@ it("searches and selects an account using the Bits UI picker", async () => {
   await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
   await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
   expect(vi.mocked(api.save).mock.calls[0][2].entries[0].account_id).toBe(2);
+});
+it("orders account picker items by account ID", async () => {
+  setup("/transactions/7", (api) =>
+    vi
+      .mocked(api.accounts)
+      .mockResolvedValue([
+        {
+          id: 20,
+          type: "支出",
+          subtype: "餐饮",
+          name: "较大编号",
+          notes: null,
+        },
+        accounts[0],
+        {
+          id: 10,
+          type: "支出",
+          subtype: "餐饮",
+          name: "较小编号",
+          notes: null,
+        },
+        accounts[1],
+      ]),
+  );
+  const category = await screen.findByRole("combobox", { name: "分类" });
+  await fireEvent.click(category);
+  await waitFor(() =>
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent?.trim()),
+    ).toEqual(["餐饮", "较小编号", "较大编号"]),
+  );
 });
 it("shows refund validation in the active dialog", async () => {
   setup();
@@ -487,7 +517,7 @@ it("records a transfer with correctly directed accounts and restores focus after
     vi.mocked(api.accounts).mockResolvedValue(salaryAccounts),
   );
   await screen.findByRole("combobox", { name: "分类" });
-  await fireEvent.click(screen.getByRole("button", { name: "转账" }));
+  await fireEvent.click(screen.getByRole("button", { name: "划转" }));
   await pick("转入账户 1", "现金及等价物", "另一银行卡");
   await waitFor(() =>
     expect(document.activeElement).toBe(
@@ -552,7 +582,7 @@ it("returns a newly saved transaction to the filtered list", async () => {
 it("deletes an existing transaction only after confirmation and returns to the list", async () => {
   const api = setup("/transactions/7?review=needed");
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-  await screen.findByRole("heading", { name: "修改交易" });
+  await screen.findByRole("heading", { name: "示例消费" });
   await fireEvent.click(screen.getByRole("button", { name: "交易操作" }));
   await fireEvent.click(screen.getByRole("button", { name: "删除交易" }));
   expect(api.deleteTransaction).not.toHaveBeenCalled();
