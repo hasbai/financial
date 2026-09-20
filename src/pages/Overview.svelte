@@ -250,7 +250,7 @@
         aria-label="净资产"
       >
         {#if !masked}<div
-            class="pointer-events-none absolute right-0 bottom-0 w-1/2 opacity-65"
+            class="net-worth-trend pointer-events-none absolute right-0 bottom-0 w-1/2 opacity-65"
           >
             <BalanceSparkline
               start={range.start}

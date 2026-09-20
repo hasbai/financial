@@ -510,12 +510,23 @@ html {
       color-mix(in oklch, var(--foreground), transparent 86%);
   }
   .overview-page .report-context {
-    margin-block: 4px;
+    margin-top: 4px;
+    margin-bottom: 12px;
   }
   .net-worth-card {
-    background: color-mix(in oklch, var(--asset) 4%, var(--card));
-    border-color: color-mix(in oklch, var(--asset) 10%, var(--card));
+    background: color-mix(in oklab, var(--asset) 4%, var(--card));
+    border-color: color-mix(in oklab, var(--asset) 10%, var(--card));
     padding: 20px;
+  }
+  .net-worth-card:has(.net-worth-trend) {
+    padding-bottom: 56px;
+  }
+  .net-worth-trend {
+    width: 100%;
+    height: 44px;
+  }
+  .net-worth-trend svg {
+    height: 44px;
   }
   .net-worth-card .money {
     margin-top: 12px;
