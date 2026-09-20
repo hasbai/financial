@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { useQueryClient } from "@tanstack/svelte-query";
   import { Button } from "$lib/components/ui/button";
   import { useApi, useAccounts } from "$lib/context";
@@ -31,6 +31,11 @@
   let id = $state("");
   let error = $state("");
   let uncertain = $state(false);
+  let errorSummary: HTMLDivElement | undefined = $state();
+  $effect(() => {
+    if (error)
+      void tick().then(() => errorSummary?.focus({ preventScroll: true }));
+  });
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
@@ -79,7 +84,9 @@
 
 <form class="flex min-h-0 flex-1 flex-col" onsubmit={submit}>
   <div class="form-sheet-body space-y-4" use:keepFocusVisible>
-    {#if error}<Notice variant="error">{error}</Notice>{/if}
+    {#if error}<div bind:this={errorSummary} tabindex="-1" class="outline-none">
+        <Notice variant="error">{error}</Notice>
+      </div>{/if}
     {#if uncertain}<Notice variant="warning"
         >操作待核对<Button
           variant="link"

@@ -23,7 +23,7 @@
   bind:value={id}
   inputmode="numeric"
   maxlength={5}
-  pattern="[1-5][0-9]{4}"
+  pattern={"[1-5][0-9]{4}"}
   required
 />
 <Field

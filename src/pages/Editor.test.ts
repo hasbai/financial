@@ -627,11 +627,9 @@ it("creates an account without submitting or resetting the edited transaction", 
   await fireEvent.input(await screen.findByLabelText("金额（人民币）"), {
     target: { value: "88.50" },
   });
+  await fireEvent.click(screen.getByRole("combobox", { name: "账户" }));
   await fireEvent.click(
-    screen.getByRole("combobox", { name: "账户", exact: true }),
-  );
-  await fireEvent.click(
-    await screen.findByRole("button", { name: "新增账户", exact: true }),
+    await screen.findByRole("button", { name: "新增账户" }),
   );
   const name = await screen.findByLabelText("账户名称");
   await fireEvent.input(name, { target: { value: "旅行钱包" } });
@@ -656,9 +654,9 @@ it("creates an account without submitting or resetting the edited transaction", 
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "保存并选中" })).toBeNull(),
   );
-  expect(
-    screen.getByRole("combobox", { name: "账户", exact: true }).textContent,
-  ).toContain("旅行钱包");
+  expect(screen.getByRole("combobox", { name: "账户" }).textContent).toContain(
+    "旅行钱包",
+  );
   expect(
     (screen.getByLabelText("金额（人民币）") as HTMLInputElement).value,
   ).toBe("88.50");
@@ -675,11 +673,9 @@ it("blocks repeat account creation after an uncertain network save and lets the 
   const api = setup("/transactions/7", (api) => {
     vi.mocked(api.saveAccount).mockRejectedValue(new Error("Failed to fetch"));
   });
+  await fireEvent.click(await screen.findByRole("combobox", { name: "账户" }));
   await fireEvent.click(
-    await screen.findByRole("combobox", { name: "账户", exact: true }),
-  );
-  await fireEvent.click(
-    await screen.findByRole("button", { name: "新增账户", exact: true }),
+    await screen.findByRole("button", { name: "新增账户" }),
   );
   await fireEvent.input(await screen.findByLabelText("账户 ID"), {
     target: { value: "10101" },
@@ -699,7 +695,7 @@ it("blocks repeat account creation after an uncertain network save and lets the 
       .disabled,
   ).toBe(true);
   await fireEvent.click(screen.getByRole("button", { name: "查看账户" }));
-  await screen.findByRole("button", { name: "新增账户", exact: true });
+  await screen.findByRole("button", { name: "新增账户" });
   expect(api.saveAccount).toHaveBeenCalledTimes(1);
   expect(api.save).not.toHaveBeenCalled();
 });
