@@ -163,7 +163,7 @@
   onclick={add}
   aria-label="新增科目"
   disabled={query.isPending || !!query.error}
-  class="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] z-20 h-16 w-16 rounded-full p-0 shadow-lg md:right-10 md:bottom-8"
+  class="mobile-create fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] z-20 h-16 w-16 rounded-full p-0 shadow-lg md:right-10 md:bottom-8"
   ><Plus class="size-7" aria-hidden="true" /></Button
 >
 <Dialog.Root

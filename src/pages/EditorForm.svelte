@@ -258,7 +258,7 @@
             size="icon"
             aria-label="交易操作"><MoreHorizontal aria-hidden="true" /></Button
           >{/snippet}</Popover.Trigger
-      ><Popover.Content class="w-48 p-2"
+      ><Popover.Content class="w-48 gap-1 p-2" align="end" collisionPadding={16}
         ><Button
           class="w-full justify-start"
           variant="ghost"

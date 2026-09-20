@@ -466,3 +466,88 @@ html {
     font-size: 16px;
   }
 }
+
+/* Mobile chrome reserves its own action slot instead of covering ledger rows. */
+@media (max-width: 767px) {
+  .mobile-navigation {
+    padding-right: calc(84px + env(safe-area-inset-right));
+    padding-left: max(8px, env(safe-area-inset-left));
+    height: calc(76px + env(safe-area-inset-bottom));
+    padding-top: 10px;
+    border-top-color: color-mix(in oklch, var(--border), transparent 35%);
+  }
+  .mobile-navigation a {
+    flex: 1;
+    min-width: 0;
+    min-height: 52px;
+    gap: 5px;
+    border-radius: 16px;
+  }
+  .mobile-navigation a[aria-current="page"] {
+    background: var(--accent);
+    font-weight: 600;
+  }
+  .mobile-create {
+    z-index: 40;
+    right: max(20px, env(safe-area-inset-right));
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    width: 48px;
+    height: 48px;
+    box-shadow: 0 4px 12px
+      color-mix(in oklch, var(--foreground), transparent 88%);
+  }
+  .app-main:not(.transaction-main) {
+    padding-bottom: calc(100px + env(safe-area-inset-bottom));
+  }
+}
+@media (max-width: 639px) {
+  .page-heading {
+    min-height: 48px;
+  }
+  .finance-card {
+    border-radius: 20px;
+    box-shadow: 0 3px 16px -10px
+      color-mix(in oklch, var(--foreground), transparent 86%);
+  }
+  .overview-page .report-context {
+    margin-block: 4px;
+  }
+  .net-worth-card {
+    background: color-mix(in oklch, var(--asset) 4%, var(--card));
+    border-color: color-mix(in oklch, var(--asset) 10%, var(--card));
+    padding: 20px;
+  }
+  .net-worth-card .money {
+    margin-top: 12px;
+  }
+  .cashflow-card .cashflow-total-heading {
+    min-height: 48px;
+  }
+  .cashflow-card .cashflow-total-heading + .money {
+    margin-top: 0;
+  }
+  .cashflow-card [aria-label="现金流期间"] {
+    background: var(--muted);
+    border-radius: 14px;
+  }
+  .cashflow-card [aria-label="现金流期间"] button[aria-pressed="true"] {
+    background: var(--card);
+    color: var(--foreground);
+    box-shadow: 0 1px 4px
+      color-mix(in oklch, var(--foreground), transparent 90%);
+  }
+}
+
+@media (max-width: 639px) {
+  .mobile-panel [data-slot="command-input-wrapper"] {
+    padding: 12px 16px 4px;
+  }
+  .mobile-panel [data-slot="command-list"] {
+    padding-inline: 16px;
+  }
+  .mobile-panel [data-slot="input-group"],
+  .form-sheet [data-slot="input"],
+  .form-sheet [role="combobox"] {
+    border-radius: 14px;
+  }
+}

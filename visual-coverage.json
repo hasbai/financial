@@ -23,7 +23,8 @@
         "assets-report",
         "cash-report",
         "profit-report",
-        "profit-dense"
+        "profit-dense",
+        "mobile-navigation-action"
       ]
     },
     {
@@ -426,6 +427,19 @@
           "test": "dense profit dates remain separated on a narrow phone",
           "projects": ["iphone"],
           "snapshots": ["profit-dense.png"]
+        }
+      ]
+    },
+    {
+      "id": "mobile-navigation-action",
+      "url": "/",
+      "kind": "interaction",
+      "state": "navigation action stays inside bottom bar without overlapping links",
+      "evidence": [
+        {
+          "spec": "e2e/mobile.spec.ts",
+          "test": "overview, privacy and dark appearance",
+          "projects": ["iphone", "iphone-se", "android"]
         }
       ]
     }

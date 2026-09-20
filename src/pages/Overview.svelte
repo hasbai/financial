@@ -150,7 +150,7 @@
   }
 </script>
 
-<div class="page">
+<div class="page overview-page">
   <div class="page-heading pr-12">
     <h1>个人财务</h1>
     <div class="flex items-center gap-1">
@@ -209,8 +209,8 @@
   </div>
   <div
     class={view === "assets"
-      ? "flex flex-wrap items-center justify-between gap-2"
-      : "flex justify-end sm:hidden"}
+      ? "report-context flex flex-wrap items-center justify-between gap-2"
+      : "report-context flex justify-end sm:hidden"}
   >
     {#if view === "assets"}
       <div class="flex gap-2" role="group" aria-label="资产负债类型">
@@ -246,7 +246,7 @@
     />{:else if data}
     {#if view === "overview"}
       <section
-        class="finance-card relative overflow-hidden p-5 sm:p-7"
+        class="finance-card net-worth-card relative overflow-hidden p-5 sm:p-7"
         aria-label="净资产"
       >
         {#if !masked}<div
@@ -269,6 +269,7 @@
               variant="ghost"
               size="icon"
               aria-label={masked ? "显示金额" : "隐藏金额"}
+              class="ml-auto"
               onclick={toggleAmounts}
               >{#if masked}<EyeOff aria-hidden="true" />{:else}<Eye
                   aria-hidden="true"

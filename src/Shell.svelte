@@ -127,7 +127,10 @@
               aria-label="应用菜单"
               ><MoreHorizontal class="size-6" aria-hidden="true" /></Button
             >{/snippet}</Popover.Trigger
-        ><Popover.Content class="w-48 p-2" align="end"
+        ><Popover.Content
+          class="w-48 gap-1 p-2"
+          align="end"
+          collisionPadding={16}
           ><Button
             class="w-full justify-start"
             variant="ghost"
@@ -157,7 +160,7 @@
     <main
       id="main"
       class:transaction-main={editingTransaction}
-      class="mx-auto min-w-0 max-w-5xl pl-[max(16px,env(safe-area-inset-left))] pr-[max(16px,env(safe-area-inset-right))] pt-[calc(20px+env(safe-area-inset-top))] pb-[calc(156px+env(safe-area-inset-bottom))] sm:px-8"
+      class="app-main mx-auto min-w-0 max-w-5xl pl-[max(16px,env(safe-area-inset-left))] pr-[max(16px,env(safe-area-inset-right))] pt-[calc(20px+env(safe-area-inset-top))] pb-[calc(156px+env(safe-area-inset-bottom))] sm:px-8"
     >
       {#if !authorized}
         <Empty title="当前账号没有访问权限" />
@@ -188,14 +191,14 @@
     <Button
       href="/transactions/new"
       aria-label="记一笔"
-      class="fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] z-20 h-16 w-16 rounded-full p-0 shadow-lg md:right-10 md:bottom-8"
+      class="mobile-create fixed right-5 bottom-[calc(88px+env(safe-area-inset-bottom))] z-20 h-16 w-16 rounded-full p-0 shadow-lg md:right-10 md:bottom-8"
       ><Plus class="size-7" aria-hidden="true" /></Button
     >
   {/if}
   <nav
     class:transaction-chrome={editingTransaction}
     aria-label="移动导航"
-    class="fixed inset-x-0 bottom-0 z-30 flex h-[calc(68px+env(safe-area-inset-bottom))] items-start justify-around border-t bg-card/95 backdrop-blur-md pt-2 pb-[env(safe-area-inset-bottom)] md:hidden"
+    class="mobile-navigation fixed inset-x-0 bottom-0 z-30 flex h-[calc(68px+env(safe-area-inset-bottom))] items-start justify-around border-t bg-card/95 backdrop-blur-md pt-2 pb-[env(safe-area-inset-bottom)] md:hidden"
   >
     {#each nav as item}<a
         href={item.path}

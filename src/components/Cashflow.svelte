@@ -108,7 +108,7 @@
   }
 </script>
 
-<section class="finance-card p-5 sm:p-7" aria-label="现金流量">
+<section class="finance-card cashflow-card p-5 sm:p-7" aria-label="现金流量">
   <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
     <h2 class="flex items-center gap-3">
       <span class="icon-tile bg-cash-in/10 text-cash-in"
@@ -158,9 +158,19 @@
       class="grid gap-5 lg:grid-cols-[minmax(240px,0.8fr)_minmax(0,1.5fr)] lg:gap-10"
     >
       <div>
-        <p class="text-sm text-muted-foreground">
-          {mode === "future" ? "未来 30 天净流入" : "本期净流入"}
-        </p>
+        <div
+          class="cashflow-total-heading flex items-center justify-between gap-2"
+        >
+          <p class="text-sm text-muted-foreground">
+            {mode === "future" ? "未来 30 天净流入" : "本期净流入"}
+          </p>
+          <Button
+            variant="link"
+            class="cashflow-inline-link px-0 text-muted-foreground"
+            onclick={drilldown}
+            >查看流水<ChevronRight aria-hidden="true" /></Button
+          >
+        </div>
         <p
           class="money mt-2 break-words text-3xl font-semibold tracking-tight sm:text-4xl"
           class:text-cash-in={!hidden && !summary.cash_net.startsWith("-")}
@@ -192,12 +202,6 @@
             </p>
           </div>
         </div>
-        <Button
-          variant="link"
-          class="mt-4 px-0 text-muted-foreground"
-          onclick={drilldown}
-          >查看流水<ChevronRight aria-hidden="true" /></Button
-        >
       </div>
       <div class="min-w-0">
         {#if hidden}<div
