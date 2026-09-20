@@ -34,6 +34,9 @@
 | 接入与发布 | docs/ARCHITECTURE.md |
 | 历史基线快照 | docs/BASELINE.md |
 
+
+CI 等待统一使用 `node scripts/wait-ci.mjs <owner/repo> <run-id> <full-sha> <event>`；一个运行只启动一次等待，主代理不并行轮询，终态齐备立即结束。候选只生成一次，审阅导入后由普通 CI 严格比较；具体超时、失败和停止条件见 [CI 等待与收尾](docs/TESTING.md#ci-等待与收尾2026-09-20)。
+
 ## 校验与提交
 
 按2026-09-16最新要求，自动化验证统一在GitHub Actions执行，本地不运行单元测试、覆盖率、Playwright浏览器测试，也不运行整套typecheck/build验收。`Check / check`负责`pnpm typecheck`、`pnpm test:coverage`、`pnpm build`；`Check / visual`负责`pnpm test:e2e`。本地可做代码阅读、编辑、格式化和`git diff --check`。

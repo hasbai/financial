@@ -16,6 +16,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'push' }}
 jobs:
   check:
+    # Candidate runs must never publish the branch-protection check contexts.
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && 'candidate-check' || 'check' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -44,6 +46,7 @@ jobs:
           path: coverage/
           retention-days: 14
   visual:
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && 'visual-baseline-candidates' || 'visual' }}
     # Native macOS WebKit, same OS family/architecture as the checked-in baselines.
     runs-on: macos-26
     timeout-minutes: 20
@@ -68,7 +71,10 @@ jobs:
         run: pnpm test:e2e:update
         env:
           VISUAL_COVERAGE_GATE: '1'
-      - run: pnpm test:e2e
+      # Candidates are reviewed/imported before ordinary PR/main comparison.
+      # Run exactly one browser suite per job; never update in normal CI.
+      - if: github.event_name != 'workflow_dispatch' || !inputs.update_visual_baselines
+        run: pnpm test:e2e
         env:
           VISUAL_COVERAGE_GATE: '1'
       - if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
