@@ -129,16 +129,22 @@ test("account create keeps input after failure and saves on retry", async ({
   await page
     .getByRole("textbox", { name: "子类", exact: true })
     .fill("现金及等价物");
-  await page.route(
-    "**/test-api/rpc/save_account",
-    (route) =>
-      route.fulfill({
-        status: 400,
-        json: { code: "VALIDATION", message: "保存失败" },
-      }),
-    { times: 1 },
-  );
+  let saveAttempts = 0;
+  // Keep the interceptor installed until teardown; do not remove a one-shot
+  // route while WebKit is delivering its failure response to the page.
+  await page.route("**/test-api/rpc/save_account", (route) => {
+    saveAttempts++;
+    if (saveAttempts > 1) return route.fallback();
+    return route.fulfill({
+      status: 400,
+      json: { code: "VALIDATION", message: "保存失败" },
+    });
+  });
+  const rejected = page.waitForResponse("**/test-api/rpc/save_account");
   await page.getByRole("button", { name: "保存科目" }).click();
+  const response = await rejected;
+  expect(response.status()).toBe(400);
+  expect(await response.finished()).toBeNull();
   await expect(page.getByRole("alert")).toContainText("保存失败");
   await expect(page.getByRole("textbox", { name: "科目名称" })).toHaveValue(
     "日常账户",
@@ -150,6 +156,7 @@ test("account create keeps input after failure and saves on retry", async ({
     p_id: null,
     p_payload: { name: "日常账户", type: "资产" },
   });
+  expect(saveAttempts).toBe(2);
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
