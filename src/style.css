@@ -445,3 +445,24 @@ html {
     display: none;
   }
 }
+
+@media (max-width: 359px) {
+  .overview-balances .icon-tile {
+    width: 32px;
+    height: 32px;
+  }
+  .overview-balances button > span:first-child {
+    gap: 6px;
+  }
+  .overview-balances .font-medium {
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .overview-balances button > span:first-child > svg {
+    width: 12px;
+    flex-shrink: 0;
+  }
+  .overview-balances .money {
+    font-size: 16px;
+  }
+}

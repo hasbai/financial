@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { keepFocusVisible } from "$lib/keep-focus-visible";
   import { useReport, useReportTime } from "$lib/reports";
   import { effectiveEnd } from "$lib/api";
   import { createInfiniteQuery } from "@tanstack/svelte-query";
@@ -401,7 +402,9 @@
             onclick={() => (expanded = false)}><X aria-hidden="true" /></Button
           >
         </Dialog.Header>
-        <div class="form-sheet-body space-y-4">{@render filterFields()}</div>
+        <div class="form-sheet-body space-y-4" use:keepFocusVisible>
+          {@render filterFields()}
+        </div>
         <div class="form-sheet-footer">
           <Button variant="outline" onclick={clear}>清空全部筛选</Button>
           <Button onclick={() => (expanded = false)}>完成</Button>

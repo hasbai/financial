@@ -280,7 +280,7 @@
           </p>
         </div>
       </section>
-      <div class="grid grid-cols-2 gap-3 sm:gap-4">
+      <div class="overview-balances grid grid-cols-2 gap-3 sm:gap-4">
         {#each [{ type: "资产", title: "总资产", value: data.assets, icon: Wallet, color: "bg-asset/10 text-asset" }, { type: "负债", title: "总负债", value: data.liabilities, icon: Landmark, color: "bg-cash-out/10 text-cash-out" }] as item}
           <button
             class="finance-card min-w-0 p-4 text-left transition-colors hover:bg-accent sm:p-5"

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { keepFocusVisible } from "$lib/keep-focus-visible";
   import { createMutation, useQueryClient } from "@tanstack/svelte-query";
   import { ArrowLeft, Plus, ChevronRight, Trash2 } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
@@ -217,7 +218,7 @@
           if (!validation) save.mutate();
         }}
       >
-        <div class="form-sheet-body space-y-4">
+        <div class="form-sheet-body space-y-4" use:keepFocusVisible>
           {#if validation}<Notice variant="error">{validation}</Notice>{/if}
           {#if save.error || remove.error}<Notice variant="error"
               >{errorMessage(save.error || remove.error)}</Notice
