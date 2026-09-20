@@ -467,10 +467,10 @@ html {
   }
 }
 
-/* Mobile chrome reserves its own action slot instead of covering ledger rows. */
+/* Keep the floating action above navigation and let the last row scroll clear. */
 @media (max-width: 767px) {
   .mobile-navigation {
-    padding-right: calc(84px + env(safe-area-inset-right));
+    padding-right: max(8px, env(safe-area-inset-right));
     padding-left: max(8px, env(safe-area-inset-left));
     height: calc(76px + env(safe-area-inset-bottom));
     padding-top: 10px;
@@ -488,16 +488,16 @@ html {
     font-weight: 600;
   }
   .mobile-create {
-    z-index: 40;
+    z-index: 20;
     right: max(20px, env(safe-area-inset-right));
-    bottom: calc(14px + env(safe-area-inset-bottom));
-    width: 48px;
-    height: 48px;
+    bottom: calc(92px + env(safe-area-inset-bottom));
+    width: 56px;
+    height: 56px;
     box-shadow: 0 4px 12px
       color-mix(in oklch, var(--foreground), transparent 88%);
   }
   .app-main:not(.transaction-main) {
-    padding-bottom: calc(100px + env(safe-area-inset-bottom));
+    padding-bottom: calc(168px + env(safe-area-inset-bottom));
   }
 }
 @media (max-width: 639px) {

@@ -347,3 +347,41 @@ test("dense profit dates remain separated on a narrow phone", async ({
     expect(labels[i].left - labels[i - 1].right).toBeGreaterThanOrEqual(8);
   await expect(page).toHaveScreenshot("profit-dense.png", { fullPage: true });
 });
+
+validationTest(
+  "inline account failure retains input in a short dark sheet and retries",
+  async ({ page, app, validationEndpoint }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await app.open("/transactions/7");
+    await page.getByRole("combobox", { name: "账户", exact: true }).click();
+    await page.getByRole("button", { name: "新增账户", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "新增账户", exact: true });
+    await dialog.getByRole("textbox", { name: "账户 ID" }).fill("10102");
+    await dialog.getByRole("textbox", { name: "账户名称" }).fill("旅行钱包");
+    let attempts = 0;
+    await page.route("**/test-api/rpc/save_account", (route) =>
+      ++attempts === 1
+        ? route.continue({ url: validationEndpoint })
+        : route.fallback(),
+    );
+    await dialog.getByRole("button", { name: "保存并选中" }).click();
+    await expect(dialog.getByRole("alert")).toContainText("保存失败");
+    await expect(dialog.getByRole("textbox", { name: "账户名称" })).toHaveValue(
+      "旅行钱包",
+    );
+    await page.setViewportSize({ width: 375, height: 480 });
+    await sheetFitsViewport(dialog);
+    const notes = dialog.getByRole("textbox", { name: "说明", exact: true });
+    await notes.focus();
+    await notes.fill("随身账户");
+    await reachable(notes);
+    await reachable(dialog.getByRole("button", { name: "保存并选中" }));
+    await expect(page).toHaveScreenshot("inline-account-dark-short.png");
+    await dialog.getByRole("button", { name: "保存并选中" }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(attempts).toBe(2);
+    await expect(
+      page.getByRole("combobox", { name: "账户", exact: true }),
+    ).toContainText("旅行钱包");
+  },
+);

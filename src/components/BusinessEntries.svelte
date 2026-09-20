@@ -191,6 +191,14 @@
                 >
                   <AccountPicker
                     compact
+                    createTypes={role === "category"
+                      ? [layout.type === "收入" ? "收入" : "支出"]
+                      : role === "deduction"
+                        ? ["支出"]
+                        : ["资产", "负债"]}
+                    createNoun={role === "category" || role === "deduction"
+                      ? "分类"
+                      : "账户"}
                     label={role === "category" && count(role) === 1
                       ? "分类"
                       : role === "account" && count(role) === 1
