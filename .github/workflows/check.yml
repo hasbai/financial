@@ -1,7 +1,7 @@
 name: Check
 on:
-  push:
-    branches: [main]
+  # Strict PR protection requires current main plus check/visual before merge.
+  # Do not repeat the same acceptance suite on the resulting main push.
   pull_request:
   workflow_dispatch:
     inputs:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'push' }}
+  cancel-in-progress: true
 jobs:
   check:
     # Candidate runs must never publish the branch-protection check contexts.
