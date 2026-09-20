@@ -22,7 +22,8 @@
         "overview-error",
         "assets-report",
         "cash-report",
-        "profit-report"
+        "profit-report",
+        "profit-dense"
       ]
     },
     {
@@ -411,6 +412,20 @@
           "test": "account sheet keeps actions visible in a short dark viewport",
           "projects": ["iphone"],
           "snapshots": ["account-short-dark.png"]
+        }
+      ]
+    },
+    {
+      "id": "profit-dense",
+      "url": "/?view=profit",
+      "kind": "screenshot",
+      "state": "dense-dates",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "dense profit dates remain separated on a narrow phone",
+          "projects": ["iphone"],
+          "snapshots": ["profit-dense.png"]
         }
       ]
     }

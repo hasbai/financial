@@ -129,16 +129,22 @@ test("account create keeps input after failure and saves on retry", async ({
   await page
     .getByRole("textbox", { name: "子类", exact: true })
     .fill("现金及等价物");
-  await page.route(
-    "**/test-api/rpc/save_account",
-    (route) =>
-      route.fulfill({
-        status: 400,
-        json: { code: "VALIDATION", message: "保存失败" },
-      }),
-    { times: 1 },
-  );
+  let saveAttempts = 0;
+  // Keep the interceptor installed until teardown; do not remove a one-shot
+  // route while WebKit is delivering its failure response to the page.
+  await page.route("**/test-api/rpc/save_account", (route) => {
+    saveAttempts++;
+    if (saveAttempts > 1) return route.fallback();
+    return route.fulfill({
+      status: 400,
+      json: { code: "VALIDATION", message: "保存失败" },
+    });
+  });
+  const rejected = page.waitForResponse("**/test-api/rpc/save_account");
   await page.getByRole("button", { name: "保存科目" }).click();
+  const response = await rejected;
+  expect(response.status()).toBe(400);
+  expect(await response.finished()).toBeNull();
   await expect(page.getByRole("alert")).toContainText("保存失败");
   await expect(page.getByRole("textbox", { name: "科目名称" })).toHaveValue(
     "日常账户",
@@ -150,6 +156,7 @@ test("account create keeps input after failure and saves on retry", async ({
     p_id: null,
     p_payload: { name: "日常账户", type: "资产" },
   });
+  expect(saveAttempts).toBe(2);
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
@@ -265,4 +272,41 @@ test("account sheet keeps actions visible in a short dark viewport", async ({
   await expect(page.getByRole("searchbox", { name: "搜索科目" })).toHaveValue(
     "",
   );
+});
+
+test("dense profit dates remain separated on a narrow phone", async ({
+  page,
+  app,
+}) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.route("**/test-api/income_statement?*", (route) =>
+    route.fulfill({
+      json: Array.from({ length: 16 }, (_, i) => {
+        const date = `2026-09-${String(i + 1).padStart(2, "0")}`;
+        return {
+          occurred_at: `${date}T00:00:00Z`,
+          date,
+          type: "收入",
+          subtype: "工资",
+          income: i === 12 ? "14000" : "0",
+          expense: i === 0 ? "-3.66" : "100",
+          profit: i === 12 ? "13900" : "-100",
+          amount: i === 12 ? "14000" : "0",
+        };
+      }),
+    }),
+  );
+  await app.open("/?view=profit");
+  const chart = page.getByRole("img", { name: "本期收入及支出趋势" });
+  await expect(chart).toBeVisible();
+  const labels = await chart.locator('text[y="202"]').evaluateAll((elements) =>
+    elements.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, right: r.right };
+    }),
+  );
+  expect(labels.length).toBeGreaterThanOrEqual(2);
+  for (let i = 1; i < labels.length; i++)
+    expect(labels[i].left - labels[i - 1].right).toBeGreaterThanOrEqual(8);
+  await expect(page).toHaveScreenshot("profit-dense.png", { fullPage: true });
 });
