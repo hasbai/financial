@@ -21,6 +21,17 @@
       notation: "compact",
     }).format(value);
   let ticks = $derived([maximum, (maximum + minimum) / 2, minimum]);
+  let labelIndices = $derived.by(() => {
+    const segments = Math.max(
+      1,
+      Math.min(data.length - 1, Math.floor((width - 62) / 64)),
+    );
+    return new Set(
+      Array.from({ length: segments + 1 }, (_, i) =>
+        Math.round((i * (data.length - 1)) / segments),
+      ),
+    );
+  });
 </script>
 
 <div class="space-y-3" bind:clientWidth={width}>
@@ -92,7 +103,7 @@
         fill="var(--cash-out)"
         ><title>{day.date} 支出 {money(day.expense)}</title></circle
       >
-      {#if i === 0 || i === data.length - 1 || (i % Math.max(1, Math.ceil(data.length / 4)) === 0 && i < data.length - Math.ceil(data.length / 8))}
+      {#if labelIndices.has(i)}
         <text
           x={x(i)}
           y="202"

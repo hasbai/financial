@@ -266,3 +266,40 @@ test("account sheet keeps actions visible in a short dark viewport", async ({
     "",
   );
 });
+
+test("dense profit dates remain separated on a narrow phone", async ({
+  page,
+  app,
+}) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.route("**/test-api/income_statement?*", (route) =>
+    route.fulfill({
+      json: Array.from({ length: 16 }, (_, i) => {
+        const date = `2026-09-${String(i + 1).padStart(2, "0")}`;
+        return {
+          occurred_at: `${date}T00:00:00Z`,
+          date,
+          type: "收入",
+          subtype: "工资",
+          income: i === 12 ? "14000" : "0",
+          expense: i === 0 ? "-3.66" : "100",
+          profit: i === 12 ? "13900" : "-100",
+          amount: i === 12 ? "14000" : "0",
+        };
+      }),
+    }),
+  );
+  await app.open("/?view=profit");
+  const chart = page.getByRole("img", { name: "本期收入及支出趋势" });
+  await expect(chart).toBeVisible();
+  const labels = await chart.locator('text[y="202"]').evaluateAll((elements) =>
+    elements.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, right: r.right };
+    }),
+  );
+  expect(labels.length).toBeGreaterThanOrEqual(2);
+  for (let i = 1; i < labels.length; i++)
+    expect(labels[i].left - labels[i - 1].right).toBeGreaterThanOrEqual(8);
+  await expect(page).toHaveScreenshot("profit-dense.png", { fullPage: true });
+});
