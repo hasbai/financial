@@ -38,6 +38,7 @@
   import type { Transaction } from "$lib/types";
   import Field from "../components/Field.svelte";
   import SelectField from "../components/SelectField.svelte";
+  import { accountTypes } from "$lib/accounts";
   import AccountPicker from "../components/AccountPicker.svelte";
   import Loading from "../components/Loading.svelte";
   import Failure from "../components/Failure.svelte";
@@ -453,6 +454,8 @@
                 >
               </div>
               <AccountPicker
+                createTypes={accountTypes}
+                createNoun="科目"
                 accounts={accounts.data || []}
                 bind:value={entry.account_id}
                 disabled={pending}

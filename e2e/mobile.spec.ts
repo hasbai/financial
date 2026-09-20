@@ -45,15 +45,10 @@ test("overview, privacy and dark appearance", async ({ page, app }) => {
   const createBounds = await create.boundingBox();
   expect(navBounds).not.toBeNull();
   expect(createBounds).not.toBeNull();
-  expect(createBounds!.y).toBeGreaterThanOrEqual(navBounds!.y);
   expect(createBounds!.y + createBounds!.height).toBeLessThanOrEqual(
-    navBounds!.y + navBounds!.height,
+    navBounds!.y - 16,
   );
-  for (const link of await nav.getByRole("link").all()) {
-    await reachable(link);
-    const bounds = await link.boundingBox();
-    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(createBounds!.x - 8);
-  }
+  for (const link of await nav.getByRole("link").all()) await reachable(link);
   await fitsViewport(page);
   await expect(page).toHaveScreenshot("overview.png", { fullPage: true });
   await page.getByRole("button", { name: "隐藏金额" }).click();
@@ -404,4 +399,99 @@ test("split income keeps account names and amounts usable on mobile", async ({
   await fitsViewport(page);
   await reachable(page.getByRole("button", { name: "保存交易" }));
   await expect(page).toHaveScreenshot("income-split.png");
+});
+
+test("create an account inside a new transaction and keep the transaction input", async ({
+  page,
+  app,
+}) => {
+  await app.open("/transactions/new");
+  await page.getByRole("textbox", { name: "金额（人民币）" }).fill("88.50");
+  const account = page.getByRole("combobox", { name: "账户", exact: true });
+  await account.click();
+  let dialog = page.getByRole("dialog");
+  await dialog.getByRole("option", { name: /资产 · 现金及等价物/ }).click();
+  await dialog.getByRole("combobox", { name: "搜索账户" }).fill("旅行钱包");
+  await expect(dialog.getByText("无匹配科目")).toBeVisible();
+  await reachable(
+    dialog.getByRole("button", { name: "新增账户", exact: true }),
+  );
+  await expect(page).toHaveScreenshot("inline-account-empty.png");
+  await dialog.getByRole("button", { name: "新增账户", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "新增账户", exact: true });
+  await sheetFitsViewport(dialog);
+  await expect(dialog.getByRole("textbox", { name: "账户名称" })).toHaveValue(
+    "旅行钱包",
+  );
+  await expect(
+    dialog.getByRole("textbox", { name: "子类", exact: true }),
+  ).toHaveValue("现金及等价物");
+  await dialog.getByRole("textbox", { name: "账户 ID" }).fill("10102");
+  await expect(page).toHaveScreenshot("inline-account-create.png");
+  let releaseSave!: () => void;
+  const saveGate = new Promise<void>((resolve) => (releaseSave = resolve));
+  await page.route("**/test-api/rpc/save_account", async (route) => {
+    await saveGate;
+    await route.fallback();
+  });
+  const saved = page.waitForRequest("**/test-api/rpc/save_account");
+  await dialog.getByRole("button", { name: "保存并选中" }).click();
+  await saved;
+  await expect(
+    dialog.getByRole("button", { name: "正在保存…" }),
+  ).toBeDisabled();
+  await expect(
+    dialog.getByRole("button", { name: "取消", exact: true }),
+  ).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  releaseSave();
+  expect((await saved).postDataJSON()).toMatchObject({
+    p_id: null,
+    p_payload: {
+      id: 10102,
+      name: "旅行钱包",
+      type: "资产",
+      subtype: "现金及等价物",
+    },
+  });
+  await expect(dialog).toHaveCount(0);
+  await expect(account).toContainText("旅行钱包");
+  await expect(account).toBeFocused();
+  await expect(
+    page.getByRole("textbox", { name: "金额（人民币）" }),
+  ).toHaveValue("88.50");
+  await account.click();
+  await expect(
+    page.getByRole("option", { name: "旅行钱包", exact: true }),
+  ).toBeVisible();
+});
+
+test("edit transaction can create a classification or cancel back to search", async ({
+  page,
+  app,
+}) => {
+  await app.open("/transactions/7");
+  const category = page.getByRole("combobox", { name: "分类", exact: true });
+  await category.click();
+  const search = page.getByRole("combobox", { name: "搜索分类" });
+  await search.fill("晚餐");
+  await page.getByRole("button", { name: "新增分类", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(search).toHaveValue("晚餐");
+  await expect(
+    page.getByRole("button", { name: "新增分类", exact: true }),
+  ).toBeFocused();
+  await page.getByRole("button", { name: "新增分类", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "新增分类", exact: true });
+  await expect(
+    dialog.getByRole("combobox", { name: "类型", exact: true }),
+  ).toContainText("支出");
+  await dialog.getByRole("textbox", { name: "分类 ID" }).fill("50102");
+  await dialog.getByRole("button", { name: "保存并选中" }).click();
+  await expect(category).toContainText("晚餐");
+  await expect(
+    page.getByRole("textbox", { name: "金额（人民币）" }),
+  ).toHaveValue("100.00");
+  await expect(page.getByRole("heading", { name: "示例消费" })).toBeVisible();
 });

@@ -7,10 +7,10 @@
   import * as Dialog from "$lib/components/ui/dialog";
   import { useApi, useAccounts } from "$lib/context";
   import { errorMessage } from "$lib/api";
-  import { accountTypes, accountIdError, accountGroups } from "$lib/accounts";
+  import { accountIdError, accountGroups } from "$lib/accounts";
   import type { Account } from "$lib/types";
   import Field from "../components/Field.svelte";
-  import SelectField from "../components/SelectField.svelte";
+  import AccountFields from "../components/AccountFields.svelte";
   import Notice from "../components/Notice.svelte";
   import Loading from "../components/Loading.svelte";
   import Failure from "../components/Failure.svelte";
@@ -67,7 +67,6 @@
   function add() {
     edit({ type: "资产", name: "", subtype: "", notes: "" });
   }
-  const types = accountTypes.map((value) => ({ value, label: value }));
 </script>
 
 <div class="page">
@@ -233,45 +232,10 @@
               ></Notice
             >{/if}
           <fieldset disabled={busy || uncertain} class="min-w-0 space-y-4">
-            <Field
-              label="科目 ID"
-              bind:value={id}
-              inputmode="numeric"
-              maxlength={5}
-              pattern={"[1-5][0-9]{4}"}
-              required
-            />
-            <Field
-              label="科目名称"
-              value={editing.name || ""}
-              oninput={(e) => {
-                if (editing) editing.name = e.currentTarget.value;
-              }}
-              required
-            />
-            <SelectField
-              label="类型"
-              value={editing.type || "资产"}
-              options={types}
+            <AccountFields
+              bind:id
+              bind:account={editing}
               disabled={busy || uncertain}
-              onchange={(v) => {
-                if (editing) editing.type = v as Account["type"];
-              }}
-            />
-            <Field
-              label="子类"
-              value={editing.subtype || ""}
-              oninput={(e) => {
-                if (editing) editing.subtype = e.currentTarget.value;
-              }}
-              required
-            />
-            <Field
-              label="说明"
-              value={editing.notes || ""}
-              oninput={(e) => {
-                if (editing) editing.notes = e.currentTarget.value;
-              }}
             />
           </fieldset>
         </div>

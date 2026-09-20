@@ -44,7 +44,9 @@
         "editor",
         "editor-loading",
         "editor-empty",
-        "editor-error"
+        "editor-error",
+        "inline-account-create",
+        "inline-account-dark-short"
       ]
     },
     {
@@ -55,7 +57,9 @@
         "editor-loading",
         "editor-empty",
         "editor-error",
-        "income-split"
+        "income-split",
+        "inline-account-create",
+        "inline-account-dark-short"
       ]
     },
     {
@@ -434,12 +438,40 @@
       "id": "mobile-navigation-action",
       "url": "/",
       "kind": "interaction",
-      "state": "navigation action stays inside bottom bar without overlapping links",
+      "state": "floating action stays above bottom navigation with clear touch targets",
       "evidence": [
         {
           "spec": "e2e/mobile.spec.ts",
           "test": "overview, privacy and dark appearance",
           "projects": ["iphone", "iphone-se", "android"]
+        }
+      ]
+    },
+    {
+      "id": "inline-account-create",
+      "url": "/transactions/new",
+      "kind": "screenshot",
+      "state": "empty search and inline create",
+      "evidence": [
+        {
+          "spec": "e2e/mobile.spec.ts",
+          "test": "create an account inside a new transaction and keep the transaction input",
+          "projects": ["iphone", "iphone-se", "android"],
+          "snapshots": ["inline-account-empty.png", "inline-account-create.png"]
+        }
+      ]
+    },
+    {
+      "id": "inline-account-dark-short",
+      "url": "/transactions/:id",
+      "kind": "screenshot",
+      "state": "dark short viewport after rejected save",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "inline account failure retains input in a short dark sheet and retries",
+          "projects": ["iphone"],
+          "snapshots": ["inline-account-dark-short.png"]
         }
       ]
     }

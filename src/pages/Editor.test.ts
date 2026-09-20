@@ -302,26 +302,24 @@ it("searches and selects an account using the Bits UI picker", async () => {
 });
 it("orders account picker items by account ID", async () => {
   setup("/transactions/7", (api) =>
-    vi
-      .mocked(api.accounts)
-      .mockResolvedValue([
-        {
-          id: 20,
-          type: "支出",
-          subtype: "餐饮",
-          name: "较大编号",
-          notes: null,
-        },
-        accounts[0],
-        {
-          id: 10,
-          type: "支出",
-          subtype: "餐饮",
-          name: "较小编号",
-          notes: null,
-        },
-        accounts[1],
-      ]),
+    vi.mocked(api.accounts).mockResolvedValue([
+      {
+        id: 20,
+        type: "支出",
+        subtype: "餐饮",
+        name: "较大编号",
+        notes: null,
+      },
+      accounts[0],
+      {
+        id: 10,
+        type: "支出",
+        subtype: "餐饮",
+        name: "较小编号",
+        notes: null,
+      },
+      accounts[1],
+    ]),
   );
   const category = await screen.findByRole("combobox", { name: "分类" });
   await fireEvent.click(category);
@@ -611,4 +609,97 @@ it("keeps edits when transaction deletion conflicts", async () => {
     "保留",
   );
   expect(router.location.pathname).toBe("/transactions/7");
+});
+
+it("creates an account without submitting or resetting the edited transaction", async () => {
+  const created = {
+    id: 10101,
+    type: "资产" as const,
+    subtype: "旅行资金",
+    name: "旅行钱包",
+    notes: "",
+  };
+  const api = setup("/transactions/7", (api) => {
+    vi.mocked(api.saveAccount)
+      .mockRejectedValueOnce(new Error("保存失败"))
+      .mockResolvedValueOnce(created);
+  });
+  await fireEvent.input(await screen.findByLabelText("金额（人民币）"), {
+    target: { value: "88.50" },
+  });
+  await fireEvent.click(
+    screen.getByRole("combobox", { name: "账户", exact: true }),
+  );
+  await fireEvent.click(
+    await screen.findByRole("button", { name: "新增账户", exact: true }),
+  );
+  const name = await screen.findByLabelText("账户名称");
+  await fireEvent.input(name, { target: { value: "旅行钱包" } });
+  await fireEvent.input(screen.getByLabelText("子类"), {
+    target: { value: "旅行资金" },
+  });
+  const id = screen.getByLabelText("账户 ID");
+  await fireEvent.input(id, { target: { value: "20101" } });
+  const submit = () =>
+    fireEvent.submit(
+      screen.getByRole("button", { name: "保存并选中" }).closest("form")!,
+    );
+  await submit();
+  await screen.findByText("科目 ID 首位与类型不符");
+  expect(api.saveAccount).not.toHaveBeenCalled();
+  await fireEvent.input(id, { target: { value: "10101" } });
+  await submit();
+  await screen.findByText("保存失败");
+  expect((name as HTMLInputElement).value).toBe("旅行钱包");
+  expect(api.save).not.toHaveBeenCalled();
+  await submit();
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "保存并选中" })).toBeNull(),
+  );
+  expect(
+    screen.getByRole("combobox", { name: "账户", exact: true }).textContent,
+  ).toContain("旅行钱包");
+  expect(
+    (screen.getByLabelText("金额（人民币）") as HTMLInputElement).value,
+  ).toBe("88.50");
+  expect(api.save).not.toHaveBeenCalled();
+  await fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+  await waitFor(() => expect(api.save).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(api.save).mock.calls[0][2].entries).toEqual([
+    { ...t.entries[0], amount: "88.50" },
+    { ...t.entries[1], account_id: created.id, amount: "88.50" },
+  ]);
+});
+
+it("blocks repeat account creation after an uncertain network save and lets the user check the list", async () => {
+  const api = setup("/transactions/7", (api) => {
+    vi.mocked(api.saveAccount).mockRejectedValue(new Error("Failed to fetch"));
+  });
+  await fireEvent.click(
+    await screen.findByRole("combobox", { name: "账户", exact: true }),
+  );
+  await fireEvent.click(
+    await screen.findByRole("button", { name: "新增账户", exact: true }),
+  );
+  await fireEvent.input(await screen.findByLabelText("账户 ID"), {
+    target: { value: "10101" },
+  });
+  await fireEvent.input(screen.getByLabelText("账户名称"), {
+    target: { value: "旅行钱包" },
+  });
+  await fireEvent.input(screen.getByLabelText("子类"), {
+    target: { value: "旅行资金" },
+  });
+  await fireEvent.submit(
+    screen.getByRole("button", { name: "保存并选中" }).closest("form")!,
+  );
+  await screen.findByText("操作待核对");
+  expect(
+    (screen.getByRole("button", { name: "保存并选中" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  await fireEvent.click(screen.getByRole("button", { name: "查看账户" }));
+  await screen.findByRole("button", { name: "新增账户", exact: true });
+  expect(api.saveAccount).toHaveBeenCalledTimes(1);
+  expect(api.save).not.toHaveBeenCalled();
 });
