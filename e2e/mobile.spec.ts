@@ -38,7 +38,22 @@ test("overview, privacy and dark appearance", async ({ page, app }) => {
   await app.open();
   await expect(page.getByRole("heading", { name: "净资产" })).toBeVisible();
   await expect(page.getByText("¥10,045.67")).toBeVisible();
-  await reachable(page.getByRole("link", { name: "记一笔" }));
+  const create = page.getByRole("link", { name: "记一笔" });
+  await reachable(create);
+  const nav = page.getByRole("navigation", { name: "移动导航" });
+  const navBounds = await nav.boundingBox();
+  const createBounds = await create.boundingBox();
+  expect(navBounds).not.toBeNull();
+  expect(createBounds).not.toBeNull();
+  expect(createBounds!.y).toBeGreaterThanOrEqual(navBounds!.y);
+  expect(createBounds!.y + createBounds!.height).toBeLessThanOrEqual(
+    navBounds!.y + navBounds!.height,
+  );
+  for (const link of await nav.getByRole("link").all()) {
+    await reachable(link);
+    const bounds = await link.boundingBox();
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(createBounds!.x - 8);
+  }
   await fitsViewport(page);
   await expect(page).toHaveScreenshot("overview.png", { fullPage: true });
   await page.getByRole("button", { name: "隐藏金额" }).click();

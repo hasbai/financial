@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import {
   test,
   expect,
@@ -108,57 +110,92 @@ test("reduced viewport keeps editor field and save action reachable", async ({
   await expect(page).toHaveScreenshot("editor-reduced-viewport.png");
 });
 
-test("account create keeps input after failure and saves on retry", async ({
-  page,
-  app,
-}) => {
-  await app.open("/accounts");
-  await page.getByRole("button", { name: "新增科目" }).click();
-  await sheetFitsViewport(page.getByRole("dialog"));
-  await page.getByRole("combobox", { name: "类型", exact: true }).click();
-  const typeSheet = page.getByRole("dialog", { name: "选择类型" });
-  await sheetFitsViewport(typeSheet);
-  await reachable(typeSheet.getByRole("button", { name: "资产", exact: true }));
-  await typeSheet.getByRole("button", { name: "资产", exact: true }).click();
-  await expect(typeSheet).toHaveCount(0);
-  await expect(
-    page.getByRole("combobox", { name: "类型", exact: true }),
-  ).toBeFocused();
-  await page.getByRole("textbox", { name: "科目 ID" }).fill("10102");
-  await page.getByRole("textbox", { name: "科目名称" }).fill("日常账户");
-  await page
-    .getByRole("textbox", { name: "子类", exact: true })
-    .fill("现金及等价物");
-  let saveAttempts = 0;
-  // Keep the interceptor installed until teardown; do not remove a one-shot
-  // route while WebKit is delivering its failure response to the page.
-  await page.route("**/test-api/rpc/save_account", (route) => {
-    saveAttempts++;
-    if (saveAttempts > 1) return route.fallback();
-    return route.fulfill({
-      status: 400,
-      json: { code: "VALIDATION", message: "保存失败" },
+// Deliver the rejected write over loopback HTTP: WebKit can finish an
+// intercepted 400 response while its page-side body reader remains pending.
+const validationTest = test.extend<{ validationEndpoint: string }>({
+  validationEndpoint: async ({}, use) => {
+    const server = createServer((request, response) => {
+      request.resume();
+      response.setHeader("Access-Control-Allow-Origin", "*");
+      response.setHeader("Access-Control-Allow-Headers", "*");
+      response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+      if (request.method === "OPTIONS") {
+        response.writeHead(204).end();
+        return;
+      }
+      response.writeHead(400, {
+        "Content-Type": "application/json; charset=utf-8",
+      });
+      response.end(JSON.stringify({ code: "VALIDATION", message: "保存失败" }));
     });
-  });
-  const rejected = page.waitForResponse("**/test-api/rpc/save_account");
-  await page.getByRole("button", { name: "保存科目" }).click();
-  const response = await rejected;
-  expect(response.status()).toBe(400);
-  expect(await response.finished()).toBeNull();
-  await expect(page.getByRole("alert")).toContainText("保存失败");
-  await expect(page.getByRole("textbox", { name: "科目名称" })).toHaveValue(
-    "日常账户",
-  );
-  await expect(page).toHaveScreenshot("account-save-error.png");
-  const request = page.waitForRequest("**/test-api/rpc/save_account");
-  await page.getByRole("button", { name: "保存科目" }).click();
-  expect((await request).postDataJSON()).toMatchObject({
-    p_id: null,
-    p_payload: { name: "日常账户", type: "资产" },
-  });
-  expect(saveAttempts).toBe(2);
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    try {
+      await use(
+        `http://127.0.0.1:${(server.address() as AddressInfo).port}/rejected-save`,
+      );
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  },
 });
+
+validationTest(
+  "account create keeps input after failure and saves on retry",
+  async ({ page, app, validationEndpoint }) => {
+    await app.open("/accounts");
+    await page.getByRole("button", { name: "新增科目" }).click();
+    await sheetFitsViewport(page.getByRole("dialog"));
+    await page.getByRole("combobox", { name: "类型", exact: true }).click();
+    const typeSheet = page.getByRole("dialog", { name: "选择类型" });
+    await sheetFitsViewport(typeSheet);
+    await reachable(
+      typeSheet.getByRole("button", { name: "资产", exact: true }),
+    );
+    await typeSheet.getByRole("button", { name: "资产", exact: true }).click();
+    await expect(typeSheet).toHaveCount(0);
+    await expect(
+      page.getByRole("combobox", { name: "类型", exact: true }),
+    ).toBeFocused();
+    await page.getByRole("textbox", { name: "科目 ID" }).fill("10102");
+    await page.getByRole("textbox", { name: "科目名称" }).fill("日常账户");
+    await page
+      .getByRole("textbox", { name: "子类", exact: true })
+      .fill("现金及等价物");
+    let saveAttempts = 0;
+    await page.route("**/test-api/rpc/save_account", (route) => {
+      saveAttempts++;
+      if (saveAttempts > 1) return route.fallback();
+      return route.continue({ url: validationEndpoint });
+    });
+    const rejected = page.waitForResponse(
+      (response) =>
+        response.url() === validationEndpoint ||
+        new URL(response.url()).pathname === "/test-api/rpc/save_account",
+    );
+    await page.getByRole("button", { name: "保存科目" }).click();
+    const response = await rejected;
+    expect(response.status()).toBe(400);
+    expect(await response.finished()).toBeNull();
+    await expect(page.getByRole("alert")).toContainText("保存失败");
+    await expect(page.getByRole("textbox", { name: "科目名称" })).toHaveValue(
+      "日常账户",
+    );
+    await expect(page).toHaveScreenshot("account-save-error.png");
+    const request = page.waitForRequest("**/test-api/rpc/save_account");
+    await page.getByRole("button", { name: "保存科目" }).click();
+    expect((await request).postDataJSON()).toMatchObject({
+      p_id: null,
+      p_payload: { name: "日常账户", type: "资产" },
+    });
+    expect(saveAttempts).toBe(2);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  },
+);
 
 test("refund and transaction filter sheets fit short and landscape viewports", async ({
   page,
