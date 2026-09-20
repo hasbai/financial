@@ -46,7 +46,7 @@
   let visible = $derived(
     orderedAccounts.filter((a) =>
       search.trim()
-        ? `${a.type} ${a.subtype} ${a.name} ${a.notes ?? ""}`
+        ? `${a.id} ${a.type} ${a.subtype} ${a.name} ${a.notes ?? ""}`
             .toLocaleLowerCase()
             .includes(search.trim().toLocaleLowerCase())
         : key(a) === group,

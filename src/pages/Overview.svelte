@@ -207,22 +207,23 @@
       />
     </div>
   </div>
-  {#if view === "assets"}
-    <div class="flex gap-2" role="group" aria-label="资产负债类型">
-      {#each ["", "资产", "负债"] as type}
-        <Button
-          variant={balanceType === type ? "default" : "outline"}
-          aria-pressed={balanceType === type}
-          onclick={() => showView("assets", type)}>{type || "全部"}</Button
-        >
-      {/each}
-    </div>
-  {/if}
-  {#if query.isPending}<Loading />{:else if query.error}<Failure
-      error={query.error}
-      retry={() => query.refetch()}
-    />{:else if data}
-    <div class="flex justify-end sm:hidden">
+  <div
+    class={view === "assets"
+      ? "flex flex-wrap items-center justify-between gap-2"
+      : "flex justify-end sm:hidden"}
+  >
+    {#if view === "assets"}
+      <div class="flex gap-2" role="group" aria-label="资产负债类型">
+        {#each ["", "资产", "负债"] as type}
+          <Button
+            variant={balanceType === type ? "default" : "outline"}
+            aria-pressed={balanceType === type}
+            onclick={() => showView("assets", type)}>{type || "全部"}</Button
+          >
+        {/each}
+      </div>
+    {/if}
+    <div class="ml-auto w-40 shrink-0 sm:hidden">
       <Field
         label="报表月份"
         type="month"
@@ -238,6 +239,11 @@
         }}
       />
     </div>
+  </div>
+  {#if query.isPending}<Loading />{:else if query.error}<Failure
+      error={query.error}
+      retry={() => query.refetch()}
+    />{:else if data}
     {#if view === "overview"}
       <section
         class="finance-card relative overflow-hidden p-5 sm:p-7"
@@ -274,7 +280,7 @@
           </p>
         </div>
       </section>
-      <div class="grid grid-cols-2 gap-3 sm:gap-4">
+      <div class="overview-balances grid grid-cols-2 gap-3 sm:gap-4">
         {#each [{ type: "资产", title: "总资产", value: data.assets, icon: Wallet, color: "bg-asset/10 text-asset" }, { type: "负债", title: "总负债", value: data.liabilities, icon: Landmark, color: "bg-cash-out/10 text-cash-out" }] as item}
           <button
             class="finance-card min-w-0 p-4 text-left transition-colors hover:bg-accent sm:p-5"
@@ -294,14 +300,10 @@
         {/each}
       </div>
     {/if}
-    {#if view === "overview"}<Button
-        variant="ghost"
-        onclick={() => showView("cash")}
-        >查看每日现金流<ChevronRight aria-hidden="true" /></Button
-      >{/if}
     {#if view === "overview" || view === "cash"}<Cashflow
         hidden={masked}
         daily={view === "cash"}
+        onShowDaily={view === "overview" ? () => showView("cash") : undefined}
         snapshot={home.data}
         asOf={data.as_of}
         bind:mode={cashMode}
@@ -324,9 +326,9 @@
               ><ChevronRight aria-hidden="true" /></Button
             >{/if}
         </div>
-        <div class="grid grid-cols-3 divide-x">
+        <div class="summary-metrics grid grid-cols-3 divide-x">
           <div class="min-w-0 pr-3">
-            <p class="text-sm text-muted-foreground">本月收入</p>
+            <p class="text-sm text-muted-foreground">本期收入</p>
             <button
               class="money mt-1 min-h-12 break-words text-left font-semibold sm:text-2xl"
               onclick={() => down({ account_type: "收入" })}
@@ -334,7 +336,7 @@
             >
           </div>
           <div class="min-w-0 px-3">
-            <p class="text-sm text-muted-foreground">本月支出</p>
+            <p class="text-sm text-muted-foreground">本期支出</p>
             <button
               class="money mt-1 min-h-12 break-words text-left font-semibold sm:text-2xl"
               onclick={() => down({ account_type: "支出" })}
@@ -342,7 +344,7 @@
             >
           </div>
           <div class="min-w-0 pl-3">
-            <p class="text-sm text-muted-foreground">本月利润</p>
+            <p class="text-sm text-muted-foreground">本期利润</p>
             <p
               class="money mt-1 min-h-12 content-center break-words font-semibold sm:text-2xl"
             >

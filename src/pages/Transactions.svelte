@@ -1,10 +1,13 @@
 <script lang="ts">
+  import { keepFocusVisible } from "$lib/keep-focus-visible";
   import { useReport, useReportTime } from "$lib/reports";
   import { effectiveEnd } from "$lib/api";
   import { createInfiniteQuery } from "@tanstack/svelte-query";
   import { SlidersHorizontal, Search, ChevronRight, X } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
   import { Badge } from "$lib/components/ui/badge";
+  import { MediaQuery } from "svelte/reactivity";
+  import * as Dialog from "$lib/components/ui/dialog";
   import * as Card from "$lib/components/ui/card";
   import { useApi, useAccounts } from "$lib/context";
   import { router } from "$lib/router.svelte";
@@ -31,6 +34,8 @@
   let visible = $derived(router.location.pathname === "/transactions");
   const accounts = useAccounts(() => visible);
   let expanded = $state(false);
+  const desktop = new MediaQuery("(min-width: 640px)");
+  const filterTriggerId = $props.id();
   let search = $state("");
   let params = $derived(new URLSearchParams(router.location.search));
   let filterKey = $derived(params.toString());
@@ -100,11 +105,11 @@
   $effect(() => {
     const key = "financial.scroll." + filterKey;
     const path = router.location.pathname;
-    if (path !== "/transactions") return;
+    if (path !== "/transactions" || query.isPending) return;
     const savedY = sessionStorage.getItem(key);
-    const frame = savedY
-      ? requestAnimationFrame(() => window.scrollTo(0, Number(savedY)))
-      : null;
+    const frame = requestAnimationFrame(() =>
+      window.scrollTo(0, Number(savedY ?? 0)),
+    );
     const remember = () => sessionStorage.setItem(key, String(window.scrollY));
     window.addEventListener("scroll", remember, { passive: true });
     return () => {
@@ -129,6 +134,45 @@
       label: value === "direct" ? "直接交易" : value || "全部",
     }),
   );
+  const filterDate = (value: string | null, end = false) => {
+    if (!value || !Number.isFinite(Date.parse(value))) return "";
+    return localDateTime(
+      new Date(Date.parse(value) - (end ? 1 : 0)).toISOString(),
+    ).slice(0, 10);
+  };
+  let extraFilters = $derived.by(() => {
+    const selected: { keys: string[]; label: string }[] = [];
+    const start = filterDate(params.get("start"));
+    const end = filterDate(params.get("end"), true);
+    if (start || end)
+      selected.push({
+        keys: ["start", "end"],
+        label: start === end ? start : `${start || "不限"} 至 ${end || "不限"}`,
+      });
+    const accountId = params.get("account_id");
+    if (accountId)
+      selected.push({
+        keys: ["account_id"],
+        label:
+          accounts.data?.find((a) => String(a.id) === accountId)?.name ??
+          `科目 ${accountId}`,
+      });
+    for (const [key, label] of [
+      ["status", statusLabels[params.get("status") || ""]],
+      [
+        "payment_method",
+        channels.find((c) => c.value === params.get("payment_method"))?.label,
+      ],
+      ["posted", "已入账"],
+      ["cash", "现金"],
+      ["matched", "科目已匹配"],
+      ["search", params.get("search")],
+    ]) {
+      if (key && params.get(key) && label)
+        selected.push({ keys: [key], label });
+    }
+    return selected;
+  });
 </script>
 
 <div class="page">
@@ -149,11 +193,11 @@
       retry={() => summary.refetch()}
     />{:else if summary.data}
     <section
-      class="finance-card grid grid-cols-3 divide-x p-4 sm:p-6"
+      class="summary-metrics finance-card grid grid-cols-3 divide-x p-4 sm:p-6"
       aria-label="月度收支"
     >
       {#each [{ label: "收入", value: summary.data.income, type: "收入" }, { label: "支出", value: summary.data.expense, type: "支出" }, { label: "净流入", value: summary.data.cash_net, type: "cash" }] as stat}<button
-          class="min-w-0 px-2 text-left first:pl-0 last:pr-0"
+          class="flex min-w-0 flex-col items-start px-2 text-left first:pl-0 last:pr-0"
           onclick={() =>
             router.navigate(
               "/transactions?" +
@@ -171,7 +215,8 @@
           ><span class="money mt-3 block break-words font-semibold sm:text-2xl"
             >{money(stat.value, hidden)}</span
           >{#if stat.type === "cash" && !hidden && summary.data.trend.length}<span
-              class="mt-2 block"><MiniBars data={summary.data.trend} /></span
+              class="mini-trend mt-2 block w-full overflow-hidden"
+              ><MiniBars data={summary.data.trend} /></span
             >{/if}</button
         >{/each}
     </section>
@@ -202,10 +247,16 @@
     <Button
       variant="ghost"
       size="icon"
+      id={filterTriggerId}
       aria-label="展开筛选"
+      aria-haspopup={desktop.current ? undefined : "dialog"}
+      class="relative"
       aria-expanded={expanded}
       onclick={() => (expanded = !expanded)}
-      ><SlidersHorizontal aria-hidden="true" /></Button
+      ><SlidersHorizontal aria-hidden="true" />{#if extraFilters.length}<span
+          class="absolute top-0 right-0 grid min-w-4 h-4 place-items-center rounded-full bg-primary px-1 text-[10px] text-primary-foreground"
+          >{extraFilters.length}</span
+        >{/if}</Button
     >
   </form>
   <div class="flex flex-wrap gap-2" role="group" aria-label="流水筛选">
@@ -231,99 +282,143 @@
         >{label}</Button
       >{/each}
   </div>
-  {#if params.get("posted") || params.get("cash") || params.get("start") || params.get("end")}<div
+  {#if extraFilters.length}<div
       class="flex flex-wrap gap-2"
       role="group"
       aria-label="已选筛选"
     >
-      {#if params.get("cash")}<Button
+      {#each extraFilters as filter}
+        <Button
           variant="outline"
-          onclick={() => update("cash", "")}
-          >现金<X aria-hidden="true" /></Button
-        >{/if}{#if params.get("posted")}<Button
-          variant="outline"
-          onclick={() => update("posted", "")}
-          >已入账<X aria-hidden="true" /></Button
-        >{/if}{#if params.get("start") || params.get("end")}<Button
-          variant="outline"
-          onclick={() => (expanded = !expanded)}>日期</Button
-        >{/if}<Button variant="ghost" onclick={clear}>清空筛选</Button>
+          class="h-auto min-h-12 max-w-full whitespace-normal text-left"
+          aria-label={`清除筛选：${filter.label}`}
+          onclick={() => {
+            const next = new URLSearchParams(params);
+            filter.keys.forEach((key) => next.delete(key));
+            router.navigate(
+              "/transactions" + (next.size ? "?" + next : ""),
+              true,
+            );
+          }}
+          ><span class="min-w-0 break-words">{filter.label}</span><X
+            class="shrink-0"
+            aria-hidden="true"
+          /></Button
+        >
+      {/each}
+      <Button variant="ghost" onclick={clear}>清空筛选</Button>
     </div>{/if}
-  {#if expanded}<Card.Root
-      ><Card.Content class="space-y-4 p-5">
-        <div class="grid gap-4 sm:grid-cols-2">
-          <Field
-            label="起始日期"
-            type="date"
-            value={params.get("start") &&
-            Number.isFinite(Date.parse(params.get("start")!))
-              ? localDateTime(params.get("start")!).slice(0, 10)
-              : ""}
-            onchange={(e) =>
-              update(
-                "start",
-                e.currentTarget.value
-                  ? e.currentTarget.value + "T00:00:00+08:00"
-                  : "",
-              )}
-          /><Field
-            label="结束日期"
-            type="date"
-            value={params.get("end") &&
-            Number.isFinite(Date.parse(params.get("end")!))
-              ? localDateTime(
-                  new Date(Date.parse(params.get("end")!) - 1).toISOString(),
-                ).slice(0, 10)
-              : ""}
-            onchange={(e) =>
-              update(
-                "end",
-                e.currentTarget.value
-                  ? new Date(
-                      Date.parse(e.currentTarget.value + "T00:00:00+08:00") +
-                        86400000,
-                    ).toISOString()
-                  : "",
-              )}
-          />
+  {#snippet filterFields()}
+    <div class="grid gap-4 sm:grid-cols-2">
+      <Field
+        label="起始日期"
+        type="date"
+        value={params.get("start") &&
+        Number.isFinite(Date.parse(params.get("start")!))
+          ? localDateTime(params.get("start")!).slice(0, 10)
+          : ""}
+        onchange={(e) =>
+          update(
+            "start",
+            e.currentTarget.value
+              ? e.currentTarget.value + "T00:00:00+08:00"
+              : "",
+          )}
+      /><Field
+        label="结束日期"
+        type="date"
+        value={params.get("end") &&
+        Number.isFinite(Date.parse(params.get("end")!))
+          ? localDateTime(
+              new Date(Date.parse(params.get("end")!) - 1).toISOString(),
+            ).slice(0, 10)
+          : ""}
+        onchange={(e) =>
+          update(
+            "end",
+            e.currentTarget.value
+              ? new Date(
+                  Date.parse(e.currentTarget.value + "T00:00:00+08:00") +
+                    86400000,
+                ).toISOString()
+              : "",
+          )}
+      />
+    </div>
+    {#if accounts.error}<Failure
+        error={accounts.error}
+        retry={() => accounts.refetch()}
+      />{:else}<AccountPicker
+        label="科目"
+        accounts={accounts.data || []}
+        value={params.has("account_id")
+          ? Number(params.get("account_id"))
+          : null}
+        onChange={(id) => update("account_id", id ? String(id) : "")}
+      />{/if}
+    <div class="grid gap-4 sm:grid-cols-2">
+      <SelectField
+        label="交易状态"
+        value={params.get("status") || ""}
+        options={statuses}
+        onchange={(v) => update("status", v)}
+      /><SelectField
+        label="支付渠道"
+        value={params.get("payment_method") || ""}
+        options={channels}
+        onchange={(v) => update("payment_method", v)}
+      />
+    </div>
+  {/snippet}
+  {#if desktop.current}
+    {#if expanded}<Card.Root
+        ><Card.Content class="space-y-4 p-5">
+          {@render filterFields()}
+          <Button variant="ghost" onclick={clear}>清空全部筛选</Button>
+        </Card.Content></Card.Root
+      >{/if}
+  {:else}
+    <Dialog.Root bind:open={expanded}>
+      <Dialog.Content
+        showCloseButton={false}
+        class="form-sheet"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          document
+            .getElementById(filterTriggerId)
+            ?.focus({ preventScroll: true });
+        }}
+      >
+        <Dialog.Header
+          class="form-sheet-header flex-row items-center justify-between text-left"
+        >
+          <Dialog.Title>筛选流水</Dialog.Title><Dialog.Description
+            class="sr-only">流水筛选</Dialog.Description
+          >
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="关闭筛选"
+            onclick={() => (expanded = false)}><X aria-hidden="true" /></Button
+          >
+        </Dialog.Header>
+        <div class="form-sheet-body space-y-4" use:keepFocusVisible>
+          {@render filterFields()}
         </div>
-        {#if accounts.error}<Failure
-            error={accounts.error}
-            retry={() => accounts.refetch()}
-          />{:else}<AccountPicker
-            label="科目"
-            accounts={accounts.data || []}
-            value={params.has("account_id")
-              ? Number(params.get("account_id"))
-              : null}
-            onChange={(id) => update("account_id", id ? String(id) : "")}
-          />{/if}
-        <div class="grid gap-4 sm:grid-cols-2">
-          <SelectField
-            label="交易状态"
-            value={params.get("status") || ""}
-            options={statuses}
-            onchange={(v) => update("status", v)}
-          /><SelectField
-            label="支付渠道"
-            value={params.get("payment_method") || ""}
-            options={channels}
-            onchange={(v) => update("payment_method", v)}
-          />
+        <div class="form-sheet-footer">
+          <Button variant="outline" onclick={clear}>清空全部筛选</Button>
+          <Button onclick={() => (expanded = false)}>完成</Button>
         </div>
-        <Button variant="ghost" onclick={clear}>清空全部筛选</Button>
-      </Card.Content></Card.Root
-    >{/if}
-  {#if params.get("matched") === "true"}<Button
-      variant="outline"
-      onclick={() => update("matched", "")}
-      >科目已匹配<X aria-hidden="true" /></Button
-    >{/if}
+      </Dialog.Content>
+    </Dialog.Root>
+  {/if}
   {#if query.isPending}<Loading />{:else if query.error}<Failure
       error={query.error}
       retry={() => query.refetch()}
     />{:else if items.length === 0}<Empty title="暂无交易"
-      ><Button href="/transactions/new">记一笔</Button></Empty
+      >{#if params.size}<Button variant="outline" onclick={clear}
+          >清空筛选</Button
+        >{:else}<Button href="/transactions/new">记一笔</Button>{/if}</Empty
     >{:else}
     <div class="space-y-3">
       {#each items as t, i (t.id)}
@@ -351,7 +446,9 @@
                     hour: "2-digit",
                     minute: "2-digit",
                     timeZone: "Asia/Shanghai",
-                  })} · {t.payment_method || "未填渠道"}
+                  })} · {t.payment_method === "direct"
+                    ? "直接交易"
+                    : t.payment_method || "未填渠道"}
                 </p>
               </div>
             </div>
@@ -363,7 +460,11 @@
                 {t.amount == null ? "金额待补录" : transactionMoney(t, hidden)}
               </p>
               <p class="mt-1 text-xs text-muted-foreground">
-                {t.entry_count > 2 ? "多分录" : kindLabels[t.kind] || "交易"}
+                {t.entry_count > 2
+                  ? "多分录"
+                  : t.kind === "transfer"
+                    ? "划转"
+                    : kindLabels[t.kind] || "交易"}
               </p>
             </div>
           </div>

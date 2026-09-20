@@ -27,6 +27,7 @@
     now,
     mode = $bindable<"future" | "month">("month"),
     daily = false,
+    onShowDaily,
   }: {
     hidden: boolean;
     snapshot?: HomeSnapshot;
@@ -35,6 +36,7 @@
     now: string;
     mode?: "future" | "month";
     daily?: boolean;
+    onShowDaily?: () => void;
   } = $props();
   const api = useApi();
   const accounts = useAccounts(() => !snapshot);
@@ -107,26 +109,32 @@
 </script>
 
 <section class="finance-card p-5 sm:p-7" aria-label="现金流量">
-  <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
+  <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
     <h2 class="flex items-center gap-3">
       <span class="icon-tile bg-cash-in/10 text-cash-in"
         ><ChartNoAxesCombined class="size-5" aria-hidden="true" /></span
       >现金流量
     </h2>
+    {#if onShowDaily}<Button
+        variant="ghost"
+        size="icon"
+        aria-label="查看每日现金流"
+        onclick={onShowDaily}><ChevronRight aria-hidden="true" /></Button
+      >{/if}
     <div
-      class="flex rounded-xl bg-muted p-1"
+      class="flex w-full rounded-xl bg-muted p-1 sm:w-auto"
       role="group"
       aria-label="现金流期间"
     >
       <Button
         variant={mode === "month" ? "default" : "ghost"}
-        class="rounded-lg px-3"
+        class="flex-1 rounded-lg px-3"
         aria-pressed={mode === "month"}
         onclick={() => (mode = "month")}>所选月份</Button
       >
       <Button
         variant={mode === "future" ? "default" : "ghost"}
-        class="rounded-lg px-3"
+        class="flex-1 rounded-lg px-3"
         aria-pressed={mode === "future"}
         onclick={() => (mode = "future")}>未来 30 天</Button
       >
@@ -147,7 +155,7 @@
   {:else if !summary}<Loading />
   {:else}
     <div
-      class="grid gap-7 lg:grid-cols-[minmax(240px,0.8fr)_minmax(0,1.5fr)] lg:gap-10"
+      class="grid gap-5 lg:grid-cols-[minmax(240px,0.8fr)_minmax(0,1.5fr)] lg:gap-10"
     >
       <div>
         <p class="text-sm text-muted-foreground">
@@ -160,7 +168,7 @@
         >
           {money(summary.cash_net, hidden)}
         </p>
-        <div class="mt-6 grid grid-cols-2 gap-3 border-t pt-5">
+        <div class="mt-4 grid grid-cols-2 gap-3 border-t pt-4">
           <div>
             <p class="flex items-center gap-1 text-sm text-muted-foreground">
               <ArrowDownLeft

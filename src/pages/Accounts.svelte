@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { keepFocusVisible } from "$lib/keep-focus-visible";
   import { createMutation, useQueryClient } from "@tanstack/svelte-query";
   import { ArrowLeft, Plus, ChevronRight, Trash2 } from "@lucide/svelte";
   import { Button } from "$lib/components/ui/button";
@@ -18,6 +19,7 @@
   const api = useApi();
   const cache = useQueryClient();
   let search = $state("");
+  let returnFocus: HTMLElement | null = null;
   let editing = $state<Partial<Account> | null>(null);
   let originalId = $state<number | null>(null);
   let id = $state("");
@@ -50,6 +52,10 @@
   );
   let groups = $derived(accountGroups(accounts));
   function edit(account: Partial<Account>) {
+    returnFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     save.reset();
     remove.reset();
     originalId = account.id ?? null;
@@ -78,7 +84,12 @@
       error={query.error}
       retry={() => query.refetch()}
     />
-  {:else if accounts.length === 0}<Empty title="没有匹配的科目" />
+  {:else if accounts.length === 0}<Empty title="没有匹配的科目"
+      >{#if search.trim()}<Button
+          variant="outline"
+          onclick={() => (search = "")}>清空搜索</Button
+        >{:else}<Button onclick={add}>新增科目</Button>{/if}</Empty
+    >
   {:else}
     <div class="space-y-3">
       {#each groups as group (group.type)}
@@ -163,7 +174,11 @@
 >
   <Dialog.Content
     showCloseButton={false}
-    class="max-h-[90dvh] overflow-y-auto"
+    class="form-sheet"
+    onCloseAutoFocus={(event) => {
+      event.preventDefault();
+      returnFocus?.focus({ preventScroll: true });
+    }}
     onEscapeKeydown={(e) => {
       if (busy) e.preventDefault();
     }}
@@ -172,13 +187,24 @@
     }}
   >
     <Dialog.Header
+      class="form-sheet-header flex-row items-center justify-between text-left"
       ><Dialog.Title
         >{originalId !== null ? "修改科目" : "新增科目"}</Dialog.Title
       ><Dialog.Description class="sr-only">科目</Dialog.Description
-      ></Dialog.Header
+      >{#if originalId !== null}<Button
+          variant="ghost"
+          size="icon"
+          class="text-destructive"
+          aria-label="删除科目"
+          disabled={busy || uncertain}
+          onclick={() => {
+            if (window.confirm(`删除科目 ${originalId} ${editing?.name}？`))
+              remove.mutate();
+          }}><Trash2 aria-hidden="true" /></Button
+        >{/if}</Dialog.Header
     >
     {#if editing}<form
-        class="space-y-5"
+        class="flex min-h-0 flex-col"
         onsubmit={(e) => {
           e.preventDefault();
           if (busy || uncertain) return;
@@ -192,70 +218,64 @@
           if (!validation) save.mutate();
         }}
       >
-        {#if validation}<Notice variant="error">{validation}</Notice>{/if}
-        {#if save.error || remove.error}<Notice variant="error"
-            >{errorMessage(save.error || remove.error)}</Notice
-          >{/if}
-        {#if uncertain}<Notice variant="warning"
-            >操作待核对<Button
-              variant="link"
-              onclick={() => {
-                editing = null;
-                void cache.invalidateQueries();
-              }}>查看科目</Button
-            ></Notice
-          >{/if}
-        <fieldset disabled={busy || uncertain} class="min-w-0 space-y-4">
-          <Field
-            label="科目 ID"
-            bind:value={id}
-            inputmode="numeric"
-            maxlength={5}
-            pattern={"[1-5][0-9]{4}"}
-            required
-          />
-          <Field
-            label="科目名称"
-            value={editing.name || ""}
-            oninput={(e) => {
-              if (editing) editing.name = e.currentTarget.value;
-            }}
-            required
-          />
-          <SelectField
-            label="类型"
-            value={editing.type || "资产"}
-            options={types}
-            disabled={busy || uncertain}
-            onchange={(v) => {
-              if (editing) editing.type = v as Account["type"];
-            }}
-          />
-          <Field
-            label="子类"
-            value={editing.subtype || ""}
-            oninput={(e) => {
-              if (editing) editing.subtype = e.currentTarget.value;
-            }}
-            required
-          />
-          <Field
-            label="说明"
-            value={editing.notes || ""}
-            oninput={(e) => {
-              if (editing) editing.notes = e.currentTarget.value;
-            }}
-          />
-        </fieldset>
-        <Dialog.Footer>
-          {#if originalId !== null}<Button
-              variant="destructive"
-              disabled={busy || uncertain}
-              onclick={() => {
-                if (window.confirm(`删除科目 ${originalId} ${editing?.name}？`))
-                  remove.mutate();
-              }}><Trash2 aria-hidden="true" />删除科目</Button
+        <div class="form-sheet-body space-y-4" use:keepFocusVisible>
+          {#if validation}<Notice variant="error">{validation}</Notice>{/if}
+          {#if save.error || remove.error}<Notice variant="error"
+              >{errorMessage(save.error || remove.error)}</Notice
             >{/if}
+          {#if uncertain}<Notice variant="warning"
+              >操作待核对<Button
+                variant="link"
+                onclick={() => {
+                  editing = null;
+                  void cache.invalidateQueries();
+                }}>查看科目</Button
+              ></Notice
+            >{/if}
+          <fieldset disabled={busy || uncertain} class="min-w-0 space-y-4">
+            <Field
+              label="科目 ID"
+              bind:value={id}
+              inputmode="numeric"
+              maxlength={5}
+              pattern={"[1-5][0-9]{4}"}
+              required
+            />
+            <Field
+              label="科目名称"
+              value={editing.name || ""}
+              oninput={(e) => {
+                if (editing) editing.name = e.currentTarget.value;
+              }}
+              required
+            />
+            <SelectField
+              label="类型"
+              value={editing.type || "资产"}
+              options={types}
+              disabled={busy || uncertain}
+              onchange={(v) => {
+                if (editing) editing.type = v as Account["type"];
+              }}
+            />
+            <Field
+              label="子类"
+              value={editing.subtype || ""}
+              oninput={(e) => {
+                if (editing) editing.subtype = e.currentTarget.value;
+              }}
+              required
+            />
+            <Field
+              label="说明"
+              value={editing.notes || ""}
+              oninput={(e) => {
+                if (editing) editing.notes = e.currentTarget.value;
+              }}
+            />
+          </fieldset>
+        </div>
+        <Dialog.Footer class="form-sheet-footer">
           <Button
             variant="outline"
             disabled={busy}
