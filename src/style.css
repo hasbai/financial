@@ -417,3 +417,31 @@ html {
     padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
   }
 }
+
+/* Keep complete amounts together on the narrowest phones. */
+@media (max-width: 359px) {
+  .summary-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .summary-metrics > * {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 48px;
+    padding: 0;
+    border: 0;
+  }
+  .summary-metrics > * + * {
+    border-top: 1px solid var(--border);
+  }
+  .summary-metrics .money {
+    margin-top: 0;
+    min-height: 48px;
+    align-content: center;
+  }
+  .summary-metrics .mini-trend {
+    display: none;
+  }
+}

@@ -192,7 +192,7 @@
       retry={() => summary.refetch()}
     />{:else if summary.data}
     <section
-      class="finance-card grid grid-cols-3 divide-x p-4 sm:p-6"
+      class="summary-metrics finance-card grid grid-cols-3 divide-x p-4 sm:p-6"
       aria-label="月度收支"
     >
       {#each [{ label: "收入", value: summary.data.income, type: "收入" }, { label: "支出", value: summary.data.expense, type: "支出" }, { label: "净流入", value: summary.data.cash_net, type: "cash" }] as stat}<button
@@ -214,7 +214,7 @@
           ><span class="money mt-3 block break-words font-semibold sm:text-2xl"
             >{money(stat.value, hidden)}</span
           >{#if stat.type === "cash" && !hidden && summary.data.trend.length}<span
-              class="mt-2 block w-full overflow-hidden"
+              class="mini-trend mt-2 block w-full overflow-hidden"
               ><MiniBars data={summary.data.trend} /></span
             >{/if}</button
         >{/each}

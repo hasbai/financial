@@ -326,7 +326,7 @@
               ><ChevronRight aria-hidden="true" /></Button
             >{/if}
         </div>
-        <div class="grid grid-cols-3 divide-x">
+        <div class="summary-metrics grid grid-cols-3 divide-x">
           <div class="min-w-0 pr-3">
             <p class="text-sm text-muted-foreground">本期收入</p>
             <button

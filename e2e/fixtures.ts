@@ -134,7 +134,9 @@ export async function fitsViewport(page: Page) {
   expect(width.content).toBeLessThanOrEqual(width.viewport);
 }
 export async function reachable(control: Locator) {
-  await expect(control).toBeInViewport({ ratio: 1 });
+  // WebKit can report 0.999902 for a fully visible fractional-width grid cell.
+  // Allow subpixel intersection rounding, then bound each edge geometrically.
+  await expect(control).toBeInViewport({ ratio: 0.999 });
   // Closing animations and Bits UI's deferred scroll/pointer unlock can finish
   // after the panel detaches. Require eventual hitability without a fixed sleep.
   await expect
@@ -153,8 +155,20 @@ export async function reachable(control: Locator) {
     .toBe(true);
   const target = await control.evaluate((el) => {
     const r = el.getBoundingClientRect();
-    return { width: r.width, height: r.height };
+    const v = window.visualViewport;
+    return {
+      width: r.width,
+      height: r.height,
+      left: r.left - (v?.offsetLeft ?? 0),
+      top: r.top - (v?.offsetTop ?? 0),
+      right: r.right - (v?.offsetLeft ?? 0) - (v?.width ?? innerWidth),
+      bottom: r.bottom - (v?.offsetTop ?? 0) - (v?.height ?? innerHeight),
+    };
   });
+  expect(target.left).toBeGreaterThanOrEqual(-0.5);
+  expect(target.top).toBeGreaterThanOrEqual(-0.5);
+  expect(target.right).toBeLessThanOrEqual(0.5);
+  expect(target.bottom).toBeLessThanOrEqual(0.5);
   expect(target.width).toBeGreaterThanOrEqual(48);
   expect(target.height).toBeGreaterThanOrEqual(48);
 }
