@@ -19,7 +19,10 @@
         "overview",
         "overview-loading",
         "overview-empty",
-        "overview-error"
+        "overview-error",
+        "assets-report",
+        "cash-report",
+        "profit-report"
       ]
     },
     {
@@ -28,7 +31,8 @@
         "transactions",
         "transactions-loading",
         "transactions-empty",
-        "transactions-error"
+        "transactions-error",
+        "transaction-filters"
       ]
     },
     {
@@ -48,14 +52,13 @@
         "editor",
         "editor-loading",
         "editor-empty",
-        "editor-error"
+        "editor-error",
+        "income-split"
       ]
     },
     {
       "source": "src/pages/Settings.svelte",
-      "scenarios": [
-        "settings"
-      ]
+      "scenarios": ["settings"]
     },
     {
       "source": "src/pages/Accounts.svelte",
@@ -63,7 +66,8 @@
         "accounts",
         "accounts-loading",
         "accounts-empty",
-        "accounts-error"
+        "accounts-error",
+        "account-short-dark"
       ]
     }
   ],
@@ -77,24 +81,14 @@
         {
           "spec": "e2e/mobile.spec.ts",
           "test": "overview, privacy and dark appearance",
-          "projects": [
-            "iphone",
-            "iphone-se",
-            "android"
-          ],
-          "snapshots": [
-            "overview.png"
-          ]
+          "projects": ["iphone", "iphone-se", "android"],
+          "snapshots": ["overview.png"]
         },
         {
           "spec": "e2e/desktop.spec.ts",
           "test": "desktop overview and keyboard editor dialog",
-          "projects": [
-            "desktop"
-          ],
-          "snapshots": [
-            "overview.png"
-          ]
+          "projects": ["desktop"],
+          "snapshots": ["overview.png"]
         }
       ]
     },
@@ -107,14 +101,8 @@
         {
           "spec": "e2e/mobile.spec.ts",
           "test": "transaction list opens a mobile editor and searchable account picker",
-          "projects": [
-            "iphone",
-            "iphone-se",
-            "android"
-          ],
-          "snapshots": [
-            "transactions.png"
-          ]
+          "projects": ["iphone", "iphone-se", "android"],
+          "snapshots": ["transactions.png"]
         }
       ]
     },
@@ -127,14 +115,8 @@
         {
           "spec": "e2e/mobile.spec.ts",
           "test": "new transaction category and payment sheets remain reachable after scrolling and resizing",
-          "projects": [
-            "iphone",
-            "iphone-se",
-            "android"
-          ],
-          "snapshots": [
-            "new-transaction.png"
-          ]
+          "projects": ["iphone", "iphone-se", "android"],
+          "snapshots": ["new-transaction.png"]
         }
       ]
     },
@@ -147,14 +129,8 @@
         {
           "spec": "e2e/mobile.spec.ts",
           "test": "transaction list opens a mobile editor and searchable account picker",
-          "projects": [
-            "iphone",
-            "iphone-se",
-            "android"
-          ],
-          "snapshots": [
-            "editor.png"
-          ]
+          "projects": ["iphone", "iphone-se", "android"],
+          "snapshots": ["editor.png"]
         }
       ]
     },
@@ -167,14 +143,8 @@
         {
           "spec": "e2e/mobile.spec.ts",
           "test": "settings, accounts and new transaction navigation",
-          "projects": [
-            "iphone",
-            "iphone-se",
-            "android"
-          ],
-          "snapshots": [
-            "settings.png"
-          ]
+          "projects": ["iphone", "iphone-se", "android"],
+          "snapshots": ["settings.png"]
         }
       ]
     },
@@ -187,14 +157,8 @@
         {
           "spec": "e2e/mobile.spec.ts",
           "test": "settings, accounts and new transaction navigation",
-          "projects": [
-            "iphone",
-            "iphone-se",
-            "android"
-          ],
-          "snapshots": [
-            "accounts.png"
-          ]
+          "projects": ["iphone", "iphone-se", "android"],
+          "snapshots": ["accounts.png"]
         }
       ]
     },
@@ -207,12 +171,8 @@
         {
           "spec": "e2e/states.spec.ts",
           "test": "overview loading",
-          "projects": [
-            "iphone"
-          ],
-          "snapshots": [
-            "overview-loading.png"
-          ]
+          "projects": ["iphone"],
+          "snapshots": ["overview-loading.png"]
         }
       ]
     },
@@ -225,12 +185,8 @@
         {
           "spec": "e2e/states.spec.ts",
           "test": "overview empty",
-          "projects": [
-            "iphone"
-          ],
-          "snapshots": [
-            "overview-empty.png"
-          ]
+          "projects": ["iphone"],
+          "snapshots": ["overview-empty.png"]
         }
       ]
     },
@@ -243,12 +199,8 @@
         {
           "spec": "e2e/states.spec.ts",
           "test": "overview error",
-          "projects": [
-            "iphone"
-          ],
-          "snapshots": [
-            "overview-error.png"
-          ]
+          "projects": ["iphone"],
+          "snapshots": ["overview-error.png"]
         }
       ]
     },
@@ -261,12 +213,8 @@
         {
           "spec": "e2e/states.spec.ts",
           "test": "transactions loading",
-          "projects": [
-            "iphone"
-          ],
-          "snapshots": [
-            "transactions-loading.png"
-          ]
+          "projects": ["iphone"],
+          "snapshots": ["transactions-loading.png"]
         }
       ]
     },
@@ -279,12 +227,8 @@
         {
           "spec": "e2e/states.spec.ts",
           "test": "transactions empty",
-          "projects": [
-            "iphone"
-          ],
-          "snapshots": [
-            "transactions-empty.png"
-          ]
+          "projects": ["iphone"],
+          "snapshots": ["transactions-empty.png"]
         }
       ]
     },
@@ -297,12 +241,8 @@
         {
           "spec": "e2e/states.spec.ts",
           "test": "transactions error",
-          "projects": [
-            "iphone"
-          ],
-          "snapshots": [
-            "transactions-error.png"
-          ]
+          "projects": ["iphone"],
+          "snapshots": ["transactions-error.png"]
         }
       ]
     },
@@ -315,12 +255,8 @@
         {
           "spec": "e2e/states.spec.ts",
           "test": "editor loading",
-          "projects": [
-            "iphone"
-          ],
-          "snapshots": [
-            "editor-loading.png"
-          ]
+          "projects": ["iphone"],
+          "snapshots": ["editor-loading.png"]
         }
       ]
     },
@@ -333,12 +269,8 @@
         {
           "spec": "e2e/states.spec.ts",
           "test": "editor empty",
-          "projects": [
-            "iphone"
-          ],
-          "snapshots": [
-            "editor-empty.png"
-          ]
+          "projects": ["iphone"],
+          "snapshots": ["editor-empty.png"]
         }
       ]
     },
@@ -351,12 +283,8 @@
         {
           "spec": "e2e/states.spec.ts",
           "test": "editor error",
-          "projects": [
-            "iphone"
-          ],
-          "snapshots": [
-            "editor-error.png"
-          ]
+          "projects": ["iphone"],
+          "snapshots": ["editor-error.png"]
         }
       ]
     },
@@ -369,12 +297,8 @@
         {
           "spec": "e2e/states.spec.ts",
           "test": "accounts loading",
-          "projects": [
-            "iphone"
-          ],
-          "snapshots": [
-            "accounts-loading.png"
-          ]
+          "projects": ["iphone"],
+          "snapshots": ["accounts-loading.png"]
         }
       ]
     },
@@ -387,12 +311,8 @@
         {
           "spec": "e2e/states.spec.ts",
           "test": "accounts empty",
-          "projects": [
-            "iphone"
-          ],
-          "snapshots": [
-            "accounts-empty.png"
-          ]
+          "projects": ["iphone"],
+          "snapshots": ["accounts-empty.png"]
         }
       ]
     },
@@ -405,12 +325,92 @@
         {
           "spec": "e2e/states.spec.ts",
           "test": "accounts error",
-          "projects": [
-            "iphone"
-          ],
-          "snapshots": [
-            "accounts-error.png"
-          ]
+          "projects": ["iphone"],
+          "snapshots": ["accounts-error.png"]
+        }
+      ]
+    },
+    {
+      "id": "assets-report",
+      "url": "/?view=assets",
+      "kind": "screenshot",
+      "state": "normal",
+      "evidence": [
+        {
+          "spec": "e2e/mobile.spec.ts",
+          "test": "mobile report panels keep readable charts and explicit date drilldowns",
+          "projects": ["iphone", "iphone-se", "android"],
+          "snapshots": ["assets-report.png"]
+        }
+      ]
+    },
+    {
+      "id": "cash-report",
+      "url": "/?view=cash",
+      "kind": "screenshot",
+      "state": "normal",
+      "evidence": [
+        {
+          "spec": "e2e/mobile.spec.ts",
+          "test": "mobile report panels keep readable charts and explicit date drilldowns",
+          "projects": ["iphone", "iphone-se", "android"],
+          "snapshots": ["cash-report.png"]
+        }
+      ]
+    },
+    {
+      "id": "profit-report",
+      "url": "/?view=profit",
+      "kind": "screenshot",
+      "state": "normal",
+      "evidence": [
+        {
+          "spec": "e2e/mobile.spec.ts",
+          "test": "mobile report panels keep readable charts and explicit date drilldowns",
+          "projects": ["iphone", "iphone-se", "android"],
+          "snapshots": ["profit-report.png"]
+        }
+      ]
+    },
+    {
+      "id": "transaction-filters",
+      "url": "/transactions?posted=true",
+      "kind": "screenshot",
+      "state": "filters",
+      "evidence": [
+        {
+          "spec": "e2e/mobile.spec.ts",
+          "test": "mobile filters preserve context through nested sheets and clear individually",
+          "projects": ["iphone", "iphone-se", "android"],
+          "snapshots": ["transaction-filters.png", "transaction-filtered.png"]
+        }
+      ]
+    },
+    {
+      "id": "income-split",
+      "url": "/transactions/new",
+      "kind": "screenshot",
+      "state": "split-income",
+      "evidence": [
+        {
+          "spec": "e2e/mobile.spec.ts",
+          "test": "split income keeps account names and amounts usable on mobile",
+          "projects": ["iphone", "iphone-se", "android"],
+          "snapshots": ["income-split.png"]
+        }
+      ]
+    },
+    {
+      "id": "account-short-dark",
+      "url": "/accounts",
+      "kind": "screenshot",
+      "state": "dark-short-viewport",
+      "evidence": [
+        {
+          "spec": "e2e/states.spec.ts",
+          "test": "account sheet keeps actions visible in a short dark viewport",
+          "projects": ["iphone"],
+          "snapshots": ["account-short-dark.png"]
         }
       ]
     }
@@ -418,22 +418,11 @@
   "router": {
     "source": "src/Shell.svelte",
     "paths": {
-      "/": [
-        "overview"
-      ],
-      "/transactions": [
-        "transactions"
-      ],
-      "/transactions/": [
-        "new",
-        "editor"
-      ],
-      "/settings": [
-        "settings"
-      ],
-      "/accounts": [
-        "accounts"
-      ]
+      "/": ["overview"],
+      "/transactions": ["transactions"],
+      "/transactions/": ["new", "editor"],
+      "/settings": ["settings"],
+      "/accounts": ["accounts"]
     }
   }
 }

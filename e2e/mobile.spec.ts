@@ -249,7 +249,9 @@ test("settings, accounts and new transaction navigation", async ({
   app,
 }) => {
   await app.open("/settings");
-  await expect(page.getByRole("heading", { name: "设置", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "设置", exact: true }),
+  ).toBeVisible();
   await fitsViewport(page);
   await expect(page).toHaveScreenshot("settings.png", { fullPage: true });
   await page.getByRole("link", { name: "科目", exact: true }).click();
@@ -286,4 +288,105 @@ test("new transaction saves to list and existing transaction can be deleted", as
   await page.getByRole("button", { name: "删除交易", exact: true }).click();
   expect((await request).postDataJSON()).toMatchObject({ p_id: 7 });
   await expect(page.getByRole("heading", { name: "交易流水" })).toBeVisible();
+});
+
+test("mobile report panels keep readable charts and explicit date drilldowns", async ({
+  page,
+  app,
+}) => {
+  await app.open();
+  await page.getByRole("button", { name: "资产负债", exact: true }).click();
+  await expect(page.getByRole("region", { name: "科目余额" })).toBeVisible();
+  await fitsViewport(page);
+  await expect(page).toHaveScreenshot("assets-report.png", { fullPage: true });
+  await page.getByRole("button", { name: "现金流量", exact: true }).click();
+  await expect(
+    page.getByRole("img", { name: "每日现金流入与流出柱状图" }),
+  ).toBeVisible();
+  await expect(page).toHaveScreenshot("cash-report.png", { fullPage: true });
+  await page.getByRole("button", { name: "损益", exact: true }).click();
+  const chart = page.getByRole("img", { name: "本期收入及支出趋势" });
+  await expect(chart).toBeVisible();
+  expect(
+    await chart
+      .locator("text")
+      .first()
+      .evaluate((el) => {
+        const m = (el as SVGGraphicsElement).getScreenCTM()!;
+        return parseFloat(getComputedStyle(el).fontSize) * Math.hypot(m.a, m.b);
+      }),
+  ).toBeGreaterThanOrEqual(11);
+  await expect(page).toHaveScreenshot("profit-report.png", { fullPage: true });
+  const details = page
+    .locator("summary")
+    .filter({ hasText: "查看每日趋势明细" });
+  await details.scrollIntoViewIfNeeded();
+  await reachable(details);
+  await details.click();
+  await page.getByRole("link", { name: "2026-09-08", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "交易流水" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "已选筛选" })).toContainText(
+    "2026-09-08",
+  );
+  await expect.poll(() => page.evaluate(() => scrollY)).toBe(0);
+  await fitsViewport(page);
+});
+
+test("mobile filters preserve context through nested sheets and clear individually", async ({
+  page,
+  app,
+}) => {
+  await app.open(
+    "/transactions?start=2026-09-08T00:00:00%2B08:00&end=2026-09-09T00:00:00%2B08:00&posted=true",
+  );
+  await page.getByRole("button", { name: "展开筛选" }).click();
+  const filters = page.getByRole("dialog", { name: "筛选流水" });
+  await sheetFitsViewport(filters);
+  await reachable(filters.getByRole("button", { name: "完成", exact: true }));
+  await expect(page).toHaveScreenshot("transaction-filters.png");
+  await filters.getByRole("combobox", { name: "支付渠道" }).click();
+  await page
+    .getByRole("dialog", { name: "选择支付渠道" })
+    .getByRole("button", { name: "直接交易" })
+    .click();
+  await expect(
+    filters.getByRole("combobox", { name: "支付渠道" }),
+  ).toBeFocused();
+  await filters.getByRole("button", { name: "完成", exact: true }).click();
+  await expect(filters).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "展开筛选" })).toBeFocused();
+  const selected = page.getByRole("group", { name: "已选筛选" });
+  await expect(selected).toContainText("2026-09-08");
+  await expect(selected).toContainText("直接交易");
+  await expect(page).toHaveScreenshot("transaction-filtered.png", {
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "清除筛选：直接交易" }).click();
+  await expect(page).not.toHaveURL(/payment_method/);
+  await expect(selected).toContainText("2026-09-08");
+  await page.getByRole("button", { name: "清除筛选：2026-09-08" }).click();
+  await expect(page).not.toHaveURL(/start=/);
+  await expect(selected).toContainText("已入账");
+  await page.getByRole("button", { name: "清空筛选", exact: true }).click();
+  await expect(selected).toHaveCount(0);
+});
+
+test("split income keeps account names and amounts usable on mobile", async ({
+  page,
+  app,
+}) => {
+  await app.open("/transactions/new");
+  await page.getByRole("button", { name: "收入", exact: true }).click();
+  await page.getByRole("button", { name: "添加扣款" }).click();
+  await page.getByRole("button", { name: "拆分分类" }).click();
+  const category = page.getByRole("combobox", { name: "分类 2", exact: true });
+  await category.click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("combobox", { name: "搜索分类" }).fill("40101");
+  await dialog.getByRole("option", { name: /工资收入/ }).click();
+  await expect(category).toContainText("工资收入");
+  await expect(category).toBeFocused();
+  await fitsViewport(page);
+  await reachable(page.getByRole("button", { name: "保存交易" }));
+  await expect(page).toHaveScreenshot("income-split.png");
 });

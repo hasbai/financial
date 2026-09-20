@@ -169,10 +169,10 @@ test("refund and transaction filter sheets fit short and landscape viewports", a
   await app.open("/transactions");
   await page.getByRole("button", { name: "展开筛选", exact: true }).click();
   await page.getByRole("combobox", { name: "科目", exact: true }).click();
-  await sheetFitsViewport(page.getByRole("dialog"));
+  await sheetFitsViewport(page.getByRole("dialog", { name: "选择科目" }));
   await page.keyboard.press("Escape");
   await page.getByRole("combobox", { name: "交易状态", exact: true }).click();
-  await sheetFitsViewport(page.getByRole("dialog"));
+  await sheetFitsViewport(page.getByRole("dialog", { name: "选择交易状态" }));
   await page.keyboard.press("Escape");
   await fitsViewport(page);
 });
@@ -237,4 +237,32 @@ test("account hierarchy searches by ID, edits identity and deletes after confirm
   await dialog.getByRole("button", { name: "删除科目" }).click();
   expect((await deleted).postDataJSON()).toEqual({ p_id: 10101 });
   await expect(dialog).toHaveCount(0);
+});
+
+test("account sheet keeps actions visible in a short dark viewport", async ({
+  page,
+  app,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.setViewportSize({ width: 375, height: 420 });
+  await app.open("/accounts");
+  await page.getByRole("button", { name: "新增科目", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "新增科目" });
+  await sheetFitsViewport(dialog);
+  await reachable(dialog.getByRole("button", { name: "保存科目" }));
+  await reachable(dialog.getByRole("button", { name: "取消", exact: true }));
+  const notes = dialog.getByRole("textbox", { name: "说明", exact: true });
+  await notes.fill("保留未保存输入");
+  await reachable(notes);
+  await expect(
+    dialog.getByRole("heading", { name: "新增科目" }),
+  ).toBeInViewport();
+  await expect(page).toHaveScreenshot("account-short-dark.png");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole("searchbox", { name: "搜索科目" }).fill("不存在");
+  await page.getByRole("button", { name: "清空搜索" }).click();
+  await expect(page.getByRole("searchbox", { name: "搜索科目" })).toHaveValue(
+    "",
+  );
 });

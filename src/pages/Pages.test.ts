@@ -444,3 +444,38 @@ it("retains a referenced account on delete rejection and deletes only after conf
   await fireEvent.click(screen.getByRole("button", { name: "删除科目" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
+
+it("exposes hidden filter values and removes one without losing the others", async () => {
+  const { api } = setup("transactions");
+  await screen.findByText("示例消费");
+  router.navigate(
+    "/transactions?account_id=1&payment_method=direct&status=pending&posted=true&start=2026-09-08T00:00:00%2B08:00&end=2026-09-09T00:00:00%2B08:00",
+    true,
+  );
+  const chips = await screen.findByRole("group", { name: "已选筛选" });
+  expect(within(chips).getByText(accounts[0].name)).toBeTruthy();
+  expect(within(chips).getByText("2026-09-08")).toBeTruthy();
+  expect(within(chips).getByText("处理中")).toBeTruthy();
+  await fireEvent.click(
+    within(chips).getByRole("button", { name: "清除筛选：直接交易" }),
+  );
+  await waitFor(() =>
+    expect(api.list).toHaveBeenLastCalledWith(
+      {
+        account_id: "1",
+        status: "pending",
+        posted: "true",
+        start: "2026-09-08T00:00:00+08:00",
+        end: "2026-09-09T00:00:00+08:00",
+      },
+      null,
+    ),
+  );
+  await fireEvent.click(
+    within(chips).getByRole("button", { name: "清除筛选：2026-09-08" }),
+  );
+  expect(new URLSearchParams(router.location.search).has("start")).toBe(false);
+  expect(new URLSearchParams(router.location.search).get("account_id")).toBe(
+    "1",
+  );
+});

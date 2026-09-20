@@ -163,14 +163,32 @@
     >
   </div>
   {#each groups as role}
-    <section class="min-w-0 space-y-2 border-t pt-3" aria-label={heading(role)}>
-      <h2 class="text-base">{heading(role)}</h2>
+    <section class="min-w-0 border-t pt-1" aria-label={heading(role)}>
+      <div class="flex min-h-12 items-center justify-between gap-2">
+        <h2 class="text-base">{heading(role)}</h2>
+        <Button
+          class="shrink-0 px-2 text-muted-foreground"
+          variant="ghost"
+          disabled={disabled || entries.length >= 100}
+          onclick={() => add(role)}
+          ><Plus aria-hidden="true" />{role === "category"
+            ? "拆分分类"
+            : role === "deduction"
+              ? "添加扣款"
+              : layout.type === "转账"
+                ? `添加${heading(role)}`
+                : "添加账户"}</Button
+        >
+      </div>
       <div class="min-w-0 divide-y">
         {#each entries as entry, i}
           {#if layout.roles[i] === role}
             <div class="min-w-0 py-1">
-              <div class="flex min-w-0 items-center gap-1">
-                <div class="min-w-0 flex-1">
+              <div class="flex min-w-0 flex-wrap items-center gap-1">
+                <div
+                  class="min-w-0 flex-1"
+                  class:basis-full={role === "deduction" || count(role) > 1}
+                >
                   <AccountPicker
                     compact
                     label={role === "category" && count(role) === 1
@@ -185,7 +203,10 @@
                   />
                 </div>
                 {#if !(entries.length === 2 && role === "account")}
-                  <div class="w-28 shrink-0">
+                  <div
+                    class="ml-auto w-28 shrink-0"
+                    class:flex-1={role === "deduction" || count(role) > 1}
+                  >
                     <Field
                       compact
                       label={entries.length === 2 && role === "category"
@@ -217,19 +238,6 @@
           {/if}
         {/each}
       </div>
-      <Button
-        class="w-full"
-        variant="ghost"
-        disabled={disabled || entries.length >= 100}
-        onclick={() => add(role)}
-        ><Plus aria-hidden="true" />{role === "category"
-          ? "拆分分类"
-          : role === "deduction"
-            ? "添加扣款"
-            : layout.type === "转账"
-              ? `添加${heading(role)}`
-              : "添加账户"}</Button
-      >
     </section>
   {/each}
   {#if layout.type === "收入" || entries.length > 2 || layout.type === "转账"}
