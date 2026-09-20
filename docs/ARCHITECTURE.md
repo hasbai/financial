@@ -47,7 +47,7 @@ Data API 的 JWT 校验发生在 Neon，PostgreSQL 根据 superadmin 的 schema 
 
 `wrangler.jsonc` 配置 Worker financial、dist 静态目录、single-page-application 回退与 financial.hasbai.xyz 自定义域名。`public/_headers` 配置缓存、安全头。推送 main 后由 Cloudflare Workers Builds 自动构建并部署，不重复执行手动 Wrangler 发布。
 
-GitHub Actions进行frozen-lockfile安装、typecheck、test:coverage、build，独立macOS 26任务运行WebKit/Chromium Playwright并保留截图/trace；无需Docker。本地不运行上述自动化验收，主代理修改提交后由新子代理推送功能分支并跟踪CI，最新提交的check/visual均成功且同步main后通过PR合并。仓库已公开，main已启用上述强制保护且管理员不能绕过；基线流程见[TESTING](TESTING.md)。测试入口不进入生产构建。数据库迁移仍先隔离验证再生产迁移/API核验，不遗漏兼容步骤；PR合并后子代理核验Cloudflare自动部署和线上资源。生产发布状态记录在[PROGRESS](PROGRESS.md)。
+GitHub Actions只在PR创建/更新时进行完整验收（手动dispatch保留候选与排障），功能分支push和合并后的main push不重复运行。完整验收进行frozen-lockfile安装、typecheck、test:coverage、build，独立macOS 26任务运行WebKit/Chromium Playwright并保留截图/trace；无需Docker。本地不运行上述自动化验收，主代理修改提交后由新子代理推送功能分支并跟踪CI，最新提交的check/visual均成功且同步main后通过PR合并。仓库已公开，main已启用上述强制保护且管理员不能绕过；基线流程见[TESTING](TESTING.md)。测试入口不进入生产构建。数据库迁移仍先隔离验证再生产迁移/API核验，不遗漏兼容步骤；PR合并后子代理核验Cloudflare自动部署和线上资源。生产发布状态记录在[PROGRESS](PROGRESS.md)。
 
 回滚优先退回 Worker 版本；数据库不新增字段、不删除原数据。共享 Neon endpoint 的 provider 配置修改前必须核查原消费者；不调整其他 Auth0 application。
 
