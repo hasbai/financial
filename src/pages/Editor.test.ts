@@ -654,8 +654,10 @@ it("creates an account without submitting or resetting the edited transaction", 
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "保存并选中" })).toBeNull(),
   );
-  expect(screen.getByRole("combobox", { name: "账户" }).textContent).toContain(
-    "旅行钱包",
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "账户" }).textContent,
+    ).toContain("旅行钱包"),
   );
   expect(
     (screen.getByLabelText("金额（人民币）") as HTMLInputElement).value,
