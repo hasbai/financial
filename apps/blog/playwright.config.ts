@@ -40,7 +40,7 @@ export default defineConfig({
   webServer: [
     {
       command: "node e2e/api.mjs",
-      url: "http://127.0.0.1:4190/rest/v1/category",
+      url: "http://127.0.0.1:4180/rest/v1/category",
       timeout: 30_000,
       reuseExistingServer: false,
     },
@@ -50,11 +50,8 @@ export default defineConfig({
       timeout: 30_000,
       reuseExistingServer: false,
       env: {
-        NODE_USE_ENV_PROXY: "0",
-        NO_PROXY: "127.0.0.1,localhost",
-        no_proxy: "127.0.0.1,localhost",
-        PUBLIC_DATA_API_URL: "http://127.0.0.1:4190/rest/v1",
-        PUBLIC_ANONYMOUS_AUTH_URL: "http://127.0.0.1:4190/auth",
+        PUBLIC_DATA_API_URL: "http://127.0.0.1:4180/rest/v1",
+        PUBLIC_ANONYMOUS_AUTH_URL: "http://127.0.0.1:4180/auth",
       },
     },
   ],
