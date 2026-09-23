@@ -41,11 +41,13 @@ export default defineConfig({
     {
       command: "node e2e/api.mjs",
       url: "http://127.0.0.1:4190/rest/v1/category",
+      timeout: 30_000,
       reuseExistingServer: false,
     },
     {
       command: "pnpm preview",
-      url: "http://127.0.0.1:4174",
+      url: "http://127.0.0.1:4174/favicon.svg",
+      timeout: 30_000,
       reuseExistingServer: false,
       env: {
         PUBLIC_DATA_API_URL: "http://127.0.0.1:4190/rest/v1",

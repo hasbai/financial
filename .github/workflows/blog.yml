@@ -79,11 +79,13 @@ jobs:
       - run: pnpm exec vite build --mode e2e
         env:
           VISUAL_COVERAGE_GATE: '1'
+          DEBUG: pw:webserver
           PUBLIC_DATA_API_URL: http://127.0.0.1:4190/rest/v1
           PUBLIC_ANONYMOUS_AUTH_URL: http://127.0.0.1:4190/auth
       - run: pnpm test:e2e ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && '--update-snapshots=all' || '' }}
         env:
           VISUAL_COVERAGE_GATE: '1'
+          DEBUG: pw:webserver
           PUBLIC_DATA_API_URL: http://127.0.0.1:4190/rest/v1
           PUBLIC_ANONYMOUS_AUTH_URL: http://127.0.0.1:4190/auth
       - if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
