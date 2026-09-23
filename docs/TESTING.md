@@ -22,7 +22,7 @@ git diff --check
 
 `pnpm test:e2e:update`仅在初次建基线、设计变更或明确的浏览器/系统升级时，由功能分支的显式workflow dispatch执行。普通运行使用`updateSnapshots: none`，缺少图片或超出差异即失败；PR的CI不自动更新、不重试掩盖不稳定。显式触发Check workflow的`update_visual_baselines`只执行一次完整候选生成（保留交互与覆盖清单断言），不在候选内部再全量复跑；它不自动提交，取回并核对后提交，随后普通PR必须严格比较通过。候选运行只产生`candidate-check`与`visual-baseline-candidates`状态，不能满足或覆盖分支保护要求的`check`/`visual`。额外稳定性复跑只用于已复现抖动或明确排障，并记录原因。报告保留expected/actual/diff和失败trace。日常不要求人工或AI逐页看图，有意设计变更仍需核对差异。
 
-GitHub Actions `Deploy Financial` 和 `Deploy Blog` 仅在 main 推送及各自目录/共享依赖变化时运行，不作为 PR 验收，也不在 main 额外执行 check/visual。自动部署使用 Keychain root token 派生的受限 GitHub Secret。线上版本与 Worker 部署结果仍须分别核验。
+财务与博客在 Cloudflare 后台分别配置 main 自动构建和路径过滤；GitHub Actions 只负责 PR 验收，不部署。具体 Cloudflare 配置由用户在后台完成，设置完成后分别核验 Worker 构建和线上版本。
 
 ## 推送与合并
 

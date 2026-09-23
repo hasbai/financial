@@ -50,4 +50,4 @@ CI 等待统一使用 `node scripts/wait-ci.mjs <owner/repo> <run-id> <full-sha>
 完整 CI 只随 PR 创建/更新运行；功能分支 push 和合并后的 main push 均不另触发测试，手动 workflow dispatch 仅用于候选生成或明确排障。严格分支保护继续要求最新 main 及当前 PR 的 check/visual 成功；main 前进导致分支过期时先更新分支，验收新提交，不能沿用过期结果。页面修改维护 `visual-coverage.json` 的页面/状态/设备证据；新增页面未登记会被门禁拒绝。视觉基线只在有意设计变更时，在创建 PR 前主动显式对功能分支dispatch `Check` workflow并启用`update_visual_baselines`，从CI下载候选工件至工作树外，核对后用 `pnpm visual:baseline:import <目录> --reviewed` 导入；HEAD 必须匹配候选 SHA。随后普通PR必须在不更新基线的模式下通过；CI不自动接受变化，无需Docker。详见docs/TESTING.md。仓库现为public，main已强制PR、最新main及check/visual成功，管理员也不能绕过；禁止强推和删除main。
 数据库验证用 `scripts/test-database.mjs`，连接串从 stdin 传入，所有测试写入在事务中回滚。不得输出凭据。
 
-独立区分自动化、真实 JWT/API、浏览器与部署验收。完成修改时，必要的生产数据库迁移、提交、推送属于同一次交付，不再另行等待发布授权。涉及数据库时先在隔离 Neon 分支验证，再迁移生产并核验真实 API，然后仅暂存任务文件、提交，由子代理推送功能分支并核验CI。PR合并到main后由独立的 Deploy Financial/Deploy Blog GitHub Actions 自动发布 Cloudflare Worker，必须核验构建结果和线上版本；不要重复手动部署。需要新旧版本兼容的迁移应安排兼容步骤，不能只推前端而遗漏数据库。
+独立区分自动化、真实 JWT/API、浏览器与部署验收。完成修改时，必要的生产数据库迁移、提交、推送属于同一次交付，不再另行等待发布授权。涉及数据库时先在隔离 Neon 分支验证，再迁移生产并核验真实 API，然后仅暂存任务文件、提交，由子代理推送功能分支并核验CI。PR合并到main后触发Cloudflare自动部署，必须核验构建结果和线上版本；不要重复手动部署。需要新旧版本兼容的迁移应安排兼容步骤，不能只推前端而遗漏数据库。
