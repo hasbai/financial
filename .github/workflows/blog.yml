@@ -1,6 +1,11 @@
 name: Blog
 on:
   pull_request:
+  workflow_call:
+    inputs:
+      update_visual_baselines:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       update_visual_baselines:

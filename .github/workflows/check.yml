@@ -115,3 +115,9 @@ jobs:
             apps/financial/playwright-report/
             apps/financial/test-results/
           retention-days: 14
+
+  blog-candidates:
+    if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+    uses: ./.github/workflows/blog.yml
+    with:
+      update_visual_baselines: true
