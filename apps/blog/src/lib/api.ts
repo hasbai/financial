@@ -10,7 +10,18 @@ export function repository(
   async function read<T>(
     query: PromiseLike<{ data: unknown; error: { message: string } | null }>,
   ): Promise<T> {
-    const result = await query;
+    let result;
+    try {
+      result = await query;
+    } catch (cause) {
+      if (url.startsWith("http://127.0.0.1:") && cause instanceof Error) {
+        console.error("Blog fixture API fetch failed", {
+          endpoint: url,
+          cause: cause.cause,
+        });
+      }
+      throw cause;
+    }
     if (result.error) throw new Error(result.error.message);
     return result.data as T;
   }

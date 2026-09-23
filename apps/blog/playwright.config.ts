@@ -50,6 +50,9 @@ export default defineConfig({
       timeout: 30_000,
       reuseExistingServer: false,
       env: {
+        NODE_USE_ENV_PROXY: "0",
+        NO_PROXY: "127.0.0.1,localhost",
+        no_proxy: "127.0.0.1,localhost",
         PUBLIC_DATA_API_URL: "http://127.0.0.1:4190/rest/v1",
         PUBLIC_ANONYMOUS_AUTH_URL: "http://127.0.0.1:4190/auth",
       },

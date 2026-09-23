@@ -10,11 +10,25 @@ export function publicRepository() {
     (pending ??= fetch(
       `${env.PUBLIC_ANONYMOUS_AUTH_URL || anonymousAuthUrl}/token/anonymous`,
       { credentials: "omit" },
-    ).then(async (response) => {
-      if (!response.ok) throw new Error("匿名访问暂时不可用");
-      const body = (await response.json()) as { token?: string };
-      if (!body.token) throw new Error("匿名访问暂时不可用");
-      return body.token;
-    }));
+    )
+      .catch((cause) => {
+        if (
+          (env.PUBLIC_ANONYMOUS_AUTH_URL || "").startsWith(
+            "http://127.0.0.1:",
+          ) &&
+          cause instanceof Error
+        )
+          console.error(
+            "Blog fixture anonymous token fetch failed",
+            cause.cause,
+          );
+        throw cause;
+      })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("匿名访问暂时不可用");
+        const body = (await response.json()) as { token?: string };
+        if (!body.token) throw new Error("匿名访问暂时不可用");
+        return body.token;
+      }));
   return repository(token, env.PUBLIC_DATA_API_URL || dataApiUrl);
 }
