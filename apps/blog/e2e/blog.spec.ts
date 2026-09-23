@@ -37,8 +37,9 @@ test('SSR, direct Data API navigation, skeleton, canonical URLs and reading stat
 
   const common = await request.get('/contents/20000000-0000-4000-8000-000000000001');
   expect(common.url()).toContain('/articles/hello-world');
-  const legacy = await request.get('/journal/hello-world');
-  expect(legacy.url()).toContain('/articles/hello-world');
+  const legacy = await request.get('/notes/hello-world', { maxRedirects: 0 });
+  expect(legacy.status()).toBe(308);
+  expect(legacy.headers().location).toBe('/articles/hello-world');
 
   await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '手记' }).click();
   await expect(page.getByRole('heading', { name: '手记', exact: true })).toBeVisible();

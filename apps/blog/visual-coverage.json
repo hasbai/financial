@@ -13,7 +13,7 @@
     { "source": "src/routes/articles/+page.svelte", "scenarios": ["reading"] },
     { "source": "src/routes/articles/[title]/+page.svelte", "scenarios": ["reading"] },
     { "source": "src/routes/notes/+page.svelte", "scenarios": ["reading"] },
-    { "source": "src/routes/notes/[sequence]/+page.svelte", "scenarios": ["reading"] },
+    { "source": "src/routes/notes/[sequence=positiveInteger]/+page.svelte", "scenarios": ["reading"] },
     { "source": "src/routes/timeline/+page.svelte", "scenarios": ["reading"] },
     { "source": "src/routes/about/+page.svelte", "scenarios": ["reading"] },
     { "source": "src/routes/tags/[tag]/+page.svelte", "scenarios": ["reading"] },
