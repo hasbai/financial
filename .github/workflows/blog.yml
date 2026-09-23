@@ -31,74 +31,97 @@ jobs:
   check:
     name: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && 'blog-candidate-check' || 'blog-check' }}
     needs: changes
-    if: needs.changes.outputs.blog == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/blog
     steps:
+      - name: Blog unchanged
+        if: needs.changes.outputs.blog != 'true'
+        working-directory: .
+        run: echo 'No blog changes to check'
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.blog == 'true'
       - uses: pnpm/action-setup@v4
+        if: needs.changes.outputs.blog == 'true'
       - uses: actions/setup-node@v4
+        if: needs.changes.outputs.blog == 'true'
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: needs.changes.outputs.blog == 'true'
       - run: node ../financial/scripts/check-visual-coverage.mjs ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && '--candidate' || '' }}
+        if: needs.changes.outputs.blog == 'true'
       - run: pnpm typecheck
+        if: needs.changes.outputs.blog == 'true'
       - run: pnpm test
+        if: needs.changes.outputs.blog == 'true'
       - run: pnpm build
+        if: needs.changes.outputs.blog == 'true'
       - uses: actions/upload-artifact@v4
+        if: needs.changes.outputs.blog == 'true'
         with:
           name: blog-production
           path: apps/blog/.svelte-kit/cloudflare/
   visual:
     name: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && 'blog-visual-candidates' || 'blog-visual' }}
     needs: changes
-    if: needs.changes.outputs.blog == 'true'
     runs-on: macos-26
     timeout-minutes: 20
     defaults:
       run:
         working-directory: apps/blog
     steps:
+      - name: Blog unchanged
+        if: needs.changes.outputs.blog != 'true'
+        working-directory: .
+        run: echo 'No blog visual changes to check'
       - name: Require task branch for candidates
-        if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+        if: needs.changes.outputs.blog == 'true' && github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
         working-directory: .
         run: test "$GITHUB_REF" != refs/heads/main
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.blog == 'true'
       - uses: pnpm/action-setup@v4
+        if: needs.changes.outputs.blog == 'true'
       - uses: actions/setup-node@v4
+        if: needs.changes.outputs.blog == 'true'
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: needs.changes.outputs.blog == 'true'
       - run: pnpm exec playwright install webkit chromium
+        if: needs.changes.outputs.blog == 'true'
       - run: pnpm build
+        if: needs.changes.outputs.blog == 'true'
       - run: pnpm exec vite build --mode e2e
+        if: needs.changes.outputs.blog == 'true'
         env:
           VISUAL_COVERAGE_GATE: '1'
           DEBUG: pw:webserver
           PUBLIC_DATA_API_URL: http://127.0.0.1:4180/rest/v1
           PUBLIC_ANONYMOUS_AUTH_URL: http://127.0.0.1:4180/auth
       - run: pnpm test:e2e ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && '--update-snapshots=all' || '' }}
+        if: needs.changes.outputs.blog == 'true'
         env:
           VISUAL_COVERAGE_GATE: '1'
           DEBUG: pw:webserver
           PUBLIC_DATA_API_URL: http://127.0.0.1:4180/rest/v1
           PUBLIC_ANONYMOUS_AUTH_URL: http://127.0.0.1:4180/auth
-      - if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+      - if: needs.changes.outputs.blog == 'true' && github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
         run: node scripts/baselines.mjs record
       - uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+        if: needs.changes.outputs.blog == 'true' && github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
         with:
           name: blog-visual-baseline-candidates
           path: |
             apps/blog/e2e/__screenshots__/
             apps/blog/test-results/visual-baseline-candidate.json
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && needs.changes.outputs.blog == 'true'
         with:
           name: blog-playwright-results
           path: |

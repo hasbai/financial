@@ -40,7 +40,7 @@ export default defineConfig({
   webServer: [
     {
       command: "node e2e/api.mjs",
-      url: "http://127.0.0.1:4180/rest/v1/category",
+      url: "http://127.0.0.1:4180/rest/v1/article",
       timeout: 30_000,
       reuseExistingServer: false,
     },
