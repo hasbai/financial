@@ -1,0 +1,11 @@
+{
+  "name": "@hasbai/data",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@neondatabase/postgrest-js": "0.2.0-beta"
+  }
+}

@@ -1,0 +1,106 @@
+name: Blog
+on:
+  pull_request:
+  workflow_call:
+    inputs:
+      update_visual_baselines:
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      update_visual_baselines:
+        description: Generate blog visual candidates for review
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: blog-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      blog: ${{ steps.filter.outputs.blog }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        run: node scripts/affected.mjs "${{ github.event.pull_request.base.sha }}"
+  check:
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && 'blog-candidate-check' || 'blog-check' }}
+    needs: changes
+    if: needs.changes.outputs.blog == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/blog
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node ../financial/scripts/check-visual-coverage.mjs ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && '--candidate' || '' }}
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blog-production
+          path: apps/blog/.svelte-kit/cloudflare/
+  visual:
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && 'blog-visual-candidates' || 'blog-visual' }}
+    needs: changes
+    if: needs.changes.outputs.blog == 'true'
+    runs-on: macos-26
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/blog
+    steps:
+      - name: Require task branch for candidates
+        if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+        working-directory: .
+        run: test "$GITHUB_REF" != refs/heads/main
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install webkit chromium
+      - run: pnpm build
+      - run: pnpm exec vite build --mode e2e
+        env:
+          VISUAL_COVERAGE_GATE: '1'
+          DEBUG: pw:webserver
+          PUBLIC_DATA_API_URL: http://127.0.0.1:4180/rest/v1
+          PUBLIC_ANONYMOUS_AUTH_URL: http://127.0.0.1:4180/auth
+      - run: pnpm test:e2e ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && '--update-snapshots=all' || '' }}
+        env:
+          VISUAL_COVERAGE_GATE: '1'
+          DEBUG: pw:webserver
+          PUBLIC_DATA_API_URL: http://127.0.0.1:4180/rest/v1
+          PUBLIC_ANONYMOUS_AUTH_URL: http://127.0.0.1:4180/auth
+      - if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+        run: node scripts/baselines.mjs record
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+        with:
+          name: blog-visual-baseline-candidates
+          path: |
+            apps/blog/e2e/__screenshots__/
+            apps/blog/test-results/visual-baseline-candidate.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blog-playwright-results
+          path: |
+            apps/blog/test-results/
+            apps/blog/playwright-report/

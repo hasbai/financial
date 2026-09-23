@@ -1,3 +1,7 @@
+# Monorepo 校验入口
+
+2026-09-23：财务工作目录为 `apps/financial`，以下历史命令在该目录运行；根 `pnpm` 脚本代理财务命令。根 `scripts/wait-ci.mjs` 位置不变。博客独立 `Blog` workflow，必需状态为 `blog-check`、`blog-visual`，财务保留 `check`、`visual`。两个 workflow 均用 changes job 精确决定是否执行；无关应用的 job 合法跳过，失败不得跳过。共享目录及 lockfile 变更验证两边。博客视觉清单为 `apps/blog/visual-coverage.json`，复用同一 manifest/execution gate。
+
 # 测试规范与覆盖审计
 
 ## 运行
@@ -17,6 +21,8 @@ git diff --check
 无需Docker。CI视觉任务固定在`macos-26` ARM64，单元测试在Ubuntu。Playwright精确锁定版本，使用`darwin-ci-*`截图基线。历史`darwin-*`本机基线保留为旧验收记录，不再在本地运行或更新。
 
 `pnpm test:e2e:update`仅在初次建基线、设计变更或明确的浏览器/系统升级时，由功能分支的显式workflow dispatch执行。普通运行使用`updateSnapshots: none`，缺少图片或超出差异即失败；PR的CI不自动更新、不重试掩盖不稳定。显式触发Check workflow的`update_visual_baselines`只执行一次完整候选生成（保留交互与覆盖清单断言），不在候选内部再全量复跑；它不自动提交，取回并核对后提交，随后普通PR必须严格比较通过。候选运行只产生`candidate-check`与`visual-baseline-candidates`状态，不能满足或覆盖分支保护要求的`check`/`visual`。额外稳定性复跑只用于已复现抖动或明确排障，并记录原因。报告保留expected/actual/diff和失败trace。日常不要求人工或AI逐页看图，有意设计变更仍需核对差异。
+
+财务与博客在 Cloudflare 后台分别配置 main 自动构建和路径过滤；GitHub Actions 只负责 PR 验收，不部署。具体 Cloudflare 配置由用户在后台完成，设置完成后分别核验 Worker 构建和线上版本。
 
 ## 推送与合并
 

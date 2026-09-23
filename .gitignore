@@ -17,3 +17,6 @@ private/
 backups/
 
 *.tsbuildinfo
+
+.svelte-kit/
+worker-configuration.d.ts

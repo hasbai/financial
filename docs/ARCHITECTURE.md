@@ -1,6 +1,8 @@
 # 技术架构
 
-Svelte 5 + TypeScript + Vite SPA，Bits UI + shadcn-svelte（preset `b6sUj31yy`）+ Tailwind CSS 4 + Lucide，pnpm 管理依赖。Cloudflare Worker 只托管静态资源；业务数据直接调用 Neon Data API（PostgREST 兼容），业务读取视图与保存函数统一在 `financial`。
+当前为 pnpm monorepo，财务位于 `apps/financial`，博客位于 `apps/blog`。共享 UI 使用 Luma，Auth0 与 Data API 工厂共享；博客 SSR/匿名访问/图片及独立 CI 见 [BLOG](BLOG.md)。下文的 `src`/`public` 等路径均相对财务应用目录。
+
+Svelte 5 + TypeScript + Vite SPA，Bits UI + shadcn-svelte（Luma）+ Tailwind CSS 4 + Lucide，pnpm 管理依赖。Cloudflare Worker 只托管静态资源；业务数据直接调用 Neon Data API（PostgREST 兼容），业务读取视图与保存函数统一在 `financial`。
 
 ```mermaid
 flowchart LR
@@ -45,7 +47,7 @@ Data API 的 JWT 校验发生在 Neon，PostgreSQL 根据 superadmin 的 schema 
 
 ## 发布
 
-`wrangler.jsonc` 配置 Worker financial、dist 静态目录、single-page-application 回退与 financial.hasbai.xyz 自定义域名。`public/_headers` 配置缓存、安全头。推送 main 后由 Cloudflare Workers Builds 自动构建并部署，不重复执行手动 Wrangler 发布。
+`wrangler.jsonc` 配置 Worker financial、dist 静态目录、single-page-application 回退与 financial.hasbai.xyz 自定义域名。`public/_headers` 配置缓存、安全头。推送 main 后由 Cloudflare 后台分别自动构建并部署财务和博客 Worker；两者的仓库连接、应用根目录与路径过滤由用户在 Cloudflare 后台配置。根 Wrangler 配置保留财务原入口，不重复手动部署。
 
 GitHub Actions只在PR创建/更新时进行完整验收（手动dispatch保留候选与排障），功能分支push和合并后的main push不重复运行。完整验收进行frozen-lockfile安装、typecheck、test:coverage、build，独立macOS 26任务运行WebKit/Chromium Playwright并保留截图/trace；无需Docker。本地不运行上述自动化验收，主代理修改提交后由新子代理推送功能分支并跟踪CI，最新提交的check/visual均成功且同步main后通过PR合并。仓库已公开，main已启用上述强制保护且管理员不能绕过；基线流程见[TESTING](TESTING.md)。测试入口不进入生产构建。数据库迁移仍先隔离验证再生产迁移/API核验，不遗漏兼容步骤；PR合并后子代理核验Cloudflare自动部署和线上资源。生产发布状态记录在[PROGRESS](PROGRESS.md)。
 

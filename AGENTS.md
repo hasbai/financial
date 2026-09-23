@@ -1,6 +1,10 @@
-# Financial 项目指南
+# Hasbai monorepo 项目指南
 
-个人财务管理，Svelte 5 SPA / TypeScript / Bits UI / shadcn-svelte（preset b6sUj31yy）/ Tailwind CSS / Lucide / pnpm。Cloudflare Worker `financial`，域名 `financial.hasbai.xyz`；Neon hasbai / neondb / financial；Auth0 北极小站。
+2026-09-23：新增 `apps/blog`（SvelteKit SSR）、迁移财务至 `apps/financial`。共享 Luma UI、Auth0 与 PostgREST 位于 `packages`。博客使用 `public` 四表和 R2 `image`，业务边界见 docs/BLOG.md。以下三表/schema/基表 DML 限制仅适用于 financial 业务，不限制明确授权的博客四表。所有既有财务脚本、视觉清单相对路径以 `apps/financial` 为工作目录；CI 等待脚本仍在仓库根。
+
+# Financial 应用指南
+
+个人财务管理，Svelte 5 SPA / TypeScript / Bits UI / shadcn-svelte（Luma，共享 packages/ui）/ Tailwind CSS / Lucide / pnpm。Cloudflare Worker `financial`，域名 `financial.hasbai.xyz`；Neon hasbai / neondb / financial；Auth0 北极小站。
 
 ## 用户确认的边界
 

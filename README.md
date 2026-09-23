@@ -1,3 +1,13 @@
+# Hasbai monorepo
+
+- `apps/financial`：个人财务，Svelte 5 SPA，保留原有配色和三表边界。
+- `apps/blog`：北极手记，SvelteKit SSR，Neutral / Luma / 衬线正文，在线 Markdown 编辑发布。
+- `packages/ui`、`packages/auth`、`packages/data`：共享组件、认证和 PostgREST。
+
+`pnpm dev` 启动财务，`pnpm dev:blog` 启动博客。校验只在独立 GitHub Actions 中执行；业务目录改动只跑对应应用，共享依赖改动才跑两边。
+
+设计与接入见 [博客架构](docs/BLOG.md)、[财务架构](docs/ARCHITECTURE.md)、[测试规范](docs/TESTING.md)。
+
 # 北极账本 · Financial
 
 单人个人财务系统：Svelte 5 SPA、Bits UI、shadcn-svelte（preset `b6sUj31yy`）、Tailwind CSS 4、Lucide、pnpm。Auth0 北极小站登录，浏览器直连 Neon Data API，Cloudflare Worker `financial` 托管。
