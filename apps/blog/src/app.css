@@ -461,3 +461,18 @@
     animation-duration: 0.01ms !important;
   }
 }
+.article-title {
+  text-wrap: balance;
+}
+
+.prose figure {
+  margin-block: 2em;
+}
+.prose figcaption {
+  margin-top: 12px;
+  text-align: center;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}

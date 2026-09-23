@@ -9,6 +9,7 @@ it("preserves public content structure while rejecting executable HTML and links
   expect(html).toContain("<h1>标题</h1>");
   expect(html).toContain("<table>");
   expect(html).toContain("/images/test");
+  expect(html).toContain("<figcaption>图</figcaption>");
   expect(html).not.toContain("<script");
   expect(html).not.toContain("javascript:");
 });
