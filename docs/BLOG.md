@@ -4,7 +4,7 @@
 
 pnpm monorepo：`apps/financial` 保留 Svelte 5 SPA、原业务/PWA；`apps/blog` 是 SvelteKit SSR。`packages/ui` 是统一 Luma primitives（官方 Luma registry，Lucide），`packages/auth` 共用 Auth0 SDK 工厂和公开配置，`packages/data` 共用 Neon PostgREST 客户端。业务 repository 和主题留在应用内。财务原有浅蓝灰、资产/现金/损益及深色配色保留；博客采用 neutral，正文和标题为衬线字体。原有移动端弹窗的 viewport、焦点与位移修复保留。
 
-博客域名为 `hasbai.xyz` 与 `blog.hasbai.xyz`，canonical 统一 `https://hasbai.xyz`。复用数据库、Auth0 tenant/application/audience 与 superadmin；现有 Hugo 博客和文章不迁移、不覆盖。新 Worker 名为 `hasbai-blog`。
+博客域名为 `hasbai.xyz` 与 `blog.hasbai.xyz`，canonical 统一 `https://hasbai.xyz`。复用数据库、Auth0 tenant/application/audience 与 superadmin；现有 Hugo 博客和文章不迁移、不覆盖。博客 Worker 名为 `blog`。
 
 ## 数据与权限
 
@@ -28,6 +28,6 @@ Tiptap 3 WYSIWYG，Markdown 官方扩展；支持标题、粗斜体、列表、�
 
 Financial `Check`、Blog `Blog` 独立 workflow，均有廉价 changes job。业务应用目录修改只启动该应用检查；shared packages、workspace/lockfile 修改启动两边。PR 为普通检查，main push 不重复验收。Luma 有意视觉变更必须先 dispatch 两个候选 workflow、审阅并导入截图，再由普通 PR 严格比较。
 
-财务从 `apps/financial` cwd 执行原校验脚本和 visual manifest。根脚本继续代理 `pnpm build` 等财务命令，根 wrangler 配置兼容现有自动构建入口；博客 `pnpm build:blog`。两个 Worker 的 Cloudflare 后台自动构建由用户配置：仓库 `hasbai/financial`、生产分支 `main`，财务根目录 `apps/financial`、博客根目录 `apps/blog`；各自仅监视本应用、`packages/**`、根 `package.json`、`pnpm-lock.yaml` 和 `pnpm-workspace.yaml`。博客 Worker 使用 `apps/blog/wrangler.jsonc` 中的 R2 `image` 绑定及两个自定义域名。GitHub Actions 不执行部署。
+财务从 `apps/financial` cwd 执行原校验脚本和 visual manifest。根脚本继续代理 `pnpm build` 等财务命令，根 wrangler 配置兼容现有自动构建入口；博客 `pnpm build:blog`。两个 Worker 的 Cloudflare 自动构建连接同一仓库 `hasbai/financial`、生产分支 `main`，财务根目录为 `apps/financial`、博客根目录为 `apps/blog`；各自仅监视本应用、`packages/*`、根 `package.json`、`pnpm-lock.yaml` 和 `pnpm-workspace.yaml`。博客 Worker 使用 `apps/blog/wrangler.jsonc` 中的 R2 `image` 绑定及两个自定义域名。GitHub Actions 不执行部署。
 
 本地不运行 typecheck、单测、build 或 Playwright 验收，统一 GitHub Actions。设备测试是 WebKit/Chromium 模拟，不能称作 iOS 真机验收。截图、真实 JWT/API、R2 上传与线上 SSR 属独立验收层。
