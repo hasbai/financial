@@ -109,7 +109,8 @@
 @keyframes hero-rise { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
 .recent-section { padding-top: 56px; scroll-margin-top: 110px; }
-.section-intro { display: flex; justify-content: space-between; align-items: end; gap: 28px; margin-bottom: 24px; }
+.section-intro { display: grid; gap: 14px; margin-bottom: 26px; }
+.section-intro > div { display: flex; justify-content: space-between; align-items: baseline; gap: 28px; }
 .section-intro h2 { font-size: clamp(30px, 4vw, 46px); font-weight: 500; line-height: 1.4; }
 .section-intro p { margin-top: 6px; color: var(--muted-foreground); font-size: 14px; }
 .recent-list { max-width: 920px; }
@@ -148,6 +149,7 @@
 .writing-arrow { color: var(--muted-foreground); transition: transform .3s ease, color .3s ease; }
 .writing-row-main:hover .writing-arrow { color: var(--warm); transform: translate(3px,-3px); }
 .pager { margin-top: 48px; display: flex; align-items: center; justify-content: space-between; }
+.pager [aria-disabled="true"] { opacity: .35; pointer-events: none; }
 .empty { min-height: 260px; display: grid; place-content: center; justify-items: center; gap: 22px; text-align: center; }
 
 .note-year { margin-bottom: 86px; }
@@ -286,7 +288,7 @@
   .hero-bottom { justify-content: space-between; }
   .recent-section { padding-top: 25px; }
   .section-intro { display: block; }
-  .section-intro > div { margin-top: 16px; }
+  .section-intro > div { display: block; margin-top: 16px; }
   .recent-item { grid-template-columns: 28px minmax(0,1fr) 18px; gap: 10px; padding: 20px 7px; }
   .home-explore { grid-template-columns: 1fr; padding-top: 80px; }
   .home-explore a { min-height: 175px; }

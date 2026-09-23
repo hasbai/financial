@@ -181,7 +181,7 @@
   ><title>{title || "新文章"} · 编辑室</title></svelte:head
 >
 <section class="wrap py-8">
-  <div class="flex flex-wrap items-center justify-between gap-4 border-b pb-6">
+  <div class="flex flex-wrap items-center justify-between gap-4 pb-6">
     <Button variant="ghost" href="/studio"><ArrowLeft size={16} />编辑室</Button
     >
     <div class="flex flex-wrap items-center gap-2">
@@ -236,7 +236,7 @@
         </div>
       </div>
       <aside class="space-y-6 lg:sticky lg:top-8">
-        <h2 class="serif border-b pb-4 text-xl">出版信息</h2>
+        <h2 class="serif pb-4 text-xl">出版信息</h2>
         <div class="field">
           <label for="slug">文章网址</label><Input
             id="slug"
@@ -323,7 +323,7 @@
               : "上传封面"}</Button
           >
         </div>
-        {#if original}<div class="border-t pt-6">
+        {#if original}<div class="pt-6">
             {#if deleting}<p class="mb-3 text-sm">删除这篇文章？</p>
               <div class="flex gap-2">
                 <Button variant="destructive" disabled={saving} onclick={remove}
