@@ -81,6 +81,8 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - run: sw_vers
+      - run: echo "$ImageVersion"
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install webkit chromium
       - run: pnpm build

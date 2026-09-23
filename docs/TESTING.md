@@ -22,6 +22,8 @@ git diff --check
 
 `pnpm test:e2e:update`仅在初次建基线、设计变更或明确的浏览器/系统升级时，由功能分支的显式workflow dispatch执行。普通运行使用`updateSnapshots: none`，缺少图片或超出差异即失败；PR的CI不自动更新、不重试掩盖不稳定。显式触发Check workflow的`update_visual_baselines`只执行一次完整候选生成（保留交互与覆盖清单断言），不在候选内部再全量复跑；它不自动提交，取回并核对后提交，随后普通PR必须严格比较通过。候选运行只产生`candidate-check`与`visual-baseline-candidates`状态，不能满足或覆盖分支保护要求的`check`/`visual`。额外稳定性复跑只用于已复现抖动或明确排障，并记录原因。报告保留expected/actual/diff和失败trace。日常不要求人工或AI逐页看图，有意设计变更仍需核对差异。
 
+GitHub Actions `Deploy Financial` 和 `Deploy Blog` 仅在 main 推送及各自目录/共享依赖变化时运行，不作为 PR 验收，也不在 main 额外执行 check/visual。自动部署使用 Keychain root token 派生的受限 GitHub Secret。线上版本与 Worker 部署结果仍须分别核验。
+
 ## 推送与合并
 
 主代理编辑/提交后，必须派新子代理负责功能分支推送、创建或更新PR和跟踪CI；主代理处理失败并提交修复，再派新子代理核验。检查必须对应PR最新提交，`Check / check`（类型/单元覆盖率/构建）和`Check / visual`（浏览器/视觉回归）全部成功，且已包含最新main后才能合并。`workflow_dispatch`生成基线的成功不能替代随后普通PR的比较结果。不得本地补跑或用管理员绕过失败；合并后核验main合并SHA、Cloudflare自动部署和线上资源，不重复启动或等待main全量CI。

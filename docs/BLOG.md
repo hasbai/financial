@@ -28,6 +28,6 @@ Tiptap 3 WYSIWYG，Markdown 官方扩展；支持标题、粗斜体、列表、�
 
 Financial `Check`、Blog `Blog` 独立 workflow，均有廉价 changes job。业务应用目录修改只启动该应用检查；shared packages、workspace/lockfile 修改启动两边。PR 为普通检查，main push 不重复验收。Luma 有意视觉变更必须先 dispatch 两个候选 workflow、审阅并导入截图，再由普通 PR 严格比较。
 
-财务从 `apps/financial` cwd 执行原校验脚本和 visual manifest。根脚本继续代理 `pnpm build` 等财务命令，根 wrangler 配置兼容现有自动构建入口；博客 `pnpm build:blog`。Workers Builds 应分别设置应用 build/watch paths，仅依赖共享目录时联动；GitHub 路径过滤不能代替部署侧过滤。两个生产 Worker 均由 main 自动发布，不重复手动部署。
+财务从 `apps/financial` cwd 执行原校验脚本和 visual manifest。根脚本继续代理 `pnpm build` 等财务命令，根 wrangler 配置兼容现有自动构建入口；博客 `pnpm build:blog`。由于现有账户级 root token 无法签发 Workers Builds API 所要求的用户级 token，生产发布改由 `Deploy Financial` 和 `Deploy Blog` 两个 GitHub Actions 在 main 推送后按路径分别触发。令牌仅保存在 GitHub Actions Secret `CLOUDFLARE_DEPLOY_TOKEN`，由 Keychain root token 签发，具备必要的 Worker/R2/Zone 权限，不保存在仓库。两套部署均使用各自应用目录的 Wrangler 配置；不会在 PR 或其他应用的独立代码改动后运行。
 
 本地不运行 typecheck、单测、build 或 Playwright 验收，统一 GitHub Actions。设备测试是 WebKit/Chromium 模拟，不能称作 iOS 真机验收。截图、真实 JWT/API、R2 上传与线上 SSR 属独立验收层。
