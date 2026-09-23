@@ -1,6 +1,14 @@
+import { goto } from "$app/navigation";
 import { createBrowserClient, type Auth0Client, type User } from "@hasbai/auth";
+
+// A redirect callback and the editor are separate SvelteKit routes. Keep the
+// browser SDK instance so its memory-only PKCE token survives client navigation.
+let sharedClient: Auth0Client | undefined;
+function browserClient() {
+  return (sharedClient ??= createBrowserClient(location.origin));
+}
+
 export function createAuth() {
-  let client: Auth0Client;
   let user = $state<User>();
   let loading = $state(true);
   let error = $state("");
@@ -22,16 +30,19 @@ export function createAuth() {
     },
     async init() {
       try {
-        client = createBrowserClient(location.origin);
+        const client = browserClient();
         if (location.pathname === "/auth/callback") {
           const result = await client.handleRedirectCallback<{
             returnTo?: string;
           }>();
-          location.replace(safe(result.appState?.returnTo));
+          await goto(safe(result.appState?.returnTo), { replaceState: true });
           return;
         }
-        await client.checkSession({ timeoutInSeconds: 3 });
         user = await client.getUser();
+        if (!user) {
+          await client.checkSession({ timeoutInSeconds: 3 });
+          user = await client.getUser();
+        }
       } catch (e) {
         const code = (e as { error?: string }).error;
         if (
@@ -50,7 +61,7 @@ export function createAuth() {
     async login() {
       error = "";
       try {
-        await client.loginWithRedirect({
+        await browserClient().loginWithRedirect({
           appState: { returnTo: safe(location.pathname) },
         });
       } catch {
@@ -58,10 +69,13 @@ export function createAuth() {
       }
     },
     async logout() {
-      await client.logout({ logoutParams: { returnTo: location.origin } });
+      await browserClient().logout({
+        logoutParams: { returnTo: location.origin },
+      });
+      sharedClient = undefined;
     },
     async token() {
-      const value = await client.getTokenSilently();
+      const value = await browserClient().getTokenSilently();
       if (!value) throw new Error("请重新登录");
       return value;
     },
