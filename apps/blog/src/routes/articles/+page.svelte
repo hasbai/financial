@@ -4,5 +4,5 @@
   let { data } = $props();
 </script>
 
-<svelte:head><title>{data.category.name} · {site.name}</title></svelte:head
-><ArticleList {...data} title={data.category.name} />
+<svelte:head><title>文章 · {site.name}</title><link rel="canonical" href={site.origin + "/articles"} /></svelte:head>
+<ArticleList {...data} />

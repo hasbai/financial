@@ -8,13 +8,15 @@ pnpm monorepo：`apps/financial` 保留 Svelte 5 SPA、原业务/PWA；`apps/blo
 
 ## 数据与权限
 
-只新增 `public.article`、`public.category`、`public.tag`、`public.image` 四张业务表。无博客视图、RPC、触发器。正文唯一存储为 Markdown；分类外键，标签用 `tag_ids uuid[]`（四表边界内不增加关联表，编辑器提供已有标签选择）。同分类 slug 唯一，类别 slug 保留系统路由，避免 `/articles/:id` 与 `/:category/:title` 冲突。
+`0002_content_inheritance.sql` 将 `public.content` 作为 PostgreSQL 继承父表，`public.article` 与 `public.note` 为子表。父表保存 UUID、类型、Markdown、摘要、封面、发布状态和时间；文章另有标题、全站唯一 slug 与独立数字序列，手记没有标题或标签，使用自己的数字序列。`public.article_tag` 直接关联文章与 `public.tag`。旧文章、图片及标签 UUID 不变，旧分类 URL 存入文章 `legacy_path` 供永久重定向。跨分类重名 slug 追加文章 UUID 前缀消歧。`0002` 先保留旧分类列和 `tag_ids` 以兼容旧 Worker，部署新 Worker 并核验后由 `0004_remove_category.sql` 移除 `public.category`、`article.category_id` 与 `article.tag_ids`。父表查询用于 `/contents/:id`，写入始终指向具体子表；PostgreSQL 继承不自动将父表写入路由到子表，也不跨子表继承主键唯一性。
 
-发布、撤回、编辑、删除直接采用标准 PostgREST INSERT/PATCH/DELETE。更新和删除同时过滤 id/updated_at，空返回视为冲突。UI 失败保留输入。发布要求正文和发布时间，匿名 RLS 仅放行已发布且发布时间已到的文章。superadmin 可管理四表；anonymous 无写权限，无 financial schema 访问权。
+公开路径为 `/articles/:title`（参数取文章 slug）、`/notes/:sequence` 与 `/contents/:id`（按 `kind` 重定向到规范路径）。首页混排最近的文章和手记，时间线按发布时间聚合，关于页为静态内容。正文唯一存储为 Markdown，服务端和客户端使用同一安全 Markdown 渲染器。
 
-Neon 网关要求 JWT，包括匿名访问。访客直接调用 Neon Auth `/token/anonymous` 获取短期 `role=anonymous` JWT，再直接读取 Data API；不登录、不经博客 API 代理、不使用数据库密钥。SSR 同样调用这两个公开端点。Auth0 管理员登录继续用同一 SPA PKCE、内存 token。Neon managed auth 仅提供匿名令牌；不增加另一套用户登录入口。新增 managed `neon_auth` 属平台系统 schema，博客业务表仍全部在 public。
+文章保存使用 `save_article` Data API RPC，在一个数据库事务内写文章与标签关系，并用 id/updated_at 判断冲突；手记和删除仍使用标准 PostgREST 写入。文章和手记创建时客户端生成 UUID。UI 失败保留输入。发布要求正文和发布时间；匿名 RLS 仅放行已发布且发布时间已到的内容。`content`、`article`、`note` 与 `article_tag` 分别设置 RLS 与 GRANT；superadmin 写具体子表和关联表，anonymous 无写权限、无 financial schema 访问权。
 
-迁移 `database/blog/0001_blog.sql` 已先在生产隔离分支 `br-frosty-silence-b3y3se2p` 验证，再应用生产。隔离分支实测匿名只读已发布、草稿隔离、财务 403、Auth0 superadmin 200；生产验证单独记录于交付结果。
+Neon 网关要求 JWT，包括匿名访问。访客直接调用 Neon Auth `/token/anonymous` 获取短期 `role=anonymous` JWT，再直接读取 Data API；不登录、不经博客 API 代理、不使用数据库密钥。SSR 同样调用这两个公开端点。公开页使用 SvelteKit 通用 `+page.ts` load，水合后的页间跳转直接从浏览器请求匿名令牌与 Data API，不再获取 `__data.json`；导航期间立即显示骨架，关闭 hover 预取。首页和列表只读摘要列，不序列化整篇 Markdown；浏览器短时复用匿名令牌。Auth0 管理员登录继续用同一 SPA PKCE、内存 token。Neon managed auth 仅提供匿名令牌；不增加另一套用户登录入口。新增 managed `neon_auth` 属平台系统 schema，博客业务表仍全部在 public。
+
+初始迁移 `database/blog/0001_blog.sql` 已先在生产隔离分支 `br-frosty-silence-b3y3se2p` 验证，再应用生产。继承表迁移 `0002_content_inheritance.sql` 和事务函数 `0003_save_article.sql` 先在新的生产隔离分支验证数据保留、RLS、父表聚合查询、写入与旧 URL，然后在新 Worker 合并前应用生产。新 Worker 自动部署并核验后再应用 `0004_remove_category.sql`，完成分类和数组字段清理；两阶段都不能用开发分支数据覆盖生产。
 
 ## 图片
 
@@ -22,7 +24,7 @@ R2 bucket `image`，key 精确等于 image.id UUID。metadata 包括 name、sha2
 
 ## 编辑和阅读
 
-Tiptap 3 WYSIWYG，Markdown 官方扩展；支持标题、粗斜体、列表、引用、代码块、链接、表格、图片、撤销/重做和 Markdown 源码切换。服务端用 remark + rehype-sanitize 渲染，拒绝原始 HTML 和危险 URL。Markdown 表格不支持合并单元格，编辑工具不提供这种操作。可用标签管理入口和分类创建；封面可上传/移除。图片 name 作为默认 alt/title。离开未保存文档有确认；失败不清空内容。
+Tiptap 3 WYSIWYG，Markdown 官方扩展；支持标题、粗斜体、列表、引用、代码块、链接、表格、图片、撤销/重做和 Markdown 源码切换。服务端用 remark + rehype-sanitize 渲染，拒绝原始 HTML 和危险 URL。Markdown 表格不支持合并单元格，编辑工具不提供这种操作。文章可管理标签；手记使用同一 Markdown 编辑器，不填写标题或标签。封面可上传/移除，图片 name 作为默认 alt/title。离开未保存文档有确认；失败不清空内容。
 
 ## CI 与发布
 

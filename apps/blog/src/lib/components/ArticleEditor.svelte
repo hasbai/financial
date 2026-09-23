@@ -7,7 +7,6 @@
     articlePath,
     imagePath,
     type Article,
-    type Category,
     type Tag,
   } from "$lib/content";
   import MarkdownEditor from "./MarkdownEditor.svelte";
@@ -23,12 +22,10 @@
   let slug = $state("");
   let excerpt = $state("");
   let markdown = $state("");
-  let categoryId = $state("");
   let tagIds = $state<string[]>([]);
   let coverId = $state<string | null>(null);
   let status = $state<"draft" | "published">("draft");
   let publishedAt = $state<string | null>(null);
-  let categories = $state<Category[]>([]);
   let tags = $state<Tag[]>([]);
   let loading = $state(true);
   let saving = $state(false);
@@ -36,7 +33,7 @@
   let error = $state("");
   let notice = $state("");
   let baseline = $state("");
-  let termType = $state<"category" | "tag" | "">("");
+  let creatingTag = $state(false);
   let termName = $state("");
   let termSlug = $state("");
   let deleting = $state(false);
@@ -46,7 +43,6 @@
     slug,
     excerpt,
     markdown,
-    category_id: categoryId,
     tag_ids: tagIds,
     cover_id: coverId,
     status,
@@ -67,7 +63,7 @@
     loading = true;
     error = "";
     try {
-      [categories, tags] = await Promise.all([api.categories(), api.tags()]);
+      tags = await api.tags();
       if (id) {
         const article = await api.article(id);
         if (!article) throw new Error("文章不存在或无操作权限");
@@ -76,12 +72,11 @@
         slug = article.slug;
         excerpt = article.excerpt;
         markdown = article.markdown;
-        categoryId = article.category_id;
-        tagIds = article.tag_ids;
+        tagIds = (await api.tagsForArticle(article.id)).map((tag) => tag.id);
         coverId = article.cover_id;
         status = article.status;
         publishedAt = article.published_at;
-      } else categoryId = categories[0]?.id ?? "";
+      }
       baseline = JSON.stringify(payload());
     } catch (e) {
       error = e instanceof Error ? e.message : "加载失败";
@@ -103,7 +98,7 @@
     if (status === "published" && !publishedAt)
       publishedAt = new Date().toISOString();
     try {
-      const article = await api.save(
+      const article = await api.saveArticle(
         payload(),
         original?.id,
         original?.updated_at,
@@ -154,16 +149,10 @@
     saving = true;
     error = "";
     try {
-      if (!termType) return;
-      const term = await api.createTerm(termType, termName, termSlug);
-      if (termType === "category") {
-        categories = [...categories, term];
-        categoryId = term.id;
-      } else {
-        tags = [...tags, term];
-        tagIds = [...tagIds, term.id];
-      }
-      termType = "";
+      const term = await api.createTag(termName, termSlug);
+      tags = [...tags, term];
+      tagIds = [...tagIds, term.id];
+      creatingTag = false;
       termName = "";
       termSlug = "";
     } catch (e) {
@@ -177,7 +166,7 @@
     saving = true;
     error = "";
     try {
-      await api.remove(original.id, original.updated_at);
+      await api.remove("article", original.id, original.updated_at);
       baseline = JSON.stringify(payload());
       saving = false;
       await goto("/studio");
@@ -257,23 +246,6 @@
           />
         </div>
         <div class="field">
-          <label for="category">分类</label><select
-            id="category"
-            bind:value={categoryId}
-            disabled={saving}
-            ><option value="" disabled>选择分类</option
-            >{#each categories as category}<option value={category.id}
-                >{category.name}</option
-              >{/each}</select
-          ><Button
-            variant="ghost"
-            class="justify-start px-0"
-            onclick={() =>
-              (termType = termType === "category" ? "" : "category")}
-            disabled={saving}>＋ 新建分类</Button
-          >
-        </div>
-        <div class="field">
           <label for="excerpt">摘要</label><Textarea
             id="excerpt"
             bind:value={excerpt}
@@ -298,14 +270,12 @@
           <Button
             variant="ghost"
             class="justify-start px-0"
-            onclick={() => (termType = termType === "tag" ? "" : "tag")}
+            onclick={() => (creatingTag = !creatingTag)}
             disabled={saving}>＋ 新建标签</Button
           >
         </fieldset>
-        {#if termType}<div class="space-y-3 rounded-2xl border p-4">
-            <h3 class="text-sm">
-              新建{termType === "category" ? "分类" : "标签"}
-            </h3>
+        {#if creatingTag}<div class="space-y-3 rounded-2xl bg-secondary p-4">
+            <h3 class="text-sm">新建标签</h3>
             <Input
               aria-label="名称"
               bind:value={termName}
@@ -324,7 +294,7 @@
               ><Button
                 variant="ghost"
                 disabled={saving}
-                onclick={() => (termType = "")}>取消</Button
+                onclick={() => (creatingTag = false)}>取消</Button
               >
             </div>
           </div>{/if}

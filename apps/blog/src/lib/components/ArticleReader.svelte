@@ -1,59 +1,38 @@
 <script lang="ts">
-  import {
-    articlePath,
-    dateLabel,
-    imagePath,
-    readMinutes,
-    site,
-    type Article,
-    type Tag,
-  } from "$lib/content";
-  let { article, html, tags }: { article: Article; html: string; tags: Tag[] } =
-    $props();
+  import { articlePath, dateLabel, imagePath, readMinutes, site, type Article, type Tag } from "$lib/content";
+  import { ArrowLeft } from "@lucide/svelte";
+  let { article, html, tags }: { article: Article; html: string; tags: Tag[] } = $props();
 </script>
 
-<svelte:head
-  ><title>{article.title} · {site.name}</title><meta
-    name="description"
-    content={article.excerpt}
-  /><link rel="canonical" href={site.origin + articlePath(article)} /><meta
-    property="og:type"
-    content="article"
-  /><meta property="og:title" content={article.title} /><meta
-    property="og:description"
-    content={article.excerpt}
-  /><meta
-    property="og:url"
-    content={site.origin + articlePath(article)}
-  />{#if article.cover_id}<meta
-      property="og:image"
-      content={site.origin + imagePath(article.cover_id)}
-    />{/if}</svelte:head
->
-<article class="reading">
-  <a class="meta" href={"/" + article.category.slug}
-    >{article.category.name} ↗</a
-  >
-  <h1 class="article-title">{article.title}</h1>
-  {#if article.excerpt}<p class="article-deck">{article.excerpt}</p>{/if}
-  <div class="meta mt-8 flex flex-wrap gap-4 border-b pb-8">
-    <time datetime={article.published_at ?? ""}
-      >{dateLabel(article.published_at)}</time
-    ><span>{readMinutes(article.markdown)} 分钟阅读</span>
-  </div>
-  {#if article.cover_id}<img
-      class="cover mt-10"
-      src={imagePath(article.cover_id)}
-      alt={article.title}
-    />{/if}
-  <div class="prose py-4">{@html html}</div>
-  <div class="mt-10 flex flex-wrap gap-3 border-t pt-6">
-    {#each tags as tag}<a
-        class="rounded-full border px-4 py-2 text-sm"
-        href={"/tags/" + tag.slug}>#{tag.name}</a
-      >{/each}
-  </div>
-  <div class="mt-10 flex justify-between text-sm">
-    <a href="/">← 全部文章</a><a href={"/studio/" + article.id}>编辑文章 ↗</a>
+<svelte:head>
+  <title>{article.title} · {site.name}</title>
+  <meta name="description" content={article.excerpt} />
+  <link rel="canonical" href={site.origin + articlePath(article)} />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content={article.title} />
+  <meta property="og:description" content={article.excerpt} />
+  <meta property="og:url" content={site.origin + articlePath(article)} />
+  {#if article.cover_id}<meta property="og:image" content={site.origin + imagePath(article.cover_id)} />{/if}
+</svelte:head>
+
+<article class="reading entrance">
+  <a class="back-link" href="/articles"><ArrowLeft size={16} /> 文章</a>
+  <header class="reader-head">
+    <span class="eyebrow">ARTICLE / {String(article.sequence).padStart(3, "0")}</span>
+    <h1 class="article-title">{article.title}</h1>
+    {#if article.excerpt}<p class="article-deck">{article.excerpt}</p>{/if}
+    <div class="reader-meta">
+      <time datetime={article.published_at ?? ""}>{dateLabel(article.published_at)}</time>
+      <span>·</span><span>{readMinutes(article.markdown)} 分钟阅读</span>
+    </div>
+  </header>
+  {#if article.cover_id}<img class="reader-cover" src={imagePath(article.cover_id)} alt={article.title} />{/if}
+  <div class="prose">{@html html}</div>
+  {#if tags.length}<div class="reader-tags" aria-label="文章标签">
+      {#each tags as tag}<a href={"/tags/" + tag.slug}>#{tag.name}</a>{/each}
+    </div>{/if}
+  <div class="reader-end">
+    <a href="/articles">← 返回文章</a>
+    <a href={"/studio/" + article.id}>编辑文章 ↗</a>
   </div>
 </article>

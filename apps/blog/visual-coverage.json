@@ -9,42 +9,22 @@
   ],
   "baselineTemplate": "e2e/__screenshots__/{project}/{snapshot}",
   "pages": [
-    {
-      "source": "src/routes/+page.svelte",
-      "scenarios": ["reading"]
-    },
-    {
-      "source": "src/routes/studio/+page.svelte",
-      "scenarios": ["writing"]
-    },
-    {
-      "source": "src/routes/[category]/+page.svelte",
-      "scenarios": ["reading"]
-    },
-    {
-      "source": "src/routes/tags/[tag]/+page.svelte",
-      "exemption": "Tag archive reuses ArticleList covered by home/category screenshots; distinct tag filtering remains a documented coverage gap."
-    },
-    {
-      "source": "src/routes/articles/[id]/+page.svelte",
-      "scenarios": ["reading"]
-    },
-    {
-      "source": "src/routes/[category]/[title]/+page.svelte",
-      "scenarios": ["reading"]
-    },
-    {
-      "source": "src/routes/auth/callback/+page.svelte",
-      "exemption": "Auth0 callback requires real provider redirect and PKCE state; verified separately with production identity, not screenshot fixture."
-    },
-    {
-      "source": "src/routes/studio/new/+page.svelte",
-      "scenarios": ["writing"]
-    },
-    {
-      "source": "src/routes/studio/[id]/+page.svelte",
-      "scenarios": ["writing"]
-    }
+    { "source": "src/routes/+page.svelte", "scenarios": ["reading"] },
+    { "source": "src/routes/articles/+page.svelte", "scenarios": ["reading"] },
+    { "source": "src/routes/articles/[title]/+page.svelte", "scenarios": ["reading"] },
+    { "source": "src/routes/notes/+page.svelte", "scenarios": ["reading"] },
+    { "source": "src/routes/notes/[sequence]/+page.svelte", "scenarios": ["reading"] },
+    { "source": "src/routes/timeline/+page.svelte", "scenarios": ["reading"] },
+    { "source": "src/routes/about/+page.svelte", "scenarios": ["reading"] },
+    { "source": "src/routes/tags/[tag]/+page.svelte", "scenarios": ["reading"] },
+    { "source": "src/routes/[category]/[title]/+page.svelte", "exemption": "Legacy category URLs issue a permanent redirect and have no rendered page; the redirect is asserted in the reading test." },
+    { "source": "src/routes/contents/[id]/+page.svelte", "exemption": "The shared UUID entry redirects to its canonical article or note URL; the redirect is asserted in the reading test." },
+    { "source": "src/routes/auth/callback/+page.svelte", "exemption": "Auth0 callback requires provider redirect and PKCE state; verified separately with production identity." },
+    { "source": "src/routes/studio/+page.svelte", "scenarios": ["writing"] },
+    { "source": "src/routes/studio/new/+page.svelte", "scenarios": ["writing"] },
+    { "source": "src/routes/studio/[id]/+page.svelte", "scenarios": ["writing"] },
+    { "source": "src/routes/studio/notes/new/+page.svelte", "scenarios": ["writing"] },
+    { "source": "src/routes/studio/notes/[id]/+page.svelte", "scenarios": ["writing"] }
   ],
   "scenarios": [
     {
@@ -53,16 +33,9 @@
       "evidence": [
         {
           "spec": "e2e/blog.spec.ts",
-          "test": "SSR reading, canonical URLs, category, dark mode and empty/error states",
+          "test": "SSR, direct Data API navigation, skeleton, canonical URLs and reading states",
           "projects": ["iphone", "desktop"],
-          "snapshots": [
-            "home.png",
-            "article.png",
-            "article-dark.png",
-            "category.png",
-            "empty.png",
-            "error.png"
-          ]
+          "snapshots": ["home.png", "articles.png", "article.png", "article-dark.png", "notes.png", "note.png", "timeline.png", "about.png", "tag.png", "empty.png", "error.png"]
         }
       ]
     },
@@ -72,9 +45,9 @@
       "evidence": [
         {
           "spec": "e2e/blog.spec.ts",
-          "test": "editor saves Markdown and publishes through PostgREST",
+          "test": "editor writes articles and titleless notes through Data API",
           "projects": ["iphone", "desktop"],
-          "snapshots": ["studio.png", "editor.png"]
+          "snapshots": ["studio.png", "editor.png", "note-editor.png"]
         }
       ]
     }

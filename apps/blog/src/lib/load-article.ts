@@ -2,15 +2,10 @@ import { error } from "@sveltejs/kit";
 import { publicRepository } from "./public-api";
 import { renderMarkdown } from "./markdown";
 export async function loadArticle(
-  key: { id: string } | { category: string; title: string },
+  slug: string,
 ) {
   const repo = publicRepository();
-  const article =
-    "id" in key
-      ? /^[0-9a-f-]{36}$/i.test(key.id)
-        ? await repo.article(key.id)
-        : null
-      : await repo.articleBySlug(key.category, key.title);
+  const article = await repo.articleBySlug(slug);
   if (
     !article ||
     article.status !== "published" ||
@@ -18,10 +13,13 @@ export async function loadArticle(
     new Date(article.published_at) > new Date()
   )
     error(404, "文章不存在");
-  const tags = await repo.tags();
+  const [html, tags] = await Promise.all([
+    renderMarkdown(article.markdown),
+    repo.tagsForArticle(article.id),
+  ]);
   return {
     article,
-    html: await renderMarkdown(article.markdown),
-    tags: tags.filter((t) => article.tag_ids.includes(t.id)),
+    html,
+    tags,
   };
 }

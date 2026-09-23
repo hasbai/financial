@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { articlePath, articleSchema } from "./content";
+import { articlePath, articleSchema, excerptFromMarkdown, notePath, noteSchema } from "./content";
 import { renderMarkdown } from "./markdown";
 import { boundedImage, imageType, maxImageBytes } from "./images";
 it("preserves public content structure while rejecting executable HTML and links", async () => {
@@ -13,14 +13,13 @@ it("preserves public content structure while rejecting executable HTML and links
   expect(html).not.toContain("<script");
   expect(html).not.toContain("javascript:");
 });
-it("uses a canonical category/title path and validates publication", () => {
-  expect(
-    articlePath({
-      slug: "hello-world",
-      category: { id: "a", name: "手记", slug: "notes" },
-    }),
-  ).toBe("/notes/hello-world");
+it("uses separate article and note URLs and validates publication", () => {
+  expect(articlePath({ slug: "hello-world" })).toBe("/articles/hello-world");
+  expect(notePath({ sequence: 18 })).toBe("/notes/18");
   expect(articleSchema.safeParse({ title: "", slug: "x" }).success).toBe(false);
+  expect(noteSchema.safeParse({ excerpt: "", markdown: "", cover_id: null, status: "published", published_at: null }).success).toBe(false);
+  expect(excerptFromMarkdown("## 标题\n\n[正文](https://example.com)"))
+    .toBe("标题 正文");
 });
 it("checks image bytes rather than trusting content type", () => {
   expect(imageType(new TextEncoder().encode('<svg onload="alert(1)">'))).toBe(
