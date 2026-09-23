@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { waitForRun } from '../wait-ci.mjs';
+import { waitForRun } from '../../../../scripts/wait-ci.mjs';
 
 const input = { repo: 'owner/repo', runId: '123', sha: 'a'.repeat(40), event: 'merge_group' };
 const run = (changes = {}) => ({ id: 123, repository: { full_name: 'owner/repo' }, head_sha: input.sha,

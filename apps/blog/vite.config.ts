@@ -7,12 +7,15 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias:
       mode === "e2e"
-        ? {
-            "@hasbai/auth": fileURLToPath(
-              new URL("./e2e/auth.ts", import.meta.url),
-            ),
-          }
-        : {},
+        ? [
+            {
+              find: "@hasbai/auth",
+              replacement: fileURLToPath(
+                new URL("./e2e/auth.ts", import.meta.url),
+              ),
+            },
+          ]
+        : [],
   },
   test: { include: ["src/**/*.test.ts"], environment: "node" },
 }));

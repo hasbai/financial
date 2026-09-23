@@ -10,7 +10,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   const db = repository(async () => token).db;
   if (!platform?.env.IMAGES) error(503, "图片存储暂时不可用");
   // Authorize with an actual PostgREST write before touching R2; no duplicate JWT parser.
-  let bytes: Uint8Array;
+  let bytes: Uint8Array<ArrayBuffer>;
   try {
     bytes = await boundedImage(request);
   } catch (e) {

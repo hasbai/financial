@@ -40,7 +40,7 @@
   let termName = $state("");
   let termSlug = $state("");
   let deleting = $state(false);
-  let coverInput: HTMLInputElement;
+  let coverInput = $state<HTMLInputElement>();
   const payload = () => ({
     title,
     slug,
@@ -147,7 +147,7 @@
       error = e instanceof Error ? e.message : "上传失败";
     } finally {
       uploading = false;
-      coverInput.value = "";
+      if (coverInput) coverInput.value = "";
     }
   }
   async function createTerm() {
@@ -347,7 +347,7 @@
           /><Button
             variant="outline"
             disabled={saving || uploading}
-            onclick={() => coverInput.click()}
+            onclick={() => coverInput?.click()}
             ><ImagePlus size={16} />{uploading
               ? "正在上传…"
               : "上传封面"}</Button

@@ -65,6 +65,7 @@ jobs:
     steps:
       - name: Require task branch for candidates
         if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+        working-directory: .
         run: test "$GITHUB_REF" != refs/heads/main
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
