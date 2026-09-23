@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 const tag = { id: '10000000-0000-4000-8000-000000000001', name: '随笔', slug: 'writing' };
 const article = {
   id: '20000000-0000-4000-8000-000000000001', kind: 'article', sequence: 1,
-  title: 'Hello World，开始记录', slug: 'hello-world', legacy_path: '/journal/hello-world',
+  title: 'Hello World，开始记录', slug: 'hello-world', legacy_path: '/notes/hello-world',
   excerpt: '写作让零散的想法有了形状。这里是一次新的开始。',
   markdown: '## 从一页空白开始\n\n这是北极手记的第一篇文章。把思考留下来，让日常值得回看。\n\n> 写下来，就有了下一次对话。',
   cover_id: null, status: 'published', published_at: '2026-09-23T00:00:00Z',
