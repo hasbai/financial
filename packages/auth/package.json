@@ -1,0 +1,11 @@
+{
+  "name": "@hasbai/auth",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@auth0/auth0-spa-js": "^2.25.0"
+  }
+}

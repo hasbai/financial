@@ -1,3 +1,7 @@
+# Monorepo 校验入口
+
+2026-09-23：财务工作目录为 `apps/financial`，以下历史命令在该目录运行；根 `pnpm` 脚本代理财务命令。根 `scripts/wait-ci.mjs` 位置不变。博客独立 `Blog` workflow，必需状态为 `blog-check`、`blog-visual`，财务保留 `check`、`visual`。两个 workflow 均用 changes job 精确决定是否执行；无关应用的 job 合法跳过，失败不得跳过。共享目录及 lockfile 变更验证两边。博客视觉清单为 `apps/blog/visual-coverage.json`，复用同一 manifest/execution gate。
+
 # 测试规范与覆盖审计
 
 ## 运行

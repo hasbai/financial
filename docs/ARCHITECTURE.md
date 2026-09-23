@@ -1,6 +1,8 @@
 # 技术架构
 
-Svelte 5 + TypeScript + Vite SPA，Bits UI + shadcn-svelte（preset `b6sUj31yy`）+ Tailwind CSS 4 + Lucide，pnpm 管理依赖。Cloudflare Worker 只托管静态资源；业务数据直接调用 Neon Data API（PostgREST 兼容），业务读取视图与保存函数统一在 `financial`。
+当前为 pnpm monorepo，财务位于 `apps/financial`，博客位于 `apps/blog`。共享 UI 使用 Luma，Auth0 与 Data API 工厂共享；博客 SSR/匿名访问/图片及独立 CI 见 [BLOG](BLOG.md)。下文的 `src`/`public` 等路径均相对财务应用目录。
+
+Svelte 5 + TypeScript + Vite SPA，Bits UI + shadcn-svelte（Luma）+ Tailwind CSS 4 + Lucide，pnpm 管理依赖。Cloudflare Worker 只托管静态资源；业务数据直接调用 Neon Data API（PostgREST 兼容），业务读取视图与保存函数统一在 `financial`。
 
 ```mermaid
 flowchart LR

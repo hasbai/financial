@@ -1,0 +1,3 @@
+import {readFileSync,writeFileSync,mkdirSync,readdirSync} from 'node:fs';import {createHash} from 'node:crypto';import {execFileSync} from 'node:child_process';
+const walk=dir=>readdirSync(dir,{withFileTypes:true}).flatMap(x=>x.isDirectory()?walk(dir+'/'+x.name):[dir+'/'+x.name]);
+const files=walk('e2e/__screenshots__').filter(x=>x.endsWith('.png')).map(path=>({path,sha256:createHash('sha256').update(readFileSync(path)).digest('hex')}));mkdirSync('test-results',{recursive:true});writeFileSync('test-results/visual-baseline-candidate.json',JSON.stringify({sha:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),files},null,2));
