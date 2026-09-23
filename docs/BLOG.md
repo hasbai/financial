@@ -2,7 +2,7 @@
 
 ## 结构与共享边界
 
-pnpm monorepo：`apps/financial` 保留 Svelte 5 SPA、原业务/PWA；`apps/blog` 是 SvelteKit SSR。`packages/ui` 是统一 Luma primitives（官方 Luma registry，Lucide），`packages/auth` 共用 Auth0 SDK 工厂和公开配置，`packages/data` 共用 Neon PostgREST 客户端。业务 repository 和主题留在应用内。财务原有浅蓝灰、资产/现金/损益及深色配色保留；博客采用 neutral，正文和标题为衬线字体。原有移动端弹窗的 viewport、焦点与位移修复保留。
+pnpm monorepo：`apps/financial` 保留 Svelte 5 SPA、原业务/PWA；`apps/blog` 是 SvelteKit SSR。`packages/ui` 是统一 Luma primitives（官方 Luma registry，Lucide），`packages/auth` 共用 Auth0 SDK 工厂和公开配置，`packages/data` 共用 Neon PostgREST 客户端。业务 repository 和主题留在应用内。财务原有浅蓝灰、资产/现金/损益及深色配色保留；博客采用暖纸色、衬线标题与正文、导航胶囊和尊重减少动效偏好的入场/滚动动效。原有移动端弹窗的 viewport、焦点与位移修复保留。
 
 博客域名为 `hasbai.xyz` 与 `blog.hasbai.xyz`，canonical 统一 `https://hasbai.xyz`。复用数据库、Auth0 tenant/application/audience 与 superadmin；现有 Hugo 博客和文章不迁移、不覆盖。博客 Worker 名为 `blog`。
 
@@ -16,7 +16,7 @@ pnpm monorepo：`apps/financial` 保留 Svelte 5 SPA、原业务/PWA；`apps/blo
 
 Neon 网关要求 JWT，包括匿名访问。访客直接调用 Neon Auth `/token/anonymous` 获取短期 `role=anonymous` JWT，再直接读取 Data API；不登录、不经博客 API 代理、不使用数据库密钥。SSR 同样调用这两个公开端点。公开页使用 SvelteKit 通用 `+page.ts` load，水合后的页间跳转直接从浏览器请求匿名令牌与 Data API，不再获取 `__data.json`；导航期间立即显示骨架，关闭 hover 预取。首页和列表只读摘要列，不序列化整篇 Markdown；浏览器短时复用匿名令牌。Auth0 管理员登录继续用同一 SPA PKCE、内存 token。Neon managed auth 仅提供匿名令牌；不增加另一套用户登录入口。新增 managed `neon_auth` 属平台系统 schema，博客业务表仍全部在 public。
 
-初始迁移 `database/blog/0001_blog.sql` 已先在生产隔离分支 `br-frosty-silence-b3y3se2p` 验证，再应用生产。继承表迁移 `0002_content_inheritance.sql` 和事务函数 `0003_save_article.sql` 先在新的生产隔离分支验证数据保留、RLS、父表聚合查询、写入与旧 URL，然后在新 Worker 合并前应用生产。新 Worker 自动部署并核验后再应用 `0004_remove_category.sql`，完成分类和数组字段清理；两阶段都不能用开发分支数据覆盖生产。
+初始迁移 `database/blog/0001_blog.sql` 已先在生产隔离分支 `br-frosty-silence-b3y3se2p` 验证，再应用生产。继承表迁移 `0002_content_inheritance.sql`、事务函数 `0003_save_article.sql` 和分类清理 `0004_remove_category.sql` 已在生产隔离分支 `br-empty-surf-b3ljcyt4` 验证。生产先执行 `0002`、`0003`，待新 Worker 自动部署并核验后执行 `0004` 和 Data API 结构缓存刷新；未用开发分支数据覆盖生产。生产原文章与图片 UUID 保留，`category` 及文章旧分类/标签数组列已移除。
 
 ## 图片
 
