@@ -15,34 +15,35 @@
 
 <section class="wrap collection note-collection">
   <div class="collection-heading entrance">
-    <span class="eyebrow">WRITING / NOTES</span>
-    <h1 class="serif">手记</h1>
-    <p>一些还不需要标题的片刻。</p>
+    <span class="eyebrow">NOTES</span>
+    <h1>手记</h1>
   </div>
   {#if notes.length}
     {#each groups as [year, group]}
       <section class="note-year" aria-label={year + " 年手记"}>
-        <div class="note-year-heading"><span class="eyebrow">ANNO</span><h2>{year}</h2><span class="meta">{group.length} 则</span></div>
+        <div class="note-year-heading"><h2>{year}</h2><span class="meta">{group.length} 则</span></div>
         <div class="note-track">
           {#each group as note, index (note.id)}
             <article class="note-entry" use:reveal={index}>
-              <time datetime={note.published_at ?? ""}>{dateLabel(note.published_at)}</time>
-              <a class="note-paper" href={notePath(note)}>
-                <span class="eyebrow">LETTER №{note.sequence}</span>
-                <p class="serif">{note.excerpt || "一则手记"}</p>
-                <span class="note-read">阅读全文 →</span>
+              <a class:featured={index === 0 && page === 1} class="note-paper" href={notePath(note)}>
+                <span class="note-banner"><span>NOTE №{note.sequence}</span><svg class="note-banner-wave" viewBox="0 0 800 80" preserveAspectRatio="none" aria-hidden="true"><path class="note-banner-axis" d="M0 40H800" /><path d="M0 40 C25 40 35 34 50 34 S70 8 86 8 S108 67 130 67 S155 20 176 20 S198 55 224 55 S249 29 270 29 S297 45 320 45 S345 25 370 25 S395 52 420 52 S451 18 476 18 S501 69 526 69 S548 14 573 14 S601 58 625 58 S648 30 674 30 S700 38 725 38 S750 23 775 23 S790 40 800 40" /></svg></span>
+                <span class="note-paper-content">
+                  <time datetime={note.published_at ?? ""}>{dateLabel(note.published_at)}</time>
+                  <span class="note-excerpt serif">{note.excerpt || "一则手记"}</span>
+                  <span class="note-read">阅读全文 →</span>
+                </span>
               </a>
             </article>
           {/each}
         </div>
       </section>
     {/each}
-    <nav class="pager" aria-label="手记分页">
-      <Button variant="ghost" href={"?page=" + (page - 1)} disabled={page === 1}>← 上一页</Button>
-      <span class="meta">{page}</span>
-      <Button variant="ghost" href={"?page=" + (page + 1)} disabled={!more}>下一页 →</Button>
-    </nav>
+    {#if page > 1 || more}<nav class="pager" aria-label="手记分页">
+        <Button variant="ghost" href={"?page=" + (page - 1)} disabled={page === 1}>← 上一页</Button>
+        <span class="meta">{page}</span>
+        <Button variant="ghost" href={"?page=" + (page + 1)} disabled={!more}>下一页 →</Button>
+      </nav>{/if}
   {:else}
-    <div class="empty"><h2 class="serif text-3xl">还没有手记</h2><Button href="/studio/notes/new">写第一则</Button></div>
+    <div class="empty"><h2 class="text-3xl">还没有手记</h2><Button href="/studio/notes/new">写第一则</Button></div>
   {/if}
 </section>
