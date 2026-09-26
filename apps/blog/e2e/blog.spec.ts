@@ -4,6 +4,24 @@ test.beforeEach(async ({ request }) => {
   await request.get('http://127.0.0.1:4180/reset');
 });
 
+test('desktop background paints and respects reduced motion', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/');
+  const background = page.locator('.background-texture');
+  await expect(background).toHaveClass(/visible/);
+  await expect.poll(() => page.evaluate(() => {
+    const canvas = document.querySelector<HTMLCanvasElement>('.background-texture');
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context) return 0;
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let index = 3; index < pixels.length; index += 4) if (pixels[index] > 0) return 1;
+    return 0;
+  })).toBe(1);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(background).not.toHaveClass(/visible/);
+});
+
 test('SSR, direct Data API navigation, skeleton, canonical URLs and reading states', async ({ page, request }) => {
   const response = await request.get('/articles/hello-world');
   expect(await response.text()).toContain('从一页空白开始');

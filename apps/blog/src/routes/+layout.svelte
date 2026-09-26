@@ -3,7 +3,8 @@
   import { onMount } from "svelte";
   import { navigating, page } from "$app/state";
   import { Button } from "@hasbai/ui/button";
-  import { Sun, Moon, ArrowUpRight } from "@lucide/svelte";
+  import { Asterisk, Sun, Moon, PenLine } from "@lucide/svelte";
+  import BackgroundEffect from "$lib/components/BackgroundEffect.svelte";
   import { site } from "$lib/content";
   let { children } = $props();
   let dark = $state(false);
@@ -38,12 +39,16 @@
 
 <svelte:head>
   <title>{site.name}</title>
-  <meta name="theme-color" content={dark ? "#1d1b19" : "#faf8f4"} />
+  <meta name="theme-color" content={dark ? "#1c1c1e" : "#fefefb"} />
 </svelte:head>
 <a class="skip" href="#main">跳转至正文</a>
+<BackgroundEffect />
+{#if page.url.pathname === "/about" || page.url.pathname.startsWith("/articles/") || /^\/notes\/\d+$/.test(page.url.pathname)}
+  <div class="page-bleed" aria-hidden="true"><svg viewBox="0 0 1440 120" preserveAspectRatio="none"><path d="M-20 18 C260 19 330 12 570 18 S980 23 1460 15" /><path d="M-20 43 C220 40 350 49 610 40 S1030 33 1460 44" /><path d="M-20 68 C300 71 380 59 650 66 S1040 74 1460 65" /><path d="M-20 93 C270 89 410 101 720 92 S1110 87 1460 96" /></svg></div>
+{/if}
 <header class:scrolled class="site-header">
   <div class="header-inner wrap">
-    <a class="wordmark" href="/" aria-label="北极手记首页"><span class="wordmark-symbol" aria-hidden="true">✳</span><span>{site.name}</span></a>
+    <a class="wordmark" href="/" aria-label="北极手记首页"><span class="wordmark-symbol" aria-hidden="true"><Asterisk size={27} strokeWidth={2.3} /></span><span class="wordmark-label">{site.name}</span></a>
     <nav class="site-nav" aria-label="主导航">
       {#each nav as item}<a href={item.href} aria-current={current(item.href) ? "page" : undefined}>{item.label}</a>{/each}
     </nav>
@@ -51,7 +56,7 @@
       <Button variant="ghost" size="icon" aria-label={dark ? "切换浅色" : "切换深色"} onclick={toggleTheme}>
         {#if dark}<Sun size={18} />{:else}<Moon size={18} />{/if}
       </Button>
-      <Button variant="ghost" href="/studio" class="write-link">写作 <ArrowUpRight size={15} /></Button>
+      <Button variant="ghost" size="icon" href="/studio" class="write-link" aria-label="写作"><PenLine size={18} /></Button>
     </div>
   </div>
 </header>

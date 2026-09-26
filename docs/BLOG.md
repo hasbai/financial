@@ -2,7 +2,7 @@
 
 ## 结构与共享边界
 
-pnpm monorepo：`apps/financial` 保留 Svelte 5 SPA、原业务/PWA；`apps/blog` 是 SvelteKit SSR。`packages/ui` 是统一 Luma primitives（官方 Luma registry，Lucide），`packages/auth` 共用 Auth0 SDK 工厂和公开配置，`packages/data` 共用 Neon PostgREST 客户端。业务 repository 和主题留在应用内。财务原有浅蓝灰、资产/现金/损益及深色配色保留；博客采用暖纸色、衬线标题与正文、导航胶囊和尊重减少动效偏好的入场/滚动动效。原有移动端弹窗的 viewport、焦点与位移修复保留。
+pnpm monorepo：`apps/financial` 保留 Svelte 5 SPA、原业务/PWA；`apps/blog` 是 SvelteKit SSR。`packages/ui` 是统一 Luma primitives（官方 Luma registry，Lucide），`packages/auth` 共用 Auth0 SDK 工厂和公开配置，`packages/data` 共用 Neon PostgREST 客户端。业务 repository 和主题留在应用内。财务原有浅蓝灰、资产/现金/损益及深色配色保留；博客按参考站采用近白的 neutral 底、深灰文字、少量玫瑰色强调、紧凑导航与内容排版。桌面背景花瓣使用 Canvas 绘制；移动端和减少动效偏好下停用。原有移动端弹窗的 viewport、焦点与位移修复保留。
 
 博客域名为 `hasbai.xyz` 与 `blog.hasbai.xyz`，canonical 统一 `https://hasbai.xyz`。复用数据库、Auth0 tenant/application/audience 与 superadmin；现有 Hugo 博客和文章不迁移、不覆盖。博客 Worker 名为 `blog`。
 

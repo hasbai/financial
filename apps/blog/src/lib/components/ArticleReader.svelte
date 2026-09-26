@@ -20,11 +20,11 @@
   <header class="reader-head">
     <span class="eyebrow">ARTICLE / {String(article.sequence).padStart(3, "0")}</span>
     <h1 class="article-title">{article.title}</h1>
-    {#if article.excerpt}<p class="article-deck">{article.excerpt}</p>{/if}
     <div class="reader-meta">
       <time datetime={article.published_at ?? ""}>{dateLabel(article.published_at)}</time>
       <span>·</span><span>{readMinutes(article.markdown)} 分钟阅读</span>
     </div>
+    {#if article.excerpt}<p class="article-deck">{article.excerpt}</p>{/if}
   </header>
   {#if article.cover_id}<img class="reader-cover" src={imagePath(article.cover_id)} alt={article.title} />{/if}
   <div class="prose">{@html html}</div>
