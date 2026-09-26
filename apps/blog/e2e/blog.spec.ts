@@ -7,7 +7,13 @@ test.beforeEach(async ({ request }) => {
 test('desktop background paints and respects reduced motion', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop');
   await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.context().route(/\/petals-fallback\.svg$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await route.continue();
+  });
   await page.goto('/');
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.body, '::after').backgroundImage)).toContain('petals-fallback.svg');
+  await page.context().unroute(/\/petals-fallback\.svg$/);
   const background = page.locator('.background-texture');
   await expect(background).toHaveClass(/visible/);
   await expect.poll(() => page.evaluate(() => {
@@ -18,8 +24,10 @@ test('desktop background paints and respects reduced motion', async ({ page }, t
     for (let index = 3; index < pixels.length; index += 4) if (pixels[index] > 0) return 1;
     return 0;
   })).toBe(1);
+  await expect.poll(() => page.evaluate(() => Number(getComputedStyle(document.body, '::after').opacity))).toBe(0);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(background).not.toHaveClass(/visible/);
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.body, '::after').content)).toBe('none');
 });
 
 test('SSR, direct Data API navigation, skeleton, canonical URLs and reading states', async ({ page, request }) => {
