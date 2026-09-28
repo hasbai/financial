@@ -16,6 +16,8 @@ flowchart LR
 
 - Auth0 tenant：hasbai.eu.auth0.com。
 - 北极小站：SPA，公开 client ID `mdmD7xvX5yay52SRVZeuIOhGHIa0Wdl2`。
+- 财务与博客登录请求固定传入北极小站 Organization `org_qR4E7HTZE1Zv10go`；该 SPA 在新版部署后要求组织登录。Auth0 Organization Branding 为北极小站设置星号 Logo、主色 `#A55365`、背景色 `#FEFEFB`；东方财富证券 Organization `org_6yvoRRCkzk3eGkBS` 使用官网 Logo、主色 `#C74700`、背景色 `#FFFFFF`。两者的 `display_name` 分别是“北极小站”和“东方财富证券”。主色按白色按钮文字的对比度加深。登录框内部文案仍为租户通用设置；当前套餐的 Universal Login Page Template API 返回 402。
+- 北极小站组织启用已有 `eastmoney-email` 连接，关闭自动加入成员及注册；现有管理员账号显式加入该组织，并在该组织分配 `superadmin`。组织登录时 Post Login Action 的 `event.authorization.roles` 读取组织角色，原有用户级角色不足以写出顶层 `role`。既有 Google 组织连接保留。
 - Audience：`https://financial.hasbai.xyz/api`，RS256，Access Token 有效期一小时。
 - Callback：`https://financial.hasbai.xyz/auth/callback`、`http://localhost:5173/auth/callback`。
 - Logout / Web Origins：上述两个 origin。

@@ -10,6 +10,7 @@ const DOMAIN = "hasbai.eu.auth0.com";
 const ORIGIN = `https://${DOMAIN}`;
 const CLIENT_ID = "mdmD7xvX5yay52SRVZeuIOhGHIa0Wdl2";
 const AUDIENCE = "https://financial.hasbai.xyz/api";
+const ORGANIZATION_ID = "org_qR4E7HTZE1Zv10go";
 const ISSUER = `${ORIGIN}/`;
 const CALLBACK_URL =
   process.env.AUTH0_TEST_REDIRECT_URI || "http://localhost:5173/auth/callback";
@@ -229,13 +230,14 @@ function validate(token) {
   if (
     header.alg !== "RS256" ||
     claims.sub !== EXPECTED_SUB ||
+    claims.org_id !== ORGANIZATION_ID ||
     !audiences.includes(AUDIENCE) ||
     claims.iss !== ISSUER ||
     !Number.isFinite(claims.exp) ||
     claims.exp <= Date.now() / 1000
   )
     throw new Auth0LoginError(
-      "Auth0 access token claims do not match the financial API owner configuration.",
+      "Auth0 access token claims do not match the financial API owner and organization configuration.",
     );
   return { header, claims };
 }
@@ -287,6 +289,7 @@ export async function getUserToken() {
     nonce: randomBytes(20).toString("hex"),
     prompt: "login",
     connection: realm,
+    organization: ORGANIZATION_ID,
   });
   try {
     const identifier = await pageOrCallback(

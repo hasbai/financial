@@ -376,6 +376,12 @@ validationTest(
     await notes.fill("随身账户");
     await reachable(notes);
     await reachable(dialog.getByRole("button", { name: "保存并选中" }));
+    // Focus can leave the short form one pixel from its end in WebKit.
+    // Anchor the screenshot at the form's scroll boundary.
+    const body = dialog.locator(".form-sheet-body");
+    await body.evaluate((element) => {
+      element.scrollTop = element.scrollHeight - element.clientHeight;
+    });
     await expect(page).toHaveScreenshot("inline-account-dark-short.png");
     await dialog.getByRole("button", { name: "保存并选中" }).click();
     await expect(dialog).toHaveCount(0);
