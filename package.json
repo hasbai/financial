@@ -19,6 +19,9 @@
     "test:ci-tools": "pnpm --filter financial test:ci-tools",
     "dev:blog": "pnpm --filter blog dev",
     "build:blog": "pnpm --filter blog build",
-    "check:blog": "pnpm --filter blog typecheck"
+    "check:blog": "pnpm --filter blog typecheck",
+    "dev:zboard": "pnpm --filter zboard dev",
+    "build:zboard": "pnpm --filter zboard build",
+    "check:zboard": "pnpm --filter zboard typecheck"
   }
 }

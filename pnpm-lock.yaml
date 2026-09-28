@@ -214,6 +214,58 @@ importers:
         specifier: ^4.131.1
         version: 4.131.1(@types/node@26.5.1)
 
+  apps/zboard:
+    dependencies:
+      '@hasbai/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
+      '@hasbai/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@lucide/svelte':
+        specifier: ^1.45.0
+        version: 1.45.0(svelte@5.57.0)
+      '@tailwindcss/vite':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@8.3.0(@types/node@26.5.1)(esbuild@0.28.1)(jiti@2.7.0))
+      jose:
+        specifier: ^6.1.0
+        version: 6.2.12
+      svelte:
+        specifier: ^5.57.0
+        version: 5.57.0
+      tailwindcss:
+        specifier: ^4.3.3
+        version: 4.3.3
+      tw-animate-css:
+        specifier: ^1.4.0
+        version: 1.4.0
+    devDependencies:
+      '@playwright/test':
+        specifier: 1.63.0
+        version: 1.63.0
+      '@sveltejs/vite-plugin-svelte':
+        specifier: ^7.3.0
+        version: 7.3.0(svelte@5.57.0)(vite@8.3.0(@types/node@26.5.1)(esbuild@0.28.1)(jiti@2.7.0))
+      '@types/node':
+        specifier: ^26.5.1
+        version: 26.5.1
+      svelte-check:
+        specifier: ^4.7.6
+        version: 4.7.6(picomatch@4.0.7)(svelte@5.57.0)(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vite:
+        specifier: ^8.3.0
+        version: 8.3.0(@types/node@26.5.1)(esbuild@0.28.1)(jiti@2.7.0)
+      vitest:
+        specifier: 5.0.0
+        version: 5.0.0(@types/node@26.5.1)(@vitest/coverage-v8@5.0.0)(jsdom@30.0.1)(vite@8.3.0(@types/node@26.5.1)(esbuild@0.28.1)(jiti@2.7.0))
+      wrangler:
+        specifier: ^4.131.1
+        version: 4.131.1(@types/node@26.5.1)
+
   packages/auth:
     dependencies:
       '@auth0/auth0-spa-js':

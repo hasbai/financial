@@ -51,3 +51,7 @@ CI 等待统一使用 `node scripts/wait-ci.mjs <owner/repo> <run-id> <full-sha>
 数据库验证用 `scripts/test-database.mjs`，连接串从 stdin 传入，所有测试写入在事务中回滚。不得输出凭据。
 
 独立区分自动化、真实 JWT/API、浏览器与部署验收。完成修改时，必要的生产数据库迁移、提交、推送属于同一次交付，不再另行等待发布授权。涉及数据库时先在隔离 Neon 分支验证，再迁移生产并核验真实 API，然后仅暂存任务文件、提交，由子代理推送功能分支并核验CI。PR合并到main后触发Cloudflare自动部署，必须核验构建结果和线上版本；不要重复手动部署。需要新旧版本兼容的迁移应安排兼容步骤，不能只推前端而遗漏数据库。
+
+## Zboard 应用
+
+`apps/zboard` 为 Svelte 5 SPA / 共享 Luma neutral UI / Auth0 / Worker / D1，业务说明见 `apps/zboard/README.md`。财务三表及 Neon 限制不适用于 zboard。用户确认项目未上线且无旧业务数据，首次 Auth0 登录创建禁用用户，管理员分配权限与节点，不实现旧账户关联。认证必须使用独立 zboard API audience。D1 保留原资源，零流量不上报落库；不得把服务端配置或私钥用于生成用户订阅。`Zboard` workflow 的 zboard-check/zboard-visual 同样必须通过，候选纳入根 Check workflow；本地禁止测试/typecheck/build。发布沿用 Cloudflare Workers Builds，不另行手动重复部署。

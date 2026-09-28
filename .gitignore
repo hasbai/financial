@@ -20,3 +20,5 @@ backups/
 
 .svelte-kit/
 worker-configuration.d.ts
+
+worker-env.d.ts
