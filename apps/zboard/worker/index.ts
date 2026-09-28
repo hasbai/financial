@@ -49,7 +49,7 @@ const JSON_HEADERS = {
 };
 
 export default {
-  async fetch(request, env) {
+  async fetch(request: Request, env: Env) {
     const url = new URL(request.url);
     try {
       if (request.method === "OPTIONS") {
