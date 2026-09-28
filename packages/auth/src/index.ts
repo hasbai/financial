@@ -3,6 +3,7 @@ export const authConfig = {
   domain: "hasbai.eu.auth0.com",
   clientId: "mdmD7xvX5yay52SRVZeuIOhGHIa0Wdl2",
   audience: "https://financial.hasbai.xyz/api",
+  organization: "org_qR4E7HTZE1Zv10go",
 } as const;
 /** Invoke only in the browser. Tokens stay in SDK memory. */
 export function createBrowserClient(origin: string) {
@@ -16,6 +17,7 @@ export function createBrowserClient(origin: string) {
       audience: authConfig.audience,
       scope: "openid profile email",
       connection: "eastmoney-email",
+      organization: authConfig.organization,
     },
   });
 }

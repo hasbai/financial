@@ -30,7 +30,7 @@ beforeEach(() => {
   router.navigate("/", true, true);
   sdk.getUser.mockResolvedValue({ sub: config.ownerSubject });
 });
-it("uses the existing audience, connection and memory-only token cache", async () => {
+it("uses the hasbai organization, audience, connection and memory-only token cache", async () => {
   const auth = createAuth();
   await auth.init(vi.fn());
   expect(sdk.constructor).toHaveBeenCalledWith(
@@ -41,6 +41,7 @@ it("uses the existing audience, connection and memory-only token cache", async (
       authorizationParams: expect.objectContaining({
         audience: config.audience,
         connection: "eastmoney-email",
+        organization: config.organization,
       }),
     }),
   );
