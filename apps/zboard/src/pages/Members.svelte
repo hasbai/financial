@@ -283,6 +283,7 @@
                 <p class="muted">{expiry(u.expired_at)}</p></td
               ><td><Badge variant="secondary">{status(u)}</Badge></td><td
                 class="mono"
+                data-label="已用 / 额度"
                 >{hidden
                   ? "••••"
                   : bytes(u.upload + u.download) +
