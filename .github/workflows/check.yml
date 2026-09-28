@@ -150,3 +150,9 @@ jobs:
     uses: ./.github/workflows/blog.yml
     with:
       update_visual_baselines: true
+
+  zboard-candidates:
+    if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
+    uses: ./.github/workflows/zboard.yml
+    with:
+      update_visual_baselines: true
