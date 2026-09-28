@@ -69,8 +69,16 @@
             "node-editor.png",
             "save-error.png",
             "template-editor.png",
+            "clash-template-editor.png",
+            "clash-template-dark.png",
             "member-editor.png"
           ]
+        },
+        {
+          "spec": "e2e/panel.spec.ts",
+          "test": "Clash template fetch error can retry",
+          "projects": ["iphone", "desktop"],
+          "snapshots": ["clash-template-error.png"]
         }
       ]
     },

@@ -1,5 +1,10 @@
 import { identity, AuthError } from "./auth";
 import { clientConfig, subscription } from "./subscription";
+import {
+  DEFAULT_CLASH_TEMPLATE,
+  renderClashTemplate,
+  type ClashSettings,
+} from "./clash-template";
 
 type RuntimeEnv = Env;
 
@@ -47,6 +52,13 @@ type AuthContext = {
 const JSON_HEADERS = {
   "Content-Type": "application/json; charset=utf-8",
 };
+const PUBLIC_ORIGIN = "https://zboard.hasbai.xyz";
+
+function subscriptionOrigin(url: URL): string {
+  return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+    ? url.origin
+    : PUBLIC_ORIGIN;
+}
 
 export default {
   async fetch(request: Request, env: Env) {
@@ -332,6 +344,11 @@ async function handleAdmin(
   if (parts.length === 1 && parts[0] === "templates") {
     if (request.method === "GET") return listTemplates(env);
     if (request.method === "POST") return createTemplate(request, env);
+  }
+
+  if (parts.length === 1 && parts[0] === "clash") {
+    if (request.method === "GET") return json(await clashSettings(env));
+    if (request.method === "PUT") return updateClashSettings(request, env);
   }
 
   if (
@@ -664,6 +681,44 @@ async function listTemplates(env: RuntimeEnv): Promise<Response> {
     "SELECT id, name, description, protocol, template_json, created_at, updated_at FROM config_templates ORDER BY id ASC",
   ).all();
   return json({ templates: results ?? [] });
+}
+
+async function clashSettings(env: RuntimeEnv): Promise<ClashSettings> {
+  const row = await env.DB.prepare(
+    "SELECT template_yaml, override_yaml FROM clash_settings WHERE id = 1",
+  ).first<ClashSettings>();
+  return row ?? { template_yaml: DEFAULT_CLASH_TEMPLATE, override_yaml: "" };
+}
+
+async function updateClashSettings(
+  request: Request,
+  env: RuntimeEnv,
+): Promise<Response> {
+  const body = await readJsonObject(request);
+  if (
+    typeof body.template_yaml !== "string" ||
+    !body.template_yaml.trim() ||
+    typeof body.override_yaml !== "string"
+  )
+    throw new HttpError(400, "请填写 Clash 模板和管理员覆盖项");
+  const settings: ClashSettings = {
+    template_yaml: body.template_yaml,
+    override_yaml: body.override_yaml,
+  };
+  try {
+    renderClashTemplate(settings, []);
+  } catch (error) {
+    throw new HttpError(400, errorToString(error));
+  }
+  await env.DB.prepare(
+    `INSERT INTO clash_settings (id, template_yaml, override_yaml, updated_at)
+     VALUES (1, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET template_yaml=excluded.template_yaml,
+       override_yaml=excluded.override_yaml, updated_at=excluded.updated_at`,
+  )
+    .bind(settings.template_yaml, settings.override_yaml, now())
+    .run();
+  return json(settings);
 }
 
 async function getTemplate(
@@ -1181,7 +1236,7 @@ async function handleMe(
     nodes: eligible ? nodes : [],
     subscription_url:
       eligible && nodes.length
-        ? `${url.origin}/sub/${subscription_token}`
+        ? `${subscriptionOrigin(url)}/sub/${subscription_token}`
         : null,
   });
 }
@@ -1222,7 +1277,8 @@ async function handleSubscription(
   if (!["base64", "uri", "clash"].includes(format))
     throw new HttpError(400, "不支持的订阅格式");
   if (!nodes.length) return json({ message: "暂无可用节点" }, 404);
-  return new Response(subscription(nodes, user.uuid, format), {
+  const settings = format === "clash" ? await clashSettings(env) : undefined;
+  return new Response(subscription(nodes, user.uuid, format, settings), {
     headers: {
       "Content-Type":
         format === "clash"
