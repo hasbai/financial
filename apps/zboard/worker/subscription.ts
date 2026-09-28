@@ -1,4 +1,9 @@
 /** Explicit allowlist: server configuration (especially private keys) never enters subscriptions. */
+import {
+  DEFAULT_CLASH_TEMPLATE,
+  renderClashTemplate,
+  type ClashSettings,
+} from "./clash-template";
 export type ClientConfig = {
   server: string;
   port: number;
@@ -116,6 +121,10 @@ export function subscription(
   nodes: SubscriptionNode[],
   uuid: string,
   format: string,
+  settings: ClashSettings = {
+    template_yaml: DEFAULT_CLASH_TEMPLATE,
+    override_yaml: "",
+  },
 ): string {
   if (format === "base64")
     return base64(nodes.map((n) => nodeUri(n, uuid)).join("\n"));
@@ -161,19 +170,5 @@ export function subscription(
     }
     return p;
   });
-  return JSON.stringify(
-    {
-      proxies,
-      "proxy-groups": [
-        {
-          name: "节点选择",
-          type: "select",
-          proxies: proxies.map((p) => p.name),
-        },
-      ],
-      rules: ["MATCH,节点选择"],
-    },
-    null,
-    2,
-  );
+  return renderClashTemplate(settings, proxies);
 }

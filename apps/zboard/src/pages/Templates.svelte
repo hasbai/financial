@@ -21,6 +21,10 @@
     protocol = $state("vless"),
     description = $state(""),
     config = $state("{}"),
+    clashEditing = $state(false),
+    clashLoading = $state(false),
+    clashTemplate = $state(""),
+    clashOverride = $state(""),
     confirm = $state(false),
     dirty = $state(false);
   onMount(() => {
@@ -40,6 +44,7 @@
     }
   }
   function edit(t?: Template) {
+    clashEditing = false;
     id = t?.id ?? null;
     name = t?.name ?? "";
     protocol = t?.protocol ?? "vless";
@@ -64,7 +69,47 @@
   function back() {
     if (dirty && !window.confirm("放弃未保存的修改？")) return;
     editing = false;
+    clashEditing = false;
     dirty = false;
+  }
+  async function openClash() {
+    clashEditing = true;
+    clashLoading = true;
+    clashTemplate = "";
+    clashOverride = "";
+    error = "";
+    notice = "";
+    dirty = false;
+    try {
+      const settings = await api.request<{
+        template_yaml: string;
+        override_yaml: string;
+      }>("/admin/clash");
+      clashTemplate = settings.template_yaml;
+      clashOverride = settings.override_yaml;
+    } catch (e) {
+      error = (e as Error).message;
+    } finally {
+      clashLoading = false;
+    }
+  }
+  async function saveClash(e: SubmitEvent) {
+    e.preventDefault();
+    busy = true;
+    error = "";
+    try {
+      await api.request("/admin/clash", "PUT", {
+        template_yaml: clashTemplate,
+        override_yaml: clashOverride,
+      });
+      clashEditing = false;
+      dirty = false;
+      notice = "Clash 订阅模板已保存";
+    } catch (e) {
+      error = (e as Error).message;
+    } finally {
+      busy = false;
+    }
   }
   async function save(e: SubmitEvent) {
     e.preventDefault();
@@ -116,7 +161,41 @@
     class="skeleton"
     role="status"
     aria-label="正在加载模板"
-  ></div>{:else if editing}<div class="editor stack">
+  ></div>{:else if clashEditing}<div class="editor stack">
+    <div class="actions">
+      <Button variant="ghost" onclick={back} disabled={busy}><ArrowLeft />返回</Button>
+      <h2>Clash 订阅模板</h2>
+    </div>
+    {#if clashLoading}<div class="skeleton" role="status" aria-label="正在加载 Clash 订阅模板"></div>
+    {:else if error && !clashTemplate}<div class="empty"><Button variant="outline" onclick={openClash}>重试</Button></div>
+    {:else}<form class="stack" onsubmit={saveClash} oninput={() => (dirty = true)}>
+      <fieldset disabled={busy} class="panel">
+        <div class="panel-body form-grid">
+          <div class="field wide">
+            <label for="clash-template">Clash 配置模板（YAML）</label><Textarea
+              id="clash-template"
+              class="json-editor"
+              bind:value={clashTemplate}
+              required
+              spellcheck="false"
+            />
+          </div>
+          <div class="field wide">
+            <label for="clash-override">管理员覆盖项（YAML）</label><Textarea
+              id="clash-override"
+              class="json-editor"
+              bind:value={clashOverride}
+              spellcheck="false"
+            />
+          </div>
+        </div>
+      </fieldset>
+      <div class="save-bar">
+        <Button type="button" variant="outline" onclick={back} disabled={busy}>取消</Button>
+        <Button type="submit" disabled={busy}>{busy ? "处理中…" : "保存模板"}</Button>
+      </div>
+    </form>{/if}
+  </div>{:else if editing}<div class="editor stack">
     <div class="actions">
       <Button variant="ghost" onclick={back} disabled={busy}
         ><ArrowLeft />返回</Button
@@ -180,7 +259,7 @@
       aria-label="搜索模板"
       placeholder="搜索模板"
       bind:value={search}
-    /><Button onclick={() => edit()}><Plus />新增模板</Button>{#if error}<Button
+    /><Button variant="outline" onclick={openClash}>Clash 订阅模板</Button><Button onclick={() => edit()}><Plus />新增模板</Button>{#if error}<Button
         variant="outline"
         onclick={load}>重试</Button
       >{/if}

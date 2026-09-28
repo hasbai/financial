@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { identity } from "./auth";
 import worker, { normalizeTrafficPayload, renderTemplate } from "./index";
 import { clientConfig, subscription } from "./subscription";
+import { parse } from "yaml";
 vi.mock("./auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./auth")>()),
   identity: vi.fn(),
@@ -48,6 +49,7 @@ beforeEach(() => {
     "0001_schema.sql",
     "0002_seed.sql",
     "0003_auth0_subscriptions.sql",
+    "0004_clash_template.sql",
   ])
     db.exec(
       readFileSync(new URL("../migrations/" + name, import.meta.url), "utf8"),
@@ -222,6 +224,52 @@ describe("D1 panel and node contracts", () => {
       ).status,
     ).toBe(400);
   });
+  it("restricts and saves the Clash template and override", async () => {
+    vi.mocked(identity).mockResolvedValue({
+      sub: "auth0|member",
+      email: "member@example.com",
+      admin: false,
+    });
+    expect((await call("/api/admin/clash")).status).toBe(403);
+    vi.mocked(identity).mockResolvedValue({
+      sub: "auth0|admin",
+      email: "admin@example.com",
+      admin: true,
+    });
+    const original = (await (await call("/api/admin/clash")).json()) as {
+      template_yaml: string;
+      override_yaml: string;
+    };
+    expect(original.template_yaml).toContain("本站节点");
+    expect(
+      (await call("/api/admin/clash", "PUT", {
+        ...original,
+        override_yaml: "proxy-groups: [broken]",
+      })).status,
+    ).toBe(400);
+    expect(
+      (await call("/api/admin/clash", "PUT", {
+        ...original,
+        override_yaml: "dns:\n  enable: true",
+      })).status,
+    ).toBe(200);
+    const saved = (await (await call("/api/admin/clash")).json()) as {
+      override_yaml: string;
+    };
+    expect(saved.override_yaml).toContain("enable: true");
+    expect(db.prepare("SELECT count(*) AS n FROM clash_settings").get()?.n).toBe(1);
+    await seed();
+    const me = (await (await call("/api/me")).json()) as {
+      subscription_url: string;
+    };
+    expect(me.subscription_url).toMatch(/^https:\/\/zboard\.hasbai\.xyz\/sub\//);
+    const yaml = await (
+      await call(new URL(me.subscription_url).pathname + "?format=clash")
+    ).text();
+    const config = parse(yaml) as { dns: { enable: boolean }; proxies: unknown[] };
+    expect(config.dns.enable).toBe(true);
+    expect(config.proxies).toHaveLength(1);
+  });
 });
 describe("subscription and template rendering", () => {
   it("escapes template values and preserves whole-placeholder types", () => {
@@ -263,9 +311,33 @@ describe("subscription and template rendering", () => {
     expect(subscription(nodes, "uuid", "uri")).toContain(
       "vless://uuid@node.example.com:443",
     );
-    expect(
-      JSON.parse(subscription(nodes, "uuid", "clash")).proxies[0].uuid,
-    ).toBe("uuid");
+    const clash = parse(subscription(nodes, "uuid", "clash")) as {
+      proxies: Array<{ name: string; uuid: string }>;
+      "proxy-groups": Array<{ name: string; proxies: string[] }>;
+    };
+    expect(clash.proxies[0].uuid).toBe("uuid");
+    expect(clash["proxy-groups"].find((g) => g.name === "本站节点")?.proxies)
+      .toEqual([clash.proxies[0].name]);
     expect(atob(subscription(nodes, "uuid", "base64"))).toContain("vless://");
+  });
+  it("merges administrator overrides without replacing per-user site proxies", () => {
+    const nodes = [{
+      id: 7,
+      name: "专属节点",
+      node_type: "vless",
+      client_json: JSON.stringify(client),
+    }];
+    const rendered = parse(subscription(nodes, "own-uuid", "clash", {
+      template_yaml: `proxies: []\nproxy-groups:\n  - name: 策略\n    type: select\n    proxies: [本站节点, DIRECT]\nrules: ["MATCH,策略"]\ndns:\n  enable: false\n`,
+      override_yaml: "dns:\n  enable: true\nrules: [\"MATCH,策略\"]\n",
+    })) as Record<string, unknown>;
+    expect(rendered.dns).toEqual({ enable: true });
+    expect((rendered.proxies as Array<Record<string, unknown>>)[0].uuid).toBe("own-uuid");
+    expect((rendered["proxy-groups"] as Array<Record<string, unknown>>).at(-1))
+      .toMatchObject({ name: "本站节点", proxies: ["专属节点 · 7"] });
+    expect(() => subscription(nodes, "own-uuid", "clash", {
+      template_yaml: "proxies: []\nproxy-groups: []\nrules: []",
+      override_yaml: "proxy-groups:\n  - name: 本站节点\n    type: select\n    proxies: [DIRECT]",
+    })).toThrow();
   });
 });

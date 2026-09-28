@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 async function fixture(
   page: Page,
-  { admin = true, empty = false, fail = false, delay = false } = {},
+  { admin = true, empty = false, fail = false, delay = false, clashDelay = false } = {},
 ) {
   let failure = fail;
   const user = {
@@ -49,6 +49,10 @@ async function fixture(
           template_json: '{"server_port":443,"network":"tcp"}',
         },
       ];
+  let clashSettings = {
+    template_yaml: "proxies: []\nproxy-groups:\n  - name: 节点选择\n    type: select\n    proxies: [本站节点, DIRECT]\nrules: [\"MATCH,节点选择\"]\n",
+    override_yaml: "",
+  };
   const assignments = new Set([1]);
   let sub = "0123456789abcdef0123456789abcdef";
   await page.route("**/api/**", async (route) => {
@@ -57,6 +61,7 @@ async function fixture(
       p = url.pathname;
     let data: unknown = { ok: true };
     if (delay && p === "/api/me") return;
+    if (clashDelay && p === "/api/admin/clash") return;
     if (failure) {
       await route.fulfill({ status: 503, json: { message: "服务暂时不可用" } });
       return;
@@ -104,6 +109,9 @@ async function fixture(
     else if (p === "/api/admin/users/1") {
       Object.assign(user, body);
       data = { user };
+    } else if (p === "/api/admin/clash") {
+      if (req.method() === "PUT") clashSettings = body;
+      data = clashSettings;
     } else if (p === "/api/admin/templates" && req.method() === "GET")
       data = { templates };
     else if (p === "/api/admin/templates" && req.method() === "POST") {
@@ -238,6 +246,23 @@ test("node template and membership operations", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "编辑模板 新模板名称" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Clash 订阅模板" }).click();
+  await expect(page.getByLabel("Clash 配置模板（YAML）")).toHaveValue(/本站节点/);
+  await fits(page);
+  await expect(page).toHaveScreenshot("clash-template-editor.png", { fullPage: true });
+  await page.getByRole("button", { name: "切换深色" }).click();
+  await expect(page).toHaveScreenshot("clash-template-dark.png", { fullPage: true });
+  await page.getByRole("button", { name: "切换浅色" }).click();
+  await page.getByLabel("管理员覆盖项（YAML）").fill("dns:\n  enable: true");
+  f.fail();
+  await page.getByRole("button", { name: "保存模板" }).click();
+  await expect(page.getByRole("alert")).toContainText("服务暂时不可用");
+  await expect(page.getByLabel("管理员覆盖项（YAML）")).toHaveValue("dns:\n  enable: true");
+  f.recover();
+  await page.getByRole("button", { name: "保存模板" }).click();
+  await page.getByRole("button", { name: "Clash 订阅模板" }).click();
+  await expect(page.getByLabel("管理员覆盖项（YAML）")).toHaveValue("dns:\n  enable: true");
+  await page.getByRole("button", { name: "返回", exact: true }).click();
   await page.getByRole("link", { name: "用户", exact: true }).click();
   await page
     .getByRole("button", { name: "编辑用户 member@example.com" })
@@ -246,6 +271,24 @@ test("node template and membership operations", async ({ page }) => {
   await page.getByLabel("流量额度（GB，0 为不限）").fill("200");
   await page.getByRole("button", { name: "保存用户" }).click();
   await expect(page.getByText("5 GB / 200 GB")).toBeVisible();
+});
+test("Clash template loading and fetch error recovery", async ({ page }) => {
+  await fixture(page, { clashDelay: true });
+  await open(page, "templates");
+  await page.getByRole("button", { name: "Clash 订阅模板" }).click();
+  await expect(page.getByRole("status", { name: "正在加载 Clash 订阅模板" })).toBeVisible();
+  await fits(page);
+});
+test("Clash template fetch error can retry", async ({ page }) => {
+  const f = await fixture(page);
+  await open(page, "templates");
+  f.fail();
+  await page.getByRole("button", { name: "Clash 订阅模板" }).click();
+  await expect(page.getByRole("alert")).toContainText("服务暂时不可用");
+  await expect(page).toHaveScreenshot("clash-template-error.png", { fullPage: true });
+  f.recover();
+  await page.getByRole("button", { name: "重试" }).click();
+  await expect(page.getByLabel("Clash 配置模板（YAML）")).toHaveValue(/本站节点/);
 });
 test("normal user subscription rotation and restricted navigation", async ({
   page,
