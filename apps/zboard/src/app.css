@@ -348,8 +348,6 @@ h3 {
   tab-size: 2;
 }
 .save-bar {
-  position: sticky;
-  bottom: 0;
   padding: 16px 0;
   background: var(--background);
   display: flex;
@@ -465,14 +463,15 @@ h3 {
     font-size: 18px;
   }
   .nav {
-    flex-direction: row;
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 4px;
   }
   .nav a {
     white-space: nowrap;
     gap: 6px;
-    padding: 8px 12px;
+    padding: 8px 6px;
+    justify-content: center;
     min-height: 44px;
   }
   .nav svg {
@@ -522,10 +521,52 @@ h3 {
   .subscription-link {
     flex-wrap: wrap;
   }
-  .rows th,
-  .rows td {
-    padding: 12px 14px;
+  .rows thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
+  .rows,
+  .rows tbody {
+    display: block;
+  }
+  .rows tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 18px;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+  }
+  .rows tr:last-child {
+    border-bottom: 0;
+  }
+  .rows td {
+    display: block;
+    padding: 0;
+    min-width: 0;
+    border: 0;
+    overflow-wrap: anywhere;
+  }
+  .rows td.mono {
+    overflow-wrap: normal;
+    font-size: 13px;
+  }
+  .rows td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--muted-foreground);
+    font-family: inherit;
+    font-size: 12px;
+  }
+  .rows td:last-child {
+    justify-self: end;
+  }
+
   .save-bar {
     padding-bottom: max(16px, env(safe-area-inset-bottom));
   }

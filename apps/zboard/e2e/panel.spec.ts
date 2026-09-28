@@ -152,6 +152,20 @@ async function fits(page: Page) {
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+  for (const link of await page
+    .getByRole("navigation", { name: "主导航" })
+    .getByRole("link")
+    .all()) {
+    const box = await link.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  }
+  for (const table of await page.locator(".table-scroll").all()) {
+    expect(await table.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+      true,
+    );
+  }
 }
 test("panel pages and states", async ({ page }) => {
   await fixture(page);

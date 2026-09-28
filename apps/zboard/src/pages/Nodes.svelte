@@ -486,7 +486,7 @@
                 ><Badge variant={n.enabled ? "secondary" : "outline"}
                   >{n.enabled ? "启用" : "停用"}</Badge
                 ></td
-              ><td>{n.user_count}</td><td
+              ><td data-label="用户数">{n.user_count}</td><td
                 ><Button
                   variant="outline"
                   disabled={busy}
