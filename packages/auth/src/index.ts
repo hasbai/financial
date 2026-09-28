@@ -5,7 +5,10 @@ export const authConfig = {
   audience: "https://financial.hasbai.xyz/api",
 } as const;
 /** Invoke only in the browser. Tokens stay in SDK memory. */
-export function createBrowserClient(origin: string) {
+export function createBrowserClient(
+  origin: string,
+  options: { audience?: string } = {},
+) {
   return new Auth0Client({
     domain: authConfig.domain,
     clientId: authConfig.clientId,
@@ -13,7 +16,7 @@ export function createBrowserClient(origin: string) {
     authorizeTimeoutInSeconds: 3,
     authorizationParams: {
       redirect_uri: `${origin}/auth/callback`,
-      audience: authConfig.audience,
+      audience: options.audience ?? authConfig.audience,
       scope: "openid profile email",
       connection: "eastmoney-email",
     },

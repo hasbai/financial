@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "project": "zboard",
+  "inventory": {
+    "root": "src/pages",
+    "suffix": ".svelte"
+  },
+  "baselineDirectories": [
+    "e2e/__screenshots__/iphone",
+    "e2e/__screenshots__/desktop"
+  ],
+  "baselineTemplate": "e2e/__screenshots__/{project}/{snapshot}",
+  "pages": [
+    {
+      "source": "src/pages/Overview.svelte",
+      "scenarios": ["pages"]
+    },
+    {
+      "source": "src/pages/Nodes.svelte",
+      "scenarios": ["pages", "editors", "states", "loading"]
+    },
+    {
+      "source": "src/pages/Templates.svelte",
+      "scenarios": ["pages", "editors"]
+    },
+    {
+      "source": "src/pages/Members.svelte",
+      "scenarios": ["pages", "editors"]
+    },
+    {
+      "source": "src/pages/Reports.svelte",
+      "scenarios": ["pages"]
+    },
+    {
+      "source": "src/pages/Subscription.svelte",
+      "scenarios": ["pages"]
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "pages",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/panel.spec.ts",
+          "test": "panel pages and states",
+          "projects": ["iphone", "desktop"],
+          "snapshots": [
+            "subscription.png",
+            "subscription-dark-hidden.png",
+            "overview.png",
+            "nodes.png",
+            "templates.png",
+            "members.png",
+            "reports.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "editors",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/panel.spec.ts",
+          "test": "node template and membership operations",
+          "projects": ["iphone", "desktop"],
+          "snapshots": [
+            "node-editor.png",
+            "save-error.png",
+            "template-editor.png",
+            "member-editor.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "states",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/panel.spec.ts",
+          "test": "empty error loading and keyboard states",
+          "projects": ["iphone", "desktop"],
+          "snapshots": ["empty.png", "error.png"]
+        }
+      ]
+    },
+    {
+      "id": "loading",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/panel.spec.ts",
+          "test": "initial loading",
+          "projects": ["iphone", "desktop"],
+          "snapshots": ["loading.png"]
+        }
+      ]
+    }
+  ]
+}
