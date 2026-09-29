@@ -213,6 +213,19 @@ test("sheets animate from the bottom and respect reduced motion in dark mode", a
         });
       }
     });
+    new MutationObserver((records) => {
+      for (const record of records) {
+        const target = record.target as HTMLElement;
+        if (target.matches('[data-slot="dialog-content"][data-state="closed"]')) {
+          const style = getComputedStyle(target);
+          (window as any).sheetAnimations.push({
+            name: style.animationName,
+            duration: parseFloat(style.animationDuration),
+            transform: style.transform,
+          });
+        }
+      }
+    }).observe(document, { attributes: true, attributeFilter: ["data-state"], subtree: true });
   });
   const category = page.getByRole("combobox", { name: "分类", exact: true });
   await category.click();

@@ -58,6 +58,7 @@ test('SSR, direct Data API navigation, skeleton, canonical URLs and reading stat
   await expect(page.locator('link[rel=canonical]')).toHaveAttribute('href', 'https://hasbai.xyz/articles/hello-world');
   await expect(page).toHaveScreenshot('article.png', { fullPage: true });
   await page.getByRole('button', { name: '切换深色' }).click();
+  await expect(page.locator('article.reading')).toHaveCSS('opacity', '1');
   await expect(page).toHaveScreenshot('article-dark.png', { fullPage: true });
   await page.getByRole('button', { name: '切换浅色' }).click();
 
