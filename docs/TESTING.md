@@ -6,7 +6,7 @@
 
 ## 运行
 
-完整覆盖率、类型检查和构建验收由合并队列的 GitHub Actions 执行。页面改动可在本地运行 `pnpm visual:local`，它会构建生产包和 e2e 包，再仅生成受影响页面的截图供审阅；不将本机结果称为合并验收。
+完整覆盖率、类型检查和构建验收由最终 PR 的 GitHub Actions 执行。页面改动可在本地运行 `pnpm visual:local`，它会构建生产包和 e2e 包，再仅生成受影响页面的截图供审阅；不将本机结果称为 PR 验收。
 
 ```sh
 pnpm install --frozen-lockfile
@@ -26,13 +26,13 @@ git diff --check
 
 ## 推送与合并
 
-主代理编辑/提交后，派新子代理负责功能分支推送、创建或更新PR和跟踪CI；失败由主代理修复后再派新子代理。普通分支 push 不触发验收，PR 的 `check`、`visual`、`blog-check`、`blog-visual`、`zboard-check`、`zboard-visual` 仅检查仓库仍强制使用合并队列。加入队列后，`merge_group` 的集成提交运行完整检查，所有必需状态成功才合并；候选生成成功不能替代严格比较。合并后核验main合并SHA、Cloudflare自动部署和线上资源，不重复启动main全量CI。
+主代理编辑/提交后，先在本地完成受影响页审阅；需要新 CI 基线时，先在功能分支显式生成并导入候选。准备合并时才创建 PR，完整 CI 在 PR 上运行一次。失败由主代理修复后再派新子代理推送复核；后续 PR 提交或 main 前进仍会重新运行检查。`check`、`visual`、`blog-check`、`blog-visual` 是线上必需状态；Zboard 改动也须通过对应工作流。候选成功不能替代严格比较。合并后核验 main 合并 SHA、Cloudflare 自动部署和线上资源，不重复启动 main 全量 CI。
 
-合并队列以最新 main 和待合并改动生成集成提交，不要求每个任务分支先追平 main。保留 `.github/main-ruleset.json` 的 PR、merge queue 和六个 GitHub Actions 必需状态，并通过 rulesets API 应用、读回；不能只修改配置文件。手动 dispatch 只用于候选或明确排障。队列 CI 成功不代表真实 JWT、数据库或生产路由已验收。[GitHub 合并队列说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
+当前 `hasbai/financial` 是个人账号仓库，GitHub 不提供 merge queue；创建 `merge_queue` ruleset 会返回 422。现有保护要求 PR、最新 main 和四个 GitHub Actions 必需状态，故 PR 打开前先把功能分支与最新 main 对齐。手动 dispatch 只用于候选或明确排障。PR CI 成功不代表真实 JWT、数据库或生产路由已验收。[GitHub 合并队列说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
 
-独立且确认与前端输出无关的文档、数据库或维护脚本改动，可在相关本地检查后从最新 `origin/main` 的任务分支使用 `pnpm direct:push --validated --backend-reviewed` 快进推送 main；纯文档可省略参数。脚本拒绝共享 UI、页面、测试门禁、CI 配置和混合路径，且核对远端提交。GitHub 的用户 bypass 权限本身没有文件路径条件，这一分类由脚本和维护流程约束；API 契约、页面数据形状、共享配置仍走 PR 和队列。
+独立且确认与前端输出无关的文档、数据库或维护脚本改动，可在相关本地检查后从最新 `origin/main` 的任务分支使用 `pnpm direct:push --validated --backend-reviewed` 快进推送 main；纯文档可省略参数。脚本拒绝共享 UI、页面、测试门禁、CI 配置和混合路径，且核对远端提交。当前 branch protection 不对管理员生效，GitHub 本身不按文件路径约束这种直推；分类由脚本和维护流程约束。API 契约、页面数据形状、共享配置仍走 PR。
 
-现有 branch protection 在本次迁移前要求 PR、最新 main 和 `check`、`visual`、`blog-check`、`blog-visual`。新 ruleset 应先建成并核验，再撤去旧保护；切换完成前不能把 PR 轻量门禁当作可合并验收。仓库为 public，merge queue 可用于组织名下的 public repository。
+若未来将仓库迁到组织并启用 merge queue，须同时迁移工作流的 `merge_group` 触发器、必需状态和等待脚本，不得只修改保护规则。
 
 ## CI 等待与收尾（2026-09-20）
 
@@ -41,7 +41,7 @@ git diff --check
 发现当前运行 ID 后，用仓库内命令等待一次；SHA 使用 GitHub 该运行的完整 head SHA，event 必须符合所需阶段：
 
 ```sh
-node scripts/wait-ci.mjs hasbai/financial <run-id> <full-run-head-sha> merge_group
+node scripts/wait-ci.mjs hasbai/financial <run-id> <full-run-head-sha> pull_request
 ```
 
 命令先核对仓库、run ID、SHA、event；对进行中的运行只启动一个 `gh run watch --interval 30`，中间重复进度不进入代理上下文，结束后只读取一次终态证据。默认最多等待20分钟（可追加1–1800秒），两次元数据请求各限15秒；不启动或重跑CI。退出0只表示该运行成功，1表示失败/取消/跳过/证据不匹配/API不可读，2表示仍待完成。返回2或API失败时保留运行链接和明确状态，不把未完成当通过，也不立即循环重开watch；只在新的状态证据或明确继续要求下恢复。
@@ -54,7 +54,7 @@ node scripts/wait-ci.mjs hasbai/financial <run-id> <full-run-head-sha> merge_gro
 
 ## 视觉变更的提交前准备
 
-先判断是否改变页面视觉，列出影响的页面、状态和设备；更新 `visual-coverage.json` 的对应场景，并运行本地受影响页截图。无意视觉变化时不更新 baseline，差异须先定位根因。需要更新 CI 基线时，由交付子代理先推送功能分支，**先生成候选、后入合并队列**。分支 push 与合并后的 main push 均不触发测试；PR 上只运行入队门禁，不能报告为完整验收。
+先判断是否改变页面视觉，列出影响的页面、状态和设备；更新 `visual-coverage.json` 的对应场景，并运行本地受影响页截图。无意视觉变化时不更新 baseline，差异须先定位根因。需要更新 CI 基线时，先推送功能分支并生成候选，审阅导入后再创建 PR。分支 push 与合并后的 main push 均不触发测试；最终 PR 运行完整验收。
 
 ```sh
 gh workflow run check.yml --ref <task-branch> -f update_visual_baselines=true
