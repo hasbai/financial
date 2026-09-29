@@ -1,8 +1,8 @@
 name: Check
 on:
-  # Strict PR protection requires current main plus check/visual before merge.
-  # Do not repeat the same acceptance suite on the resulting main push.
   pull_request:
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
     inputs:
       update_visual_baselines:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -24,14 +24,15 @@ jobs:
         with:
           fetch-depth: 0
       - id: filter
-        run: node scripts/affected.mjs "${{ github.event.pull_request.base.sha }}"
-  check:
+        run: node scripts/affected.mjs "${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}"
+  full-check:
+    if: github.event_name != 'pull_request'
     needs: changes
     defaults:
       run:
         working-directory: apps/financial
     # Candidate runs must never publish the branch-protection check contexts.
-    name: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && 'candidate-check' || 'check' }}
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && 'candidate-check' || 'financial-full-check' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -73,12 +74,13 @@ jobs:
           name: coverage
           path: apps/financial/coverage/
           retention-days: 14
-  visual:
+  full-visual:
+    if: github.event_name != 'pull_request'
     needs: changes
     defaults:
       run:
         working-directory: apps/financial
-    name: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && 'visual-baseline-candidates' || 'visual' }}
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && 'visual-baseline-candidates' || 'financial-full-visual' }}
     # Native macOS WebKit, same OS family/architecture as the checked-in baselines.
     runs-on: macos-26
     timeout-minutes: 20
@@ -144,6 +146,40 @@ jobs:
             apps/financial/playwright-report/
             apps/financial/test-results/
           retention-days: 14
+
+  check-gate:
+    name: check
+    needs: [full-check]
+    if: always() && (github.event_name != 'workflow_dispatch' || !inputs.update_visual_baselines)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/$GITHUB_REPOSITORY/rules/branches/main" > "$RUNNER_TEMP/main-rules.json"
+      - env:
+          CI_EVENT: ${{ github.event_name }}
+          CI_RESULT: ${{ needs['full-check'].result }}
+          CI_CONTEXT: check
+        run: node scripts/ci-queue-gate.mjs
+
+  visual-gate:
+    name: visual
+    needs: [full-visual]
+    if: always() && (github.event_name != 'workflow_dispatch' || !inputs.update_visual_baselines)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/$GITHUB_REPOSITORY/rules/branches/main" > "$RUNNER_TEMP/main-rules.json"
+      - env:
+          CI_EVENT: ${{ github.event_name }}
+          CI_RESULT: ${{ needs['full-visual'].result }}
+          CI_CONTEXT: visual
+        run: node scripts/ci-queue-gate.mjs
 
   blog-candidates:
     if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines

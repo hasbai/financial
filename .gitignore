@@ -5,6 +5,7 @@ dist-e2e/
 coverage/
 playwright-report/
 test-results/
+.local-visual/
 .wrangler/
 .neon
 .env

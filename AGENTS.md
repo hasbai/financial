@@ -43,11 +43,11 @@ CI 等待统一使用 `node scripts/wait-ci.mjs <owner/repo> <run-id> <full-sha>
 
 ## 校验与提交
 
-按2026-09-16最新要求，自动化验证统一在GitHub Actions执行，本地不运行单元测试、覆盖率、Playwright浏览器测试，也不运行整套typecheck/build验收。`Check / check`负责`pnpm typecheck`、`pnpm test:coverage`、`pnpm build`；`Check / visual`负责`pnpm test:e2e`。本地可做代码阅读、编辑、格式化和`git diff --check`。
+完整验收在 GitHub Actions 的合并队列执行；本地可运行 `pnpm visual:local`，只生成受影响页面的截图并审阅，使用生产构建与独立浏览器夹具。单元覆盖率和完整视觉比较仍由 CI 执行；本地普通非视觉改动至少运行 `git diff --check` 和直接相关的轻量检查。
 
-每次改完代码，由主代理完成修改和提交，必须新派一个子代理负责推送功能分支、创建/更新PR、跟踪该次提交的CI结果。子代理回报失败后由主代理修复；下一轮仍派新子代理推送复核。禁止本地补跑测试代替CI，禁止将未通过的修改直接推送main。只有最新提交的`check`与`visual`均成功，且分支已包含最新main，才允许通过PR合并。合并后由子代理核验main合并SHA、Cloudflare自动部署及线上版本，不再运行或等待main全量CI。不得使用`--admin`绕过检查。
+前端、共享 UI、API 契约和影响页面结果的改动由主代理修改并提交，新派子代理推送功能分支、创建/更新 PR、加入合并队列并核对 CI；失败后由主代理修复，再派新子代理复核。队列最新集成提交的六个必需状态均成功才能合并。只有确认与前端输出无关且完成相关本地验证的独立改动可由维护者使用 `pnpm direct:push --validated --backend-reviewed` 快进推送 main；纯文档可省略参数。不得强推，不得将混合改动归为非前端。合并或直推后核验 Cloudflare 自动部署及线上版本。不得使用 `--admin` 绕过 PR 失败。
 
-完整 CI 只随 PR 创建/更新运行；功能分支 push 和合并后的 main push 均不另触发测试，手动 workflow dispatch 仅用于候选生成或明确排障。严格分支保护继续要求最新 main 及当前 PR 的 check/visual 成功；main 前进导致分支过期时先更新分支，验收新提交，不能沿用过期结果。页面修改维护 `visual-coverage.json` 的页面/状态/设备证据；新增页面未登记会被门禁拒绝。视觉基线只在有意设计变更时，在创建 PR 前主动显式对功能分支dispatch `Check` workflow并启用`update_visual_baselines`，从CI下载候选工件至工作树外，核对后用 `pnpm visual:baseline:import <目录> --reviewed` 导入；HEAD 必须匹配候选 SHA。随后普通PR必须在不更新基线的模式下通过；CI不自动接受变化，无需Docker。详见docs/TESTING.md。仓库现为public，main已强制PR、最新main及check/visual成功，管理员也不能绕过；禁止强推和删除main。
+完整 CI 仅在 `merge_group` 上运行一次；PR 只运行轻量入队门禁，分支 push 和合并后的 main push 不触发测试。合并队列以最新 main 构建集成提交。页面修改维护 `visual-coverage.json` 的页面、状态和设备证据；新增页面未登记会被门禁拒绝。视觉基线只有在有意设计变化时才通过功能分支的显式 `Check` workflow dispatch 生成，核对后用 `pnpm visual:baseline:import <目录> --reviewed` 导入；HEAD 必须匹配候选 SHA。CI 不自动接受变化。保护规则由 `.github/main-ruleset.json` 管理并须线上读回，详见 docs/TESTING.md。
 数据库验证用 `scripts/test-database.mjs`，连接串从 stdin 传入，所有测试写入在事务中回滚。不得输出凭据。
 
 独立区分自动化、真实 JWT/API、浏览器与部署验收。完成修改时，必要的生产数据库迁移、提交、推送属于同一次交付，不再另行等待发布授权。涉及数据库时先在隔离 Neon 分支验证，再迁移生产并核验真实 API，然后仅暂存任务文件、提交，由子代理推送功能分支并核验CI。PR合并到main后触发Cloudflare自动部署，必须核验构建结果和线上版本；不要重复手动部署。需要新旧版本兼容的迁移应安排兼容步骤，不能只推前端而遗漏数据库。
