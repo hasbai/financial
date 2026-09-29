@@ -6,10 +6,10 @@
     "suffix": ".svelte"
   },
   "baselineDirectories": [
-    "e2e/__screenshots__/iphone",
-    "e2e/__screenshots__/desktop"
+    "e2e/__screenshots__/linux-ci/iphone",
+    "e2e/__screenshots__/linux-ci/desktop"
   ],
-  "baselineTemplate": "e2e/__screenshots__/{project}/{snapshot}",
+  "baselineTemplate": "e2e/__screenshots__/linux-ci/{project}/{snapshot}",
   "pages": [
     {
       "source": "src/pages/Overview.svelte",

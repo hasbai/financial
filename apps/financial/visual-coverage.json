@@ -5,12 +5,12 @@
     "root": "src/pages",
     "suffix": ".svelte"
   },
-  "baselineTemplate": "e2e/__screenshots__/darwin-ci-{project}/{spec}/{snapshot}",
+  "baselineTemplate": "e2e/__screenshots__/linux-ci-{project}/{spec}/{snapshot}",
   "baselineDirectories": [
-    "e2e/__screenshots__/darwin-ci-iphone",
-    "e2e/__screenshots__/darwin-ci-iphone-se",
-    "e2e/__screenshots__/darwin-ci-android",
-    "e2e/__screenshots__/darwin-ci-desktop"
+    "e2e/__screenshots__/linux-ci-iphone",
+    "e2e/__screenshots__/linux-ci-iphone-se",
+    "e2e/__screenshots__/linux-ci-android",
+    "e2e/__screenshots__/linux-ci-desktop"
   ],
   "pages": [
     {

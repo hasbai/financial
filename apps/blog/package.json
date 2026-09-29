@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:update": "playwright test --update-snapshots=all",
+    "visual:local": "node ../../scripts/visual-linux.mjs blog",
     "preview": "vite preview --host 127.0.0.1 --port 4174",
     "visual:baseline:import": "node ../financial/scripts/visual-baselines.mjs import"
   },

@@ -79,8 +79,10 @@ jobs:
       run:
         working-directory: apps/financial
     name: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && 'visual-baseline-candidates' || 'visual' }}
-    # Native macOS WebKit, same OS family/architecture as the checked-in baselines.
-    runs-on: macos-26
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: ghcr.io/hasbai/financial-visual-ci@sha256:c9bf5b87b7fe570b8325227127bda13718071021836560c14924a0c2387b7991
+      options: --ipc=host
     timeout-minutes: 20
     steps:
       - name: Financial unchanged
@@ -93,20 +95,9 @@ jobs:
         run: test "$GITHUB_REF" != refs/heads/main
       - uses: actions/checkout@v4
         if: needs.changes.outputs.financial == 'true'
-      - uses: pnpm/action-setup@v4
-        if: needs.changes.outputs.financial == 'true'
-      - uses: actions/setup-node@v4
-        if: needs.changes.outputs.financial == 'true'
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: sw_vers
-        if: needs.changes.outputs.financial == 'true'
-      - run: echo "$ImageVersion"
-        if: needs.changes.outputs.financial == 'true'
       - run: pnpm install --frozen-lockfile
         if: needs.changes.outputs.financial == 'true'
-      - run: pnpm exec playwright install webkit chromium
+      - run: test "$(pnpm exec playwright --version)" = 'Version 1.63.0'
         if: needs.changes.outputs.financial == 'true'
       - run: pnpm build
         if: needs.changes.outputs.financial == 'true'

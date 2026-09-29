@@ -9,6 +9,7 @@
     "typecheck": "wrangler types worker-env.d.ts && svelte-check --tsconfig tsconfig.json",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "visual:local": "node ../../scripts/visual-linux.mjs zboard",
     "check:visual-coverage": "node ../financial/scripts/check-visual-coverage.mjs",
     "visual:baseline:import": "node scripts/baselines.mjs import",
     "deploy": "wrangler deploy"
