@@ -6,7 +6,7 @@
 
 ## 运行
 
-按2026-09-16最新要求，以下命令仅由GitHub Actions runner执行，日常开发不在本地运行测试、覆盖率、Playwright、typecheck或build验收。
+完整覆盖率、类型检查和构建验收由最终 PR 的 GitHub Actions 执行。页面改动可在本地运行 `pnpm visual:local`，它会构建生产包和 e2e 包，再仅生成受影响页面的截图供审阅；不将本机结果称为 PR 验收。
 
 ```sh
 pnpm install --frozen-lockfile
@@ -18,7 +18,7 @@ pnpm build
 git diff --check
 ```
 
-无需Docker。CI视觉任务固定在`macos-26` ARM64，单元测试在Ubuntu。Playwright精确锁定版本，使用`darwin-ci-*`截图基线。历史`darwin-*`本机基线保留为旧验收记录，不再在本地运行或更新。
+无需Docker。CI视觉任务固定在`macos-26` ARM64，单元测试在Ubuntu。Playwright精确锁定版本，使用`darwin-ci-*`截图基线。`pnpm visual:local` 默认从相对 `origin/main` 改动的 `src/pages/*.svelte` 选择页面及清单场景；共享组件、样式、夹具或 `packages/` 改动须传重复的 `--page src/pages/<name>.svelte` 或 `--all`。安装依赖及 WebKit/Chromium 后运行，审阅图输出到忽略的 `apps/financial/.local-visual/<时间>/review/`；历史`darwin-*`基线不更新。
 
 `pnpm test:e2e:update`仅在初次建基线、设计变更或明确的浏览器/系统升级时，由功能分支的显式workflow dispatch执行。普通运行使用`updateSnapshots: none`，缺少图片或超出差异即失败；PR的CI不自动更新、不重试掩盖不稳定。显式触发Check workflow的`update_visual_baselines`只执行一次完整候选生成（保留交互与覆盖清单断言），不在候选内部再全量复跑；它不自动提交，取回并核对后提交，随后普通PR必须严格比较通过。候选运行只产生`candidate-check`与`visual-baseline-candidates`状态，不能满足或覆盖分支保护要求的`check`/`visual`。额外稳定性复跑只用于已复现抖动或明确排障，并记录原因。报告保留expected/actual/diff和失败trace。日常不要求人工或AI逐页看图，有意设计变更仍需核对差异。
 
@@ -26,11 +26,13 @@ git diff --check
 
 ## 推送与合并
 
-主代理编辑/提交后，必须派新子代理负责功能分支推送、创建或更新PR和跟踪CI；主代理处理失败并提交修复，再派新子代理核验。检查必须对应PR最新提交，`Check / check`（类型/单元覆盖率/构建）和`Check / visual`（浏览器/视觉回归）全部成功，且已包含最新main后才能合并。`workflow_dispatch`生成基线的成功不能替代随后普通PR的比较结果。不得本地补跑或用管理员绕过失败；合并后核验main合并SHA、Cloudflare自动部署和线上资源，不重复启动或等待main全量CI。
+主代理编辑/提交后，先在本地完成受影响页审阅；需要新 CI 基线时，先在功能分支显式生成并导入候选。准备合并时才创建 PR，完整 CI 在 PR 上运行一次。失败由主代理修复后再派新子代理推送复核；后续 PR 提交或 main 前进仍会重新运行检查。`check`、`visual`、`blog-check`、`blog-visual` 是线上必需状态；Zboard 改动也须通过对应工作流。候选成功不能替代严格比较。合并后核验 main 合并 SHA、Cloudflare 自动部署和线上资源，不重复启动 main 全量 CI。
 
-完整验收只在 PR 运行一次；`pull_request` 默认 checkout 使用 GitHub 的测试合并提交，覆盖目标 main 与 PR 改动的组合。线上 `required_status_checks.strict=true` 要求合并前包含最新 main，`check`/`visual` 必须通过，管理员不得绕过。如果其他 PR 已推进 main，先更新分支并检查新提交；同一已验收结果合并后不再自动重跑。手动 dispatch 仅用于候选或明确排障，不能为合并后的收尾额外启动一次。此流程依赖严格保护，不能关闭它或改为允许过期分支合并。[GitHub 分支保护说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-status-checks-before-merging)
+当前 `hasbai/financial` 是个人账号仓库，GitHub 不提供 merge queue；创建 `merge_queue` ruleset 会返回 422。现有保护要求 PR、最新 main 和四个 GitHub Actions 必需状态，故 PR 打开前先把功能分支与最新 main 对齐。手动 dispatch 只用于候选或明确排障。PR CI 成功不代表真实 JWT、数据库或生产路由已验收。[GitHub 合并队列说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
 
-已启用分支保护：强制PR、最新main、必需状态`check`与`visual`（限定GitHub Actions app id 15368），管理员同样受限，不允许force push或删除main；单人开发不额外要求人工审批。因私有仓库当前套餐不支持保护，用户已明确授权并完成将hasbai/financial设为public；保护设置已由GitHub API成功返回并确认。
+独立且确认与前端输出无关的文档、数据库或维护脚本改动，可在相关本地检查后从最新 `origin/main` 的任务分支使用 `pnpm direct:push --validated --backend-reviewed` 快进推送 main；纯文档可省略参数。脚本拒绝共享 UI、页面、测试门禁、CI 配置和混合路径，且核对远端提交。当前 branch protection 不对管理员生效，GitHub 本身不按文件路径约束这种直推；分类由脚本和维护流程约束。API 契约、页面数据形状、共享配置仍走 PR。
+
+若未来将仓库迁到组织并启用 merge queue，须同时迁移工作流的 `merge_group` 触发器、必需状态和等待脚本，不得只修改保护规则。
 
 ## CI 等待与收尾（2026-09-20）
 
@@ -52,7 +54,7 @@ node scripts/wait-ci.mjs hasbai/financial <run-id> <full-run-head-sha> pull_requ
 
 ## 视觉变更的提交前准备
 
-先判断是否改变页面视觉，列出影响的页面、状态和设备；更新 `visual-coverage.json` 的对应场景。无意视觉变化时不更新 baseline，差异须先定位根因。需要更新时，由交付子代理先推送功能分支，**先生成候选、后创建 PR**，不要等待比较失败才补截图。功能分支 push 与合并后的 main push 均不触发测试；所有 PR（含草稿）创建/更新运行完整必需检查，不能跳过视觉比较。
+先判断是否改变页面视觉，列出影响的页面、状态和设备；更新 `visual-coverage.json` 的对应场景，并运行本地受影响页截图。无意视觉变化时不更新 baseline，差异须先定位根因。需要更新 CI 基线时，先推送功能分支并生成候选，审阅导入后再创建 PR。分支 push 与合并后的 main push 均不触发测试；最终 PR 运行完整验收。
 
 ```sh
 gh workflow run check.yml --ref <task-branch> -f update_visual_baselines=true

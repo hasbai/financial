@@ -13,6 +13,8 @@
     "check:api": "pnpm --filter financial check:api",
     "test:coverage": "pnpm --filter financial test:coverage",
     "test:e2e": "pnpm --filter financial test:e2e",
+    "visual:local": "pnpm --filter financial visual:local",
+    "direct:push": "node scripts/direct-push.mjs",
     "test:e2e:update": "pnpm --filter financial test:e2e:update",
     "check:visual-coverage": "pnpm --filter financial check:visual-coverage",
     "visual:baseline:import": "pnpm --filter financial visual:baseline:import",
