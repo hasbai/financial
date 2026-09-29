@@ -231,6 +231,9 @@ test("sheets animate from the bottom and respect reduced motion in dark mode", a
     .toBe(true);
   await sheetFitsViewport(dialog);
   await expect(page).toHaveScreenshot("category-sheet-dark.png");
+  await expect.poll(() => dialog.evaluate((el) =>
+    parseFloat(getComputedStyle(el).animationDuration),
+  )).toBeGreaterThanOrEqual(0.2);
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect
