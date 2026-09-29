@@ -1,7 +1,8 @@
 <script lang="ts">
   import { dateLabel, site, writingPath } from "$lib/content";
   import { reveal } from "$lib/reveal";
-  import { Asterisk, BookOpen, Clock3, NotebookPen } from "@lucide/svelte";
+  import { BookOpen, Clock3, NotebookPen } from "@lucide/svelte";
+  import SnowflakeMark from "$lib/components/SnowflakeMark.svelte";
   let { data } = $props();
 </script>
 
@@ -14,8 +15,8 @@
 <section class="home-hero hero-scroll-container wrap">
   <div class="hero-glow hero-exit-bg" aria-hidden="true"></div>
   <div class="hero-center">
-    <span class="hero-seal hero-rise" aria-hidden="true"><Asterisk size={55} strokeWidth={1.8} /></span>
-    <h1 class="hero-exit-text"><span class="hero-greeting">Hi, 这里是 <em>北极手记</em><span class="hero-wave" aria-hidden="true"><Asterisk size={20} strokeWidth={2.2} /></span></span><span class="hero-statement">把 <em>想法</em> 写成文字，留下日常。</span></h1>
+    <span class="hero-seal hero-rise" aria-hidden="true"><SnowflakeMark size={55} /></span>
+    <h1 class="hero-exit-text"><span class="hero-greeting">Hi, 这里是 <em>北极手记</em><span class="hero-wave" aria-hidden="true"><SnowflakeMark size={20} strokeWidth={2.2} /></span></span><span class="hero-statement">把 <em>想法</em> 写成文字，留下日常。</span></h1>
     <p class="hero-description hero-rise hero-exit-meta">写一点思考，记一些日常，让值得留下的文字慢慢生长。</p>
   </div>
   <div class="hero-whisper hero-rise hero-exit-meta">

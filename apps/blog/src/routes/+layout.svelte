@@ -3,7 +3,8 @@
   import { onMount } from "svelte";
   import { navigating, page } from "$app/state";
   import { Button } from "@hasbai/ui/button";
-  import { Asterisk, Sun, Moon, PenLine } from "@lucide/svelte";
+  import { Sun, Moon, PenLine } from "@lucide/svelte";
+  import SnowflakeMark from "$lib/components/SnowflakeMark.svelte";
   import BackgroundEffect from "$lib/components/BackgroundEffect.svelte";
   import { site } from "$lib/content";
   let { children } = $props();
@@ -48,7 +49,7 @@
 {/if}
 <header class:scrolled class="site-header">
   <div class="header-inner wrap">
-    <a class="wordmark" href="/" aria-label="北极手记首页"><span class="wordmark-symbol" aria-hidden="true"><Asterisk size={27} strokeWidth={2.3} /></span><span class="wordmark-label">{site.name}</span></a>
+    <a class="wordmark" href="/" aria-label="北极手记首页"><span class="wordmark-symbol" aria-hidden="true"><SnowflakeMark size={27} strokeWidth={2.3} /></span><span class="wordmark-label">{site.name}</span></a>
     <nav class="site-nav" aria-label="主导航">
       {#each nav as item}<a href={item.href} aria-current={current(item.href) ? "page" : undefined}>{item.label}</a>{/each}
     </nav>
