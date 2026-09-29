@@ -10,7 +10,6 @@
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm exec playwright install webkit chromium
 pnpm typecheck
 pnpm test:coverage
 pnpm test:e2e
@@ -18,19 +17,19 @@ pnpm build
 git diff --check
 ```
 
-无需Docker。CI视觉任务固定在`macos-26` ARM64，单元测试在Ubuntu。Playwright精确锁定版本，使用`darwin-ci-*`截图基线。`pnpm visual:local` 默认从相对 `origin/main` 改动的 `src/pages/*.svelte` 选择页面及清单场景；共享组件、样式、夹具或 `packages/` 改动须传重复的 `--page src/pages/<name>.svelte` 或 `--all`。安装依赖及 WebKit/Chromium 后运行，审阅图输出到忽略的 `apps/financial/.local-visual/<时间>/review/`；历史`darwin-*`基线不更新。
+视觉 CI 与本地截图统一使用 `docker/visual-ci/Dockerfile` 构建的 Linux ARM64 镜像，并按镜像 digest 固定 Playwright 1.63.0、Node 24、pnpm 10.33.2 和 CJK 字体。镜像发布工作流是 `.github/workflows/visual-image.yml`；三个应用的视觉 job 使用同一个 digest，单元任务仍运行在 Ubuntu。日常 `pnpm visual:local` 从相对 `origin/main` 的 Financial 页面改动选择清单场景；Blog、Zboard 分别用 `pnpm visual:blog`、`pnpm visual:zboard`。共享组件、样式、夹具或 `packages/` 改动须指定可重复的 `--page <源页面>` 或 `--all`。首次生成 Linux 基线运行 `--all`。审阅图在各应用忽略的 `.local-visual/<时间>/review/`；审阅后从仓库根运行 `pnpm visual:baseline:import-local <该次运行目录> --reviewed`，校验源码和 PNG 后导入本次截图。旧 macOS PNG 已清理；日常只维护 `linux-ci` 基线。
 
-`pnpm test:e2e:update`仅在初次建基线、设计变更或明确的浏览器/系统升级时，由功能分支的显式workflow dispatch执行。普通运行使用`updateSnapshots: none`，缺少图片或超出差异即失败；PR的CI不自动更新、不重试掩盖不稳定。显式触发Check workflow的`update_visual_baselines`只执行一次完整候选生成（保留交互与覆盖清单断言），不在候选内部再全量复跑；它不自动提交，取回并核对后提交，随后普通PR必须严格比较通过。候选运行只产生`candidate-check`与`visual-baseline-candidates`状态，不能满足或覆盖分支保护要求的`check`/`visual`。额外稳定性复跑只用于已复现抖动或明确排障，并记录原因。报告保留expected/actual/diff和失败trace。日常不要求人工或AI逐页看图，有意设计变更仍需核对差异。
+普通运行使用 `updateSnapshots: none`，缺少图片或超出差异即失败；PR 的 CI 不自动更新、不重试掩盖不稳定。远端候选截图模式已移除；审阅并导入本地 PNG 后，普通 PR 严格比较。额外稳定性复跑只用于已复现抖动或明确排障，并记录原因。报告保留 expected/actual/diff 和失败 trace。有意设计变更须核对差异，不为消除差异提高容差或盲目更新。
 
 财务与博客在 Cloudflare 后台分别配置 main 自动构建和路径过滤；GitHub Actions 只负责 PR 验收，不部署。具体 Cloudflare 配置由用户在后台完成，设置完成后分别核验 Worker 构建和线上版本。
 
 ## 推送与合并
 
-主代理编辑/提交后，先在本地完成受影响页审阅；需要新 CI 基线时，先在功能分支显式生成并导入候选。准备合并时才创建 PR，完整 CI 在 PR 上运行一次。失败由主代理修复后再派新子代理推送复核；后续 PR 提交或 main 前进仍会重新运行检查。`check`、`visual`、`blog-check`、`blog-visual` 是线上必需状态；Zboard 改动也须通过对应工作流。候选成功不能替代严格比较。合并后核验 main 合并 SHA、Cloudflare 自动部署和线上资源，不重复启动 main 全量 CI。
+主代理编辑/提交后，先在本地完成受影响页审阅；需要新基线时，先在本地固定 Linux 镜像中生成、审阅并导入。准备合并时才创建 PR，完整 CI 在 PR 上运行一次。失败由主代理修复后再派新子代理推送复核；后续 PR 提交或 main 前进仍会重新运行检查。`check`、`visual`、`blog-check`、`blog-visual` 是线上必需状态；Zboard 改动也须通过对应工作流。本地截图不能替代严格比较。合并后核验 main 合并 SHA、Cloudflare 自动部署和线上资源，不重复启动 main 全量 CI。
 
-当前 `hasbai/financial` 是个人账号仓库，GitHub 不提供 merge queue；创建 `merge_queue` ruleset 会返回 422。现有保护要求 PR、最新 main 和四个 GitHub Actions 必需状态，故 PR 打开前先把功能分支与最新 main 对齐。仓库设置只允许 squash，合并使用 `gh pr merge --squash`。手动 dispatch 只用于候选或明确排障。PR CI 成功不代表真实 JWT、数据库或生产路由已验收。[GitHub 合并队列说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
+当前 `hasbai/financial` 是个人账号仓库，GitHub 不提供 merge queue；创建 `merge_queue` ruleset 会返回 422。现有保护要求 PR、最新 main 和四个 GitHub Actions 必需状态，故 PR 打开前先把功能分支与最新 main 对齐。仓库设置只允许 squash，合并使用 `gh pr merge --squash`。手动 dispatch 只用于明确排障。PR CI 成功不代表真实 JWT、数据库或生产路由已验收。[GitHub 合并队列说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
 
-独立且确认与前端输出无关的文档、数据库或维护脚本改动，可在相关本地检查后从最新 `origin/main` 的任务分支使用 `pnpm direct:push --validated --backend-reviewed` 快进推送 main；纯文档可省略参数。脚本拒绝共享 UI、页面、测试门禁、CI 配置和混合路径，且核对远端提交。当前 branch protection 不对管理员生效，GitHub 本身不按文件路径约束这种直推；分类由脚本和维护流程约束。API 契约、页面数据形状、共享配置仍走 PR。
+独立且确认与前端输出无关的文档、数据库或维护脚本改动，可在相关本地检查后从最新 `origin/main` 的任务分支使用 `pnpm direct:push --validated --backend-reviewed --reviewed-path=<文件>` 快进推送 main；每个非文档文件各列一次，纯文档可省略参数。脚本拒绝共享 UI、页面、测试门禁、CI 配置和混合路径，且核对远端提交。当前 branch protection 不对管理员生效，GitHub 本身不按文件路径约束这种直推；分类由脚本和维护流程约束。API 契约、页面数据形状、共享配置仍走 PR。
 
 若未来将仓库迁到组织并启用 merge queue，须同时迁移工作流的 `merge_group` 触发器、必需状态和等待脚本，不得只修改保护规则。
 
@@ -54,20 +53,20 @@ node scripts/wait-ci.mjs hasbai/financial <run-id> <full-run-head-sha> pull_requ
 
 ## 视觉变更的提交前准备
 
-先判断是否改变页面视觉，列出影响的页面、状态和设备；更新 `visual-coverage.json` 的对应场景，并运行本地受影响页截图。无意视觉变化时不更新 baseline，差异须先定位根因。需要更新 CI 基线时，先推送功能分支并生成候选，审阅导入后再创建 PR。分支 push 与合并后的 main push 均不触发测试；最终 PR 运行完整验收。
+先判断是否改变页面视觉，列出影响的页面、状态和设备；更新对应应用的 `visual-coverage.json`，并在本地固定 Linux 镜像中运行受影响页截图。无意视觉变化时不更新 baseline，差异须先定位根因。需要更新时先审阅、导入并提交本地候选，再创建 PR；最终 PR 执行一次完整验收。分支 push 与合并后的 main push 均不触发测试。
 
 ```sh
-gh workflow run check.yml --ref <task-branch> -f update_visual_baselines=true
-gh run download <candidate-run-id> -n visual-baseline-candidates -D <outside-checkout-directory>
-# 主代理核对候选与旧图及变化范围后执行；不会自动提交。
-pnpm visual:baseline:import <outside-checkout-directory> --reviewed
+pnpm visual:local --page src/pages/Overview.svelte
+# Blog: pnpm visual:blog --page src/routes/+page.svelte
+# Zboard: pnpm visual:zboard --page src/pages/Overview.svelte
+pnpm visual:baseline:import-local apps/financial/.local-visual/<时间> --reviewed
 ```
 
-工件记录生成 SHA、run ID、各 CI PNG 的 SHA-256。导入要求工作树干净、HEAD 与生成 SHA 一致，并验证路径和校验和；代码变化后必须重新生成。候选严禁直接写 main，不自动提交，不替代随后 PR 普通比较。既有 PR 内有视觉变更时主动生成候选，最终只接受最新提交的严格比较成功；不要为避免红灯关闭必需检查。
+本地候选记录镜像、源码 digest 和各 PNG 的 SHA-256，代码变化后须重新生成。导入不会自动提交，最终 PR 仍须严格比较全部基线；不要关闭必需检查。
 
 ## 页面覆盖清单门禁
 
-`visual-coverage.json` 是页面、URL 场景、状态、设备、测试标题与活跃 CI 截图的可检查清单。`check:visual-coverage` 比对真实页面文件；新增页面、清单遗留项、缺少证据或 baseline 会失败。候选准备只允许暂缺 PNG，不能绕过清单与测试要求。Dashboard 另核对现有导航 registry 的动态视图；Financial 另核对 Shell 的 URL 分支，新 view/URL 不会因复用同一页面组件而漏掉。
+`visual-coverage.json` 是页面、URL 场景、状态、设备、测试标题与活跃 CI 截图的可检查清单。`check:visual-coverage` 比对真实页面文件；新增页面、清单遗留项、缺少证据或 baseline 会失败。本地初建基线时清单检查可暂缺 PNG，不能绕过清单与测试要求。Dashboard 另核对现有导航 registry 的动态视图；Financial 另核对 Shell 的 URL 分支，新 view/URL 不会因复用同一页面组件而漏掉。
 
 全量 CI 设置 `VISUAL_COVERAGE_GATE=1`，reporter 再核对声明的测试确实在指定设备执行并通过；截图条目必须逐一实际执行清单所列文件名的 `toHaveScreenshot`，单纯 `page.screenshot`、跳过或删去测试不计作覆盖。`test-results/visual-coverage.json` 保留清单、豁免及结果。该清单不是代码覆盖率，单个正常态不代表所有状态；已有缺口必须写明豁免原因，不计入已覆盖，修改相应页面时重新评估。常规有覆盖页面不需要新增重复测试。局部排障可不启用全量门禁，不替代 CI。
 

@@ -4,11 +4,6 @@ on:
   # Do not repeat the same acceptance suite on the resulting main push.
   pull_request:
   workflow_dispatch:
-    inputs:
-      update_visual_baselines:
-        description: Generate candidate screenshots for this runner; review and commit the artifact separately
-        type: boolean
-        default: false
 permissions:
   contents: read
 concurrency:
@@ -30,8 +25,7 @@ jobs:
     defaults:
       run:
         working-directory: apps/financial
-    # Candidate runs must never publish the branch-protection check contexts.
-    name: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && 'candidate-check' || 'check' }}
+    name: check
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -54,7 +48,7 @@ jobs:
         if: needs.changes.outputs.financial == 'true'
       - name: Check page coverage inventory
         if: needs.changes.outputs.financial == 'true'
-        run: pnpm check:visual-coverage ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && '--candidate' || '' }}
+        run: pnpm check:visual-coverage
       - run: pnpm typecheck
         if: needs.changes.outputs.financial == 'true'
       - run: pnpm test:coverage
@@ -78,35 +72,22 @@ jobs:
     defaults:
       run:
         working-directory: apps/financial
-    name: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && 'visual-baseline-candidates' || 'visual' }}
-    # Native macOS WebKit, same OS family/architecture as the checked-in baselines.
-    runs-on: macos-26
+    name: visual
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: ghcr.io/hasbai/financial-visual-ci@sha256:7c8b030fa654dfd7acb74db9fbca0fe413ca81024536f6d361712d0920fd6444
+      options: --ipc=host
     timeout-minutes: 20
     steps:
       - name: Financial unchanged
         if: needs.changes.outputs.financial != 'true'
         working-directory: .
         run: echo 'No financial visual changes to check'
-      - name: Require a task branch for candidates
-        if: needs.changes.outputs.financial == 'true' && github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
-        working-directory: .
-        run: test "$GITHUB_REF" != refs/heads/main
       - uses: actions/checkout@v4
-        if: needs.changes.outputs.financial == 'true'
-      - uses: pnpm/action-setup@v4
-        if: needs.changes.outputs.financial == 'true'
-      - uses: actions/setup-node@v4
-        if: needs.changes.outputs.financial == 'true'
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: sw_vers
-        if: needs.changes.outputs.financial == 'true'
-      - run: echo "$ImageVersion"
         if: needs.changes.outputs.financial == 'true'
       - run: pnpm install --frozen-lockfile
         if: needs.changes.outputs.financial == 'true'
-      - run: pnpm exec playwright install webkit chromium
+      - run: test "$(pnpm exec playwright --version)" = 'Version 1.63.0'
         if: needs.changes.outputs.financial == 'true'
       - run: pnpm build
         if: needs.changes.outputs.financial == 'true'
@@ -116,26 +97,10 @@ jobs:
           VITE_DATA_API_URL: http://127.0.0.1:4173/test-api
       - run: node scripts/prepare-browser-build.mjs
         if: needs.changes.outputs.financial == 'true'
-      - if: needs.changes.outputs.financial == 'true' && github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
-        run: pnpm test:e2e:update
-        env:
-          VISUAL_COVERAGE_GATE: '1'
-      # Candidates are reviewed/imported before ordinary PR/main comparison.
-      # Run exactly one browser suite per job; never update in normal CI.
-      - if: needs.changes.outputs.financial == 'true' && (github.event_name != 'workflow_dispatch' || !inputs.update_visual_baselines)
+      - if: needs.changes.outputs.financial == 'true'
         run: pnpm test:e2e
         env:
           VISUAL_COVERAGE_GATE: '1'
-      - if: needs.changes.outputs.financial == 'true' && github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
-        run: node scripts/visual-baselines.mjs record
-      - uses: actions/upload-artifact@v4
-        if: needs.changes.outputs.financial == 'true' && github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
-        with:
-          name: visual-baseline-candidates
-          path: |
-            apps/financial/e2e/__screenshots__/*-ci-*/
-            apps/financial/test-results/visual-baseline-candidate.json
-          retention-days: 14
       - uses: actions/upload-artifact@v4
         if: always() && needs.changes.outputs.financial == 'true'
         with:
@@ -144,15 +109,3 @@ jobs:
             apps/financial/playwright-report/
             apps/financial/test-results/
           retention-days: 14
-
-  blog-candidates:
-    if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
-    uses: ./.github/workflows/blog.yml
-    with:
-      update_visual_baselines: true
-
-  zboard-candidates:
-    if: github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines
-    uses: ./.github/workflows/zboard.yml
-    with:
-      update_visual_baselines: true

@@ -11,7 +11,7 @@ export default defineConfig({
   updateSnapshots: "none",
   snapshotPathTemplate: process.env.LOCAL_VISUAL_CAPTURE_DIR
     ? `${process.env.LOCAL_VISUAL_CAPTURE_DIR}/{projectName}/{testFilePath}/{arg}{ext}`
-    : `{testDir}/__screenshots__/{platform}${process.env.GITHUB_ACTIONS ? "-ci" : ""}-{projectName}/{testFilePath}/{arg}{ext}`,
+    : `{testDir}/__screenshots__/${process.platform === "linux" ? "linux-ci" : `{platform}${process.env.GITHUB_ACTIONS ? "-ci" : ""}`}-{projectName}/{testFilePath}/{arg}{ext}`,
   reporter: [["list"], ["html", { open: "never" }], ["./scripts/visual-coverage-reporter.mjs"]],
   expect: {
     timeout: 5_000,

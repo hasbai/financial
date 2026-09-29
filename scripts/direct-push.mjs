@@ -3,8 +3,12 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const args = new Set(process.argv.slice(2));
-if ([...args].some(arg => !['--validated', '--backend-reviewed', '--dry-run'].includes(arg))) throw new Error('Use --validated after relevant local checks; --backend-reviewed is required for non-UI backend code.');
+const args = new Set(process.argv.slice(2).filter(arg => !arg.startsWith('--reviewed-path=')));
+const reviewedPaths = new Set(process.argv.slice(2).filter(arg => arg.startsWith('--reviewed-path='))
+  .map(arg => arg.slice('--reviewed-path='.length)));
+if ([...args].some(arg => !['--validated', '--backend-reviewed', '--dry-run'].includes(arg)) || reviewedPaths.has('')) {
+  throw new Error('Use --validated --backend-reviewed and one --reviewed-path=<file> per non-document file.');
+}
 const git = (...parts) => execFileSync('git', parts, { cwd: root, encoding: 'utf8' }).trim();
 git('fetch', 'origin', 'main');
 if (git('status', '--porcelain')) throw new Error('Commit task files and keep the worktree clean before direct push.');
@@ -21,6 +25,10 @@ const backend = path => ['database/', 'apps/financial/worker/', 'apps/blog/worke
 const denied = files.filter(path => !docs(path)
   && !(args.has('--backend-reviewed') && (maintenance(path) || backend(path))));
 if (denied.length) throw new Error('PR and merge-queue CI required for these files:\n' + denied.join('\n'));
+const nonDocs = files.filter(path => !docs(path));
+if (nonDocs.some(path => !reviewedPaths.has(path)) || [...reviewedPaths].some(path => !nonDocs.includes(path))) {
+  throw new Error('List each reviewed non-document file exactly with --reviewed-path=<file>:\n' + nonDocs.join('\n'));
+}
 if (files.some(path => !docs(path)) && !args.has('--validated')) throw new Error('Run relevant local checks, then pass --validated.');
 git('diff', '--check', 'origin/main..HEAD');
 console.log(files.join('\n'));

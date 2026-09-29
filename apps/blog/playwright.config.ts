@@ -6,7 +6,9 @@ export default defineConfig({
   retries: 0,
   forbidOnly: !!process.env.CI,
   updateSnapshots: "none",
-  snapshotPathTemplate: "{testDir}/__screenshots__/{projectName}/{arg}{ext}",
+  snapshotPathTemplate: process.env.LOCAL_VISUAL_CAPTURE_DIR
+    ? `${process.env.LOCAL_VISUAL_CAPTURE_DIR}/{projectName}/{arg}{ext}`
+    : `{testDir}/__screenshots__/${process.platform === "linux" ? "linux-ci/" : ""}{projectName}/{arg}{ext}`,
   reporter: [
     ["list"],
     ["../financial/scripts/visual-coverage-reporter.mjs"],
