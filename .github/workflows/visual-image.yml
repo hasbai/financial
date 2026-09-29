@@ -1,6 +1,11 @@
 name: Build visual CI image
 on:
   workflow_dispatch:
+  push:
+    branches: [task/pinned-linux-visual-20260929]
+    paths:
+      - docker/visual-ci/Dockerfile
+      - .github/workflows/visual-image.yml
 permissions:
   contents: read
   packages: write

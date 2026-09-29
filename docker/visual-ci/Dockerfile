@@ -4,7 +4,7 @@ FROM --platform=linux/arm64 mcr.microsoft.com/playwright@sha256:a0f4498920a5dbac
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 TZ=UTC
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-noto-cjk fonts-noto-color-emoji \
+    && apt-get install -y --no-install-recommends build-essential git fonts-noto-cjk fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/* \
     && npm install --global pnpm@10.33.2 \
     && node --version \
