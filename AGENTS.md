@@ -45,7 +45,7 @@ CI 等待统一使用 `node scripts/wait-ci.mjs <owner/repo> <run-id> <full-sha>
 
 完整验收在最终创建 PR 时由 GitHub Actions 执行；本地可运行 `pnpm visual:local`，只生成受影响页面的截图并审阅，使用生产构建与独立浏览器夹具。单元覆盖率和完整视觉比较仍由 CI 执行；本地普通非视觉改动至少运行 `git diff --check` 和直接相关的轻量检查。
 
-前端、共享 UI、API 契约和影响页面结果的改动由主代理修改并提交；本地审阅完成、候选基线需要时已导入后，再派新子代理推送功能分支并创建 PR，跟踪该次 CI。失败后由主代理修复，再派新子代理复核。PR 最新提交的 `check`、`visual`、`blog-check`、`blog-visual` 必需状态成功且分支包含最新 main 才能合并；Zboard 改动还须通过对应工作流。只有确认与前端输出无关且完成相关本地验证的独立改动可由维护者使用 `pnpm direct:push --validated --backend-reviewed` 快进推送 main；纯文档可省略参数。不得强推，不得将混合改动归为非前端。合并或直推后核验 Cloudflare 自动部署及线上版本。不得使用 `--admin` 绕过 PR 失败。
+前端、共享 UI、API 契约和影响页面结果的改动由主代理修改并提交；本地审阅完成、候选基线需要时已导入后，再派新子代理推送功能分支并创建 PR，跟踪该次 CI。失败后由主代理修复，再派新子代理复核。PR 最新提交的 `check`、`visual`、`blog-check`、`blog-visual` 必需状态成功且分支包含最新 main 才能合并；Zboard 改动还须通过对应工作流。仓库只允许 squash 合并，使用 `gh pr merge --squash`。只有确认与前端输出无关且完成相关本地验证的独立改动可由维护者使用 `pnpm direct:push --validated --backend-reviewed` 快进推送 main；纯文档可省略参数。不得强推，不得将混合改动归为非前端。合并或直推后核验 Cloudflare 自动部署及线上版本。不得使用 `--admin` 绕过 PR 失败。
 
 功能分支 push 和合并后的 main push 不触发测试；只在准备合并时创建 PR，使完整 CI 通常运行一次。个人账号仓库不支持 GitHub merge queue，故 PR 后更新提交或 main 前进仍会重跑必需检查。页面修改维护 `visual-coverage.json` 的页面、状态和设备证据；新增页面未登记会被门禁拒绝。视觉基线只有在有意设计变化时才通过功能分支的显式 `Check` workflow dispatch 生成，核对后用 `pnpm visual:baseline:import <目录> --reviewed` 导入；HEAD 必须匹配候选 SHA。CI 不自动接受变化。详见 docs/TESTING.md。
 数据库验证用 `scripts/test-database.mjs`，连接串从 stdin 传入，所有测试写入在事务中回滚。不得输出凭据。

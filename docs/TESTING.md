@@ -28,7 +28,7 @@ git diff --check
 
 主代理编辑/提交后，先在本地完成受影响页审阅；需要新 CI 基线时，先在功能分支显式生成并导入候选。准备合并时才创建 PR，完整 CI 在 PR 上运行一次。失败由主代理修复后再派新子代理推送复核；后续 PR 提交或 main 前进仍会重新运行检查。`check`、`visual`、`blog-check`、`blog-visual` 是线上必需状态；Zboard 改动也须通过对应工作流。候选成功不能替代严格比较。合并后核验 main 合并 SHA、Cloudflare 自动部署和线上资源，不重复启动 main 全量 CI。
 
-当前 `hasbai/financial` 是个人账号仓库，GitHub 不提供 merge queue；创建 `merge_queue` ruleset 会返回 422。现有保护要求 PR、最新 main 和四个 GitHub Actions 必需状态，故 PR 打开前先把功能分支与最新 main 对齐。手动 dispatch 只用于候选或明确排障。PR CI 成功不代表真实 JWT、数据库或生产路由已验收。[GitHub 合并队列说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
+当前 `hasbai/financial` 是个人账号仓库，GitHub 不提供 merge queue；创建 `merge_queue` ruleset 会返回 422。现有保护要求 PR、最新 main 和四个 GitHub Actions 必需状态，故 PR 打开前先把功能分支与最新 main 对齐。仓库设置只允许 squash，合并使用 `gh pr merge --squash`。手动 dispatch 只用于候选或明确排障。PR CI 成功不代表真实 JWT、数据库或生产路由已验收。[GitHub 合并队列说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
 
 独立且确认与前端输出无关的文档、数据库或维护脚本改动，可在相关本地检查后从最新 `origin/main` 的任务分支使用 `pnpm direct:push --validated --backend-reviewed` 快进推送 main；纯文档可省略参数。脚本拒绝共享 UI、页面、测试门禁、CI 配置和混合路径，且核对远端提交。当前 branch protection 不对管理员生效，GitHub 本身不按文件路径约束这种直推；分类由脚本和维护流程约束。API 契约、页面数据形状、共享配置仍走 PR。
 
