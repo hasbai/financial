@@ -59,6 +59,9 @@ test('SSR, direct Data API navigation, skeleton, canonical URLs and reading stat
   await expect(page).toHaveScreenshot('article.png', { fullPage: true });
   await page.getByRole('button', { name: '切换深色' }).click();
   await expect(page.locator('article.reading')).toHaveCSS('opacity', '1');
+  await expect(page.locator('.article-title')).toHaveCSS('color', 'rgb(240, 240, 240)');
+  await expect(page.locator('.prose')).toHaveCSS('color', 'rgb(240, 240, 240)');
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await expect(page).toHaveScreenshot('article-dark.png', { fullPage: true });
   await page.getByRole('button', { name: '切换浅色' }).click();
 
