@@ -21,7 +21,11 @@ if (!resources.some((r) => r.identifier === audience))
     allow_offline_access: false,
   });
 const client = api("get", `clients/${clientId}`);
-const origins = ["https://zboard.hasbai.workers.dev", "http://localhost:5175"];
+const origins = [
+  "https://zboard.hasbai.xyz",
+  "https://zboard.hasbai.workers.dev",
+  "http://localhost:5175",
+];
 api("patch", `clients/${clientId}`, {
   callbacks: [
     ...new Set([
@@ -69,7 +73,12 @@ api("patch", "actions/triggers/post-login/bindings", { bindings });
 const verified = api("get", `clients/${clientId}`);
 const after = api("get", "actions/triggers/post-login/bindings");
 if (
-  !verified.callbacks.includes(origins[0] + "/auth/callback") ||
+  !origins.every(
+    (origin) =>
+      verified.callbacks.includes(origin + "/auth/callback") &&
+      verified.allowed_logout_urls.includes(origin) &&
+      verified.web_origins.includes(origin),
+  ) ||
   !(after.bindings ?? after).some((b) => b.action.id === id)
 )
   throw new Error("Auth0 configuration verification failed");
