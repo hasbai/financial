@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { DEFAULT_CLASH_TEMPLATE } from "../shared/clash-preset";
 async function fixture(
   page: Page,
   { admin = true, empty = false, fail = false, delay = false, clashDelay = false } = {},
@@ -248,6 +249,25 @@ test("node template and membership operations", async ({ page }) => {
   ).toBeVisible();
   await page.getByRole("button", { name: "Clash 订阅模板" }).click();
   await expect(page.getByLabel("Clash 配置模板（YAML）")).toHaveValue(/本站节点/);
+  const custom = await page.getByLabel("Clash 配置模板（YAML）").inputValue();
+  await page.getByLabel("管理员覆盖项（YAML）").fill("dns:\n  enable: true");
+  await page.getByRole("button", { name: "载入内置分流模板" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("Clash 配置模板（YAML）")).toHaveValue(DEFAULT_CLASH_TEMPLATE);
+  await expect(page.getByLabel("管理员覆盖项（YAML）")).toHaveValue("dns:\n  enable: true");
+  // Loading a preset changes only the editor. Discarding it preserves the saved YAML.
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "返回", exact: true }).click();
+  await page.getByRole("button", { name: "Clash 订阅模板" }).click();
+  await expect(page.getByLabel("Clash 配置模板（YAML）")).toHaveValue(custom);
+  await page.getByRole("button", { name: "载入内置分流模板" }).click();
+  const yamlEditor = page.getByLabel("Clash 配置模板（YAML）");
+  expect(await yamlEditor.evaluate((element) => element.clientHeight)).toBeLessThan(400);
+  expect(await yamlEditor.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await yamlEditor.focus();
+  await page.keyboard.press("Control+End");
+  await expect.poll(() => yamlEditor.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await page.keyboard.press("Control+Home");
   await fits(page);
   await expect(page).toHaveScreenshot("clash-template-editor.png", { fullPage: true });
   await page.getByRole("button", { name: "切换深色" }).click();
@@ -262,6 +282,7 @@ test("node template and membership operations", async ({ page }) => {
   await page.getByRole("button", { name: "保存模板" }).click();
   await page.getByRole("button", { name: "Clash 订阅模板" }).click();
   await expect(page.getByLabel("管理员覆盖项（YAML）")).toHaveValue("dns:\n  enable: true");
+  await expect(page.getByLabel("Clash 配置模板（YAML）")).toHaveValue(DEFAULT_CLASH_TEMPLATE);
   await page.getByRole("button", { name: "返回", exact: true }).click();
   await page.getByRole("link", { name: "用户", exact: true }).click();
   await page

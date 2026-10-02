@@ -5,6 +5,8 @@ import { identity } from "./auth";
 import worker, { normalizeTrafficPayload, renderTemplate } from "./index";
 import { clientConfig, subscription } from "./subscription";
 import { parse } from "yaml";
+import { DEFAULT_CLASH_TEMPLATE, LEGACY_CLASH_TEMPLATE, SITE_NODES } from "../shared/clash-preset";
+import { resolveClashSettings } from "./clash-template";
 vi.mock("./auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./auth")>()),
   identity: vi.fn(),
@@ -272,6 +274,110 @@ describe("D1 panel and node contracts", () => {
   });
 });
 describe("subscription and template rendering", () => {
+  it("upgrades only the exact saved legacy default without custom overrides", async () => {
+    const override = "";
+    db.prepare("INSERT INTO clash_settings (id,template_yaml,override_yaml) VALUES (1,?,?)")
+      .run(LEGACY_CLASH_TEMPLATE, override);
+    const loaded = await (await call("/api/admin/clash")).json();
+    expect(loaded).toEqual({ template_yaml: DEFAULT_CLASH_TEMPLATE, override_yaml: override });
+    expect(db.prepare("SELECT template_yaml FROM clash_settings").get()?.template_yaml)
+      .toBe(LEGACY_CLASH_TEMPLATE);
+    const custom = { template_yaml: LEGACY_CLASH_TEMPLATE + "# custom\n", override_yaml: override };
+    expect(resolveClashSettings(custom)).toBe(custom);
+    const config = parse(subscription([], "uuid", "clash", loaded));
+    expect(config.dns.enable).toBe(true);
+    expect(config.rules.at(-1)).toBe("MATCH,漏网之鱼");
+    for (const override_yaml of ["dns:\n  enable: false\n", "proxy-groups:\n  - name: 节点选择\n    type: select\n    proxies: [本站节点, DIRECT]\n"]) {
+      const settings = { template_yaml: LEGACY_CLASH_TEMPLATE, override_yaml };
+      expect(resolveClashSettings(settings)).toBe(settings);
+      const rendered = parse(subscription([], "uuid", "clash", settings));
+      expect(rendered.rules).toEqual(["GEOIP,CN,DIRECT", "MATCH,节点选择"]);
+      expect(rendered["proxy-groups"].map((g: { name: string }) => g.name))
+        .toEqual(["节点选择", "本站节点"]);
+    }
+  });
+  it("connects all default rules, DNS policies and strategy groups to per-user nodes", () => {
+    const nodes = [1, 2].map((id) => ({ id, name: "同名节点", node_type: "vless", client_json: JSON.stringify({ ...client, private_key: "server-secret" }) }));
+    const output = subscription(nodes, "own-uuid", "clash");
+    const config = parse(output) as {
+      proxies: Array<{ name: string; uuid: string }>;
+      "proxy-groups": Array<{ name: string; type: string; proxies: string[] }>;
+      "rule-providers": Record<string, { type: string; behavior: string; format: string; path: string; url: string; proxy: string; interval: number }>;
+      rules: string[];
+      dns: { "nameserver-policy": Record<string, unknown>; "proxy-server-nameserver": string[]; nameserver: string[]; listen?: string };
+      tun?: unknown;
+    };
+    expect(config.proxies.map((p) => p.uuid)).toEqual(["own-uuid", "own-uuid"]);
+    const names = config.proxies.map((p) => p.name);
+    for (const name of ["本站节点", "自动选择", "故障转移"])
+      expect(config["proxy-groups"].find((g) => g.name === name)?.proxies).toEqual(names);
+    const groups = new Map(config["proxy-groups"].map((g) => [g.name, g]));
+    const targets = new Set(["DIRECT", "REJECT", ...names, ...groups.keys()]);
+    function visit(name: string, path: string[] = []) {
+      expect(path).not.toContain(name);
+      for (const target of groups.get(name)?.proxies ?? []) {
+        expect(targets.has(target)).toBe(true);
+        if (groups.has(target)) visit(target, [...path, name]);
+      }
+    }
+    for (const name of groups.keys()) visit(name);
+    for (const rule of config.rules) {
+      const [type, provider, target] = rule.split(",");
+      if (type === "RULE-SET") {
+        expect(config["rule-providers"]).toHaveProperty(provider!);
+        expect(targets.has(target!)).toBe(true);
+      } else expect(rule).toBe("MATCH,漏网之鱼");
+    }
+    expect(config.rules.slice(0, 3)).toEqual(["RULE-SET,private,DIRECT", "RULE-SET,private-ip,DIRECT,no-resolve", "RULE-SET,ads,广告拦截"]);
+    expect(config.rules.indexOf("RULE-SET,apple-cn,国内直连"))
+      .toBeLessThan(config.rules.indexOf("RULE-SET,apple,苹果服务"));
+    expect(config.rules.indexOf("RULE-SET,ai,AI 服务"))
+      .toBeLessThan(config.rules.indexOf("RULE-SET,proxy,节点选择"));
+    expect(config.rules.at(-1)).toBe("MATCH,漏网之鱼");
+    const paths = new Set<string>();
+    for (const provider of Object.values(config["rule-providers"])) {
+      expect(provider.type).toBe("http");
+      expect(["domain", "ipcidr"]).toContain(provider.behavior);
+      expect(provider.format).toBe("yaml");
+      expect(provider.interval).toBe(86400);
+      expect(provider.proxy).toBe("节点选择");
+      expect(paths.has(provider.path)).toBe(false);
+      paths.add(provider.path);
+      expect(provider.url).toMatch(/^https:\/\/raw\.githubusercontent\.com\/MetaCubeX\/meta-rules-dat\/meta\/geo\/(geosite|geoip)\/[^?]+\.yaml$/);
+    }
+    for (const policy of Object.keys(config.dns["nameserver-policy"]))
+      for (const name of policy.slice("rule-set:".length).split(","))
+        expect(config["rule-providers"]).toHaveProperty(name);
+    expect(config.dns["proxy-server-nameserver"]).not.toHaveLength(0);
+    expect(config.dns["proxy-server-nameserver"].join()).not.toContain("#");
+    expect(config.dns.nameserver.every((server) => server.endsWith("#节点选择"))).toBe(true);
+    expect(config.dns.listen).toBeUndefined();
+    expect(config.tun).toBeUndefined();
+    expect(output).not.toContain(SITE_NODES);
+    expect(output).not.toContain("server-secret");
+  });
+  it("expands site nodes in overridden groups and rejects broken rule references and cycles", () => {
+    const node = { id: 1, name: "测试", node_type: "vless", client_json: JSON.stringify(client) };
+    const custom = {
+      template_yaml: "proxies: []\nproxy-groups: []\nrules: []\n",
+      override_yaml: `proxy-groups:\n  - name: 自动\n    type: url-test\n    proxies: ['${SITE_NODES}']\n    url: https://www.gstatic.com/generate_204\nrules: ['MATCH,自动']\n`,
+    };
+    const rendered = parse(subscription([node], "own", "clash", custom));
+    expect(rendered["proxy-groups"][0].proxies).toEqual(["测试 · 1"]);
+    expect(() => subscription([node], "own", "clash", {
+      template_yaml: DEFAULT_CLASH_TEMPLATE,
+      override_yaml: "proxy-groups: []",
+    })).toThrow("规则引用不存在");
+    expect(() => subscription([], "own", "clash", {
+      ...custom, override_yaml: "rules: ['RULE-SET,missing,DIRECT']",
+    })).toThrow("规则集不存在");
+    expect(() => subscription([], "own", "clash", {
+      ...custom, override_yaml: "proxy-groups: [{name: A, type: select, proxies: [B]}, {name: B, type: select, proxies: [A]}]",
+    })).toThrow("代理组循环引用");
+    expect(() => subscription([], "own", "clash", {
+      ...custom, override_yaml: "proxy-groups: [{name: A, type: select, proxies: [missing]}]",
+    })).toThrow("代理组引用不存在");
+  });
   it("escapes template values and preserves whole-placeholder types", () => {
     expect(
       JSON.parse(

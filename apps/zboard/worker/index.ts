@@ -3,6 +3,7 @@ import { clientConfig, subscription } from "./subscription";
 import {
   DEFAULT_CLASH_TEMPLATE,
   renderClashTemplate,
+  resolveClashSettings,
   type ClashSettings,
 } from "./clash-template";
 
@@ -687,7 +688,9 @@ async function clashSettings(env: RuntimeEnv): Promise<ClashSettings> {
   const row = await env.DB.prepare(
     "SELECT template_yaml, override_yaml FROM clash_settings WHERE id = 1",
   ).first<ClashSettings>();
-  return row ?? { template_yaml: DEFAULT_CLASH_TEMPLATE, override_yaml: "" };
+  return resolveClashSettings(
+    row ?? { template_yaml: DEFAULT_CLASH_TEMPLATE, override_yaml: "" },
+  );
 }
 
 async function updateClashSettings(

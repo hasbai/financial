@@ -8,6 +8,7 @@
   import { Plus, ArrowLeft } from "@lucide/svelte";
   import { type Api, type Template } from "../lib/types";
   import Confirm from "../lib/Confirm.svelte";
+  import { DEFAULT_CLASH_TEMPLATE } from "../../shared/clash-preset";
   let { api }: { api: Api } = $props();
   let items = $state<Template[]>([]),
     loading = $state(true),
@@ -111,6 +112,12 @@
       busy = false;
     }
   }
+  function loadClashPreset() {
+    clashTemplate = DEFAULT_CLASH_TEMPLATE;
+    dirty = true;
+    error = "";
+    notice = "";
+  }
   async function save(e: SubmitEvent) {
     e.preventDefault();
     busy = true;
@@ -172,9 +179,13 @@
       <fieldset disabled={busy} class="panel">
         <div class="panel-body form-grid">
           <div class="field wide">
+            <Button type="button" variant="outline" onclick={loadClashPreset}>载入内置分流模板</Button>
+          </div>
+          <div class="field wide">
             <label for="clash-template">Clash 配置模板（YAML）</label><Textarea
               id="clash-template"
               class="json-editor"
+              style="field-sizing: fixed; height: 24rem; max-height: 60vh; overflow: auto;"
               bind:value={clashTemplate}
               required
               spellcheck="false"
