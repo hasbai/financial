@@ -1,30 +1,23 @@
 import { parseDocument, stringify } from "yaml";
-
-// Starting point for the administrator's editable Mihomo configuration.
-// The site group and its members are generated from the requesting user's nodes.
-export const DEFAULT_CLASH_TEMPLATE = `mixed-port: 7890
-allow-lan: false
-mode: rule
-log-level: info
-ipv6: false
-proxies: []
-proxy-groups:
-  - name: 节点选择
-    type: select
-    proxies:
-      - 本站节点
-      - DIRECT
-rules:
-  - GEOIP,CN,DIRECT
-  - MATCH,节点选择
-`;
-
-export const SITE_GROUP = "本站节点";
+import {
+  DEFAULT_CLASH_TEMPLATE,
+  LEGACY_CLASH_TEMPLATE,
+  SITE_GROUP,
+  SITE_NODES,
+} from "../shared/clash-preset";
+export { DEFAULT_CLASH_TEMPLATE, SITE_GROUP } from "../shared/clash-preset";
 
 export type ClashSettings = {
   template_yaml: string;
   override_yaml: string;
 };
+
+export function resolveClashSettings(settings: ClashSettings): ClashSettings {
+  return settings.template_yaml.trim() === LEGACY_CLASH_TEMPLATE.trim() &&
+    !settings.override_yaml.trim()
+    ? { ...settings, template_yaml: DEFAULT_CLASH_TEMPLATE }
+    : settings;
+}
 
 type Mapping = Record<string, unknown>;
 
@@ -77,7 +70,10 @@ export function renderClashTemplate(
   settings: ClashSettings,
   siteProxies: Mapping[],
 ): string {
-  const template = parseMapping(settings.template_yaml, "Clash 模板");
+  const template = parseMapping(
+    resolveClashSettings(settings).template_yaml,
+    "Clash 模板",
+  );
   const override = settings.override_yaml.trim()
     ? parseMapping(settings.override_yaml, "管理员覆盖项")
     : {};
@@ -128,15 +124,54 @@ export function renderClashTemplate(
   }
 
   config.proxies = [...config.proxies, ...siteProxies];
+  const siteNames = siteProxies.length
+    ? siteProxies.map((proxy) => String(proxy.name))
+    : ["DIRECT"];
   config["proxy-groups"] = [
-    ...config["proxy-groups"],
+    ...config["proxy-groups"].map((group) => {
+      const g = group as Mapping;
+      return {
+        ...g,
+        proxies: (g.proxies as string[]).flatMap((name) =>
+          name === SITE_NODES ? siteNames : [name],
+        ),
+      };
+    }),
     {
       name: SITE_GROUP,
       type: "select",
-      proxies: siteProxies.length
-        ? siteProxies.map((proxy) => proxy.name)
-        : ["DIRECT"],
+      proxies: siteNames,
     },
   ];
+  const targets = new Set([
+    ...names, SITE_GROUP, "DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE", "GLOBAL", "DNS",
+  ]);
+  const groups = new Map((config["proxy-groups"] as Mapping[]).map((g) => [String(g.name), g.proxies as string[]]));
+  const complete = new Set<string>();
+  const visiting = new Set<string>();
+  function visit(name: string) {
+    if (visiting.has(name)) throw new Error(`代理组循环引用：${name}`);
+    if (complete.has(name)) return;
+    visiting.add(name);
+    for (const target of groups.get(name) ?? []) {
+      if (!targets.has(target)) throw new Error(`代理组引用不存在：${target}`);
+      if (groups.has(target)) visit(target);
+    }
+    visiting.delete(name);
+    complete.add(name);
+  }
+  for (const name of groups.keys()) visit(name);
+  // Validate preset-compatible rules without trying to reimplement Mihomo's
+  // nested logical/sub-rule grammar for administrator-supplied advanced rules.
+  for (const rule of config.rules as string[]) {
+    const [type, provider, target] = rule.split(",").map((part) => part.trim());
+    if (type === "RULE-SET") {
+      if (!isMapping(config["rule-providers"]) || !Object.hasOwn(config["rule-providers"], provider!))
+        throw new Error(`规则集不存在：${provider}`);
+      if (!targets.has(target!)) throw new Error(`规则引用不存在：${target}`);
+    } else if (type === "MATCH" && !targets.has(provider!)) {
+      throw new Error(`规则引用不存在：${provider}`);
+    }
+  }
   return stringify(config, { lineWidth: 0 });
 }

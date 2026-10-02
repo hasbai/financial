@@ -21,7 +21,7 @@
     },
     {
       "source": "src/pages/Templates.svelte",
-      "scenarios": ["pages", "editors"]
+      "scenarios": ["pages", "editors", "clash-loading"]
     },
     {
       "source": "src/pages/Members.svelte",
@@ -37,6 +37,17 @@
     }
   ],
   "scenarios": [
+    {
+      "id": "clash-loading",
+      "kind": "interaction",
+      "evidence": [
+        {
+          "spec": "e2e/panel.spec.ts",
+          "test": "Clash template loading and fetch error recovery",
+          "projects": ["iphone", "desktop"]
+        }
+      ]
+    },
     {
       "id": "pages",
       "kind": "screenshot",
