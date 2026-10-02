@@ -6,7 +6,7 @@ import worker, { normalizeTrafficPayload, renderTemplate } from "./index";
 import { clientConfig, subscription } from "./subscription";
 import { parse } from "yaml";
 import { DEFAULT_CLASH_TEMPLATE, LEGACY_CLASH_TEMPLATE, SITE_NODES } from "../shared/clash-preset";
-import { resolveClashSettings } from "./clash-template";
+import { resolveClashSettings, type ClashSettings } from "./clash-template";
 vi.mock("./auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./auth")>()),
   identity: vi.fn(),
@@ -278,7 +278,7 @@ describe("subscription and template rendering", () => {
     const override = "";
     db.prepare("INSERT INTO clash_settings (id,template_yaml,override_yaml) VALUES (1,?,?)")
       .run(LEGACY_CLASH_TEMPLATE, override);
-    const loaded = await (await call("/api/admin/clash")).json();
+    const loaded = await (await call("/api/admin/clash")).json() as ClashSettings;
     expect(loaded).toEqual({ template_yaml: DEFAULT_CLASH_TEMPLATE, override_yaml: override });
     expect(db.prepare("SELECT template_yaml FROM clash_settings").get()?.template_yaml)
       .toBe(LEGACY_CLASH_TEMPLATE);
