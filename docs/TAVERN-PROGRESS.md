@@ -112,6 +112,17 @@ Gateway同一验收时间段恰好3条Tavern日志，HTTP200、模型qwen3.8-27b
 
 用户明确要求北极小站Auth0配置统一，禁止Tavern audience限定，并要求查看完整模型请求。当前修订移除Tavern前端audience覆盖与专属claims，复用packages/auth公共配置、顶层role和公共username；原财务role映射保留，公共名称签发不限制Tavern audience。旧Tavern Action在兼容发布后解绑，setup脚本不再创建独立API或恢复旧Action。
 
-Gateway原payload=false解释了只有metadata没有完整请求；现改为true，保留三项metadata、动态Workers binding与单次调用。以下旧记录中的payload禁存及Tavern专属鉴权均为历史行为；新版本真实JWT及完整请求/回复日志验收进行中。
+Gateway原payload=false解释了只有metadata没有完整请求；现改为true，保留三项metadata、动态Workers binding与单次调用。上方旧记录中的payload禁存及Tavern专属鉴权均为历史行为；新版本真实JWT及完整请求/回复日志验收已完成。
 
 发布前已先更新既有financial role Action并回读源码一致，原5个绑定顺序保持，旧Tavern Action暂保以兼容当前Worker。普通Universal Login+PKCE签发共享audience JWT、顶层role=superadmin、公共username=时阅，无Tavernclaims；该JWT只读财务Data API HTTP200，原财务映射有效。auth/生成40项及Svelte/聚焦Worker类型检查通过；Linux28流程82截图通过，80张逐像素一致、2张在既有50像素容差内，无有意UI变化、不替换原基线。架构复核通过。
+
+| 层级 | 最终证据 |
+| --- | --- |
+| PR/CI | [PR #32](https://github.com/hasbai/financial/pull/32)八项必需状态成功，包含最新main并squash为`aa9c77c7c734fd4380fee8291d55447aa71eb230` |
+| 自动发布 | Build `f1dad52d-bac7-45ac-b395-ed5f0c61cfc9`成功且commit_hash一致；deployment `2a427dd7-437d-483a-b8f5-cfcdc762249a`，version `dac7a0fe-42db-4001-8646-63c37c17c1e5`流量100%，health200版本一致；无手动部署 |
+| 共享认证 | 发布后setup脚本成功，现有共享Action已部署且源码一致；旧Tavern Action解绑后保留signup profile、eastmoney login claims、financial role、zboard role四个既有绑定顺序。新PKCE JWT采用公共配置的既有共享audience，role=superadmin、公共username=时阅，无Tavern专属claim；没有创建新API或逐轮查询管理后台 |
+| 真实对话 | 请求`f2ca205e-6a08-4ed3-a2c1-d6be3c40f757`正常completed/stop，正文8字、3候选，约10.73秒；临时会话与角色均删除，角色列表读回本轮探针剩余0 |
+| 完整日志 | 日志`b55dec311b5829f30a589e38b9417fedb39c708a4fc6a4bcf60af387be83ab17`，创建时间2026-10-03 20:33:33（Asia/Shanghai），HTTP200，metadata为`{app:"tavern",task:"roleplay",username:"时阅"}` |
+| 原始正文 | `/logs/{id}/request`和`/logs/{id}/response`均HTTP200，1193与25289字节，分别与日志记录的request_size/response_size完全一致。完整请求含3条messages及验收输入，Top K20、Top P0.9、关闭思考；完整响应为SSE，包含正文、3候选、stop及`[DONE]`。原始正文仅保存在本地忽略目录，不提交用户内容或Token |
+
+当前Cloudflare日志详情的`request`/`response`摘要字段为空，但`request_head_complete`/`response_head_complete`为true且正文下载接口可读，因此不能仅凭两个摘要字段判断未保存payload。新日志已有完整正文，旧版本禁存payload的日志无法补回。原生binding仍未返回可用event_id，本次通过完整正文中的唯一验收输入和requestId标记核对对应日志，不声称后台event_id已确认。
