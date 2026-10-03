@@ -85,8 +85,7 @@ export class ConversationContext {
  }
  private async summarize(previous: string, history: Message[]): Promise<string> {
   const source = [previous, ...history.map(m => m.content)].filter(Boolean).join('\n');
-  const messages: PromptMessage[] = [{ role: 'system', content: SUMMARY_RULE },
-   ...(previous ? [{ role: 'user' as const, content: '已有记忆：\n' + previous }] : []), ...history.map(m => ({ role: m.role, content: m.content }))];
+  const messages: PromptMessage[] = [{ role: 'system', content: SUMMARY_RULE }, {role:'user',content:[previous?'已有记忆：\n'+previous:'',...history.map(m=>(m.role==='user'?'用户：':'角色：')+m.content),'请压缩以上会话。'].filter(Boolean).join('\n')}];
   const cost = 256 + messages.reduce((n, m) => n + Math.ceil(estimateTokens(m.content) * this.options.inputRatio) + 8, 0);
   let split = this.contextTokens !== null && cost > this.contextTokens;
   if (!split) {

@@ -9,34 +9,29 @@ import { sseData } from '../shared/sse';
 import { generationNotice } from '../shared/outcomes';
 import type { FinishReason, Message } from '../shared/types';
 import { HttpError, json } from './http';
-import { settings, currentMessages, getMessages, getSession, message, ownedBooks, type MessageRow } from './store';
+import { settings, currentMessages, message, ownedBooks } from './store';
+import type { SessionStore } from './session-store';
 export { explicitContextLimit } from './context';
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
-export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext,'waitUntil'>,owner:string,id:string,data:Record<string,unknown>,username:string) {
+export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext,'waitUntil'>,owner:string,id:string,data:Record<string,unknown>,username:string,store:SessionStore,onSettled:(id:string)=>Promise<void> = async()=>{},onClaim:(id:string,abort:AbortController)=>void = ()=>{},beforeClaim:()=>void=()=>{}) {
  const started=Date.now();
  const requestId=String(data.requestId??'');if(!UUID.test(requestId))throw new HttpError(400,'请求 ID 无效');
- const initial=await getSession(env,owner,id);
- const existing=await env.DB.prepare("SELECT * FROM messages WHERE session_id=? AND request_id=? AND role='assistant'").bind(id,requestId).first<MessageRow>();
+ const initial=store.get();
+ const existing=store.findRequest(requestId);
  if(existing)return json({message:message(existing),replayed:true});
- const capability=await capabilities(env,ctx);const now=Date.now();
+ const capability=await capabilities(env,ctx);beforeClaim();if(request.signal.aborted||store.cancelled(requestId))throw new HttpError(409,'生成已停止');const now=Date.now();
  const regenerate=data.regenerate===true,continuing=data.continue===true;
  if(regenerate&&continuing)throw new HttpError(400,'生成模式无效');const text=typeof data.content==='string'?data.content.trim():'';
  if(!regenerate && !continuing && (!text || text.length>24000))throw new HttpError(400,'消息需为 1–24000 字符');
  const assistantId=crypto.randomUUID();
- const claim=await env.DB.batch([
-  env.DB.prepare('UPDATE sessions SET generation_id=?,generation_until=?,updated_at=? WHERE id=? AND owner=? AND (generation_id IS NULL OR generation_until<=?)').bind(assistantId,now+180000,now,id,owner,now),
-  env.DB.prepare("UPDATE messages SET status='aborted',finish_reason='expired' WHERE session_id=? AND status='pending' AND EXISTS(SELECT 1 FROM sessions WHERE id=? AND generation_id=?)").bind(id,id,assistantId)
- ]);
- if(!claim[0].meta.changes)throw new HttpError(409,'当前会话正在生成');
- const abort=new AbortController();let checking=false;let leaseLost=false;let ready=false;let finishing=false;let abortReason:FinishReason='stopped';
- const owns=async()=>{if(abort.signal.aborted)throw new Error('生成已停止');const state=await env.DB.prepare('SELECT generation_id FROM sessions WHERE id=?').bind(id).first<{generation_id:string|null}>();if(state?.generation_id!==assistantId){leaseLost=true;abort.abort();throw new Error('会话生成已接管');}};
- const stopWatcher=setInterval(()=>{if(checking||finishing)return;checking=true;void env.DB.batch([
-  env.DB.prepare('UPDATE sessions SET generation_until=? WHERE id=? AND generation_id=?').bind(Date.now()+180000,id,assistantId),
- ]).then(async results=>{if(finishing)return;if(!results[0].meta.changes){leaseLost=true;abort.abort();return;}const state=await env.DB.prepare('SELECT status FROM messages WHERE id=?').bind(assistantId).first<{status:string}>();if(finishing)return;if(ready&&state?.status!=='pending'){abortReason='stopped';abort.abort();}}).catch(()=>{if(finishing)return;leaseLost=true;abortReason='upstream';abort.abort();}).finally(()=>checking=false);},1000);
+ if(!store.claim(assistantId,now))throw new HttpError(409,'当前会话正在生成');
+ const abort=new AbortController();let checking=false;let leaseLost=false;let ready=false;let finishing=false;let abortReason:FinishReason='stopped';onClaim(assistantId,abort);
+ const owns=async()=>{if(abort.signal.aborted)throw new Error('生成已停止');if(!store.owns(assistantId)){leaseLost=true;abort.abort();throw new Error('会话生成已接管');}};
+ const stopWatcher=setInterval(()=>{if(checking||finishing)return;checking=true;try{if(!store.renew(assistantId)){leaseLost=true;abort.abort();return;}if(ready&&!store.pending(assistantId)){abortReason='stopped';abort.abort();}}catch{leaseLost=true;abortReason='upstream';abort.abort();}finally{checking=false;}},1000);
  let prefix='';let row=initial;let prompt:ReturnType<typeof buildPrompt>;let conversation:ConversationContext;
  try {
-  row=await getSession(env,owner,id);
-  const history=currentMessages(await getMessages(env,id));const messageTime=Math.max(now,...history.map(m=>m.createdAt+1));
+  row=store.get();
+  const history=currentMessages(store.messages());const messageTime=Math.max(now,...history.map(m=>m.createdAt+1));
   let ordinal=Math.max(-1,...history.map(m=>m.ordinal))+1;
   let base=history.filter(m=>m.status==='completed');
   if(continuing){const last=history.at(-1);if(last?.role!=='assistant'||last.status==='pending'||last.status==='completed'||!last.content.trim())throw new HttpError(400,'没有可继续的回复');prefix=last.content;ordinal=last.ordinal;base=[...base,{...last,status:'completed'}];}
@@ -48,11 +43,8 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
   await conversation.restore(row.summary_json);if(continuing)conversation.resume(assistantId);
   prompt=conversation.prompt(continuing?'继续上一条回复，从中断处接着写，不要重复已有内容。':'');
   modelInput(settings(JSON.parse(row.settings_json)));
-  const statements=[];
-  if(!regenerate&&!continuing)statements.push(env.DB.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,request_id,created_at) SELECT ?,?,'user',?,'completed',?,?,? WHERE EXISTS(SELECT 1 FROM sessions WHERE id=? AND generation_id=?)").bind(userMessage.id,id,text,ordinal,requestId,messageTime,id,assistantId));
-  statements.push(env.DB.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,request_id,created_at) SELECT ?,?,'assistant',?,'pending',?,?,? WHERE EXISTS(SELECT 1 FROM sessions WHERE id=? AND generation_id=?)").bind(assistantId,id,prefix,assistantOrdinal,requestId,messageTime+1,id,assistantId));
-  await owns();const inserted=await env.DB.batch(statements);if(inserted.some(r=>!r.meta.changes))throw new HttpError(409,'会话生成已接管');ready=true;
- }catch(error){clearInterval(stopWatcher);abort.abort();await env.DB.prepare('UPDATE sessions SET generation_id=NULL,generation_until=NULL WHERE id=? AND generation_id=?').bind(id,assistantId).run();if(error instanceof Error&&error.message.includes('上下文上限'))throw new HttpError(400,error.message);throw error;}
+  await owns();store.start(assistantId,regenerate||continuing?undefined:userMessage,{id:assistantId,role:'assistant',content:prefix,status:'pending',ordinal:assistantOrdinal,requestId,createdAt:messageTime+1});ready=true;
+ }catch(error){clearInterval(stopWatcher);abort.abort();store.release(assistantId);await onSettled(assistantId);if(error instanceof Error&&error.message.includes('上下文上限'))throw new HttpError(400,error.message);throw error;}
  let disconnected=false;let output=prefix;let finishReason:FinishReason='interrupted';let model='';let gatewayLogId:string|null=null;let metrics=new InferenceMetrics();let firstModelStarted:number|null=null;let modelRequests=0;let firstBodyAt:number|null=null;let candidates:string[]=[];const parser=new CandidateStream(candidateDelimiter());let tailAnnounced=false;let parserFinished=false;
 
  const stream=new TransformStream<Uint8Array,Uint8Array>(); const writer=stream.writable.getWriter(),encoder=new TextEncoder();
@@ -65,7 +57,7 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
    const opts=settings(JSON.parse(row.settings_json));
    let continuation=continuing?'继续上一条回复，从中断处接着写，不要重复已有内容。':'';
    prompt=await conversation.fit(continuation);
-   const saveSummary=async()=>{await owns();const saved=await env.DB.prepare("UPDATE sessions SET summary_json=? WHERE id=? AND generation_id=? AND EXISTS(SELECT 1 FROM messages WHERE id=? AND status='pending')").bind(conversation.summary?JSON.stringify(conversation.summary):null,id,assistantId,assistantId).run();if(!saved.meta.changes){abort.abort();throw new Error('生成已停止');}if(conversation.contextTokens!==null)await recordFeedback(env,capability,{contextLimit:conversation.contextTokens});};
+   const saveSummary=async()=>{await owns();const saved=store.saveSummary(assistantId,conversation.summary?JSON.stringify(conversation.summary):null);if(!saved){abort.abort();throw new Error('生成已停止');}if(conversation.contextTokens!==null)await recordFeedback(env,capability,{contextLimit:conversation.contextTokens});};
    await saveSummary();
    let wireOutput=prefix;
    const syncOutput=(start:number)=>{const delta=wireOutput.slice(start);if(!delta)return;conversation.appendOutput({id:assistantId,role:'assistant',content:'',status:'completed',ordinal:0,requestId,createdAt:now},delta,continuing);continuation='接着最后一条未完成的输出续写，不重复已有内容，完成正文与候选。';};
@@ -89,8 +81,7 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
     const delta=choice?.delta?.content;
     if(typeof delta==='string') {wireOutput+=delta;const body=parser.push(delta);output+=body;if(body){if(firstBodyAt===null&&body.trim())firstBodyAt=Date.now();await send({type:'delta',text:body});}if(parser.inTail&&!tailAnnounced){tailAnnounced=true;await send({type:'candidates_pending',messageId:assistantId});}}
     if(Date.now()-lastSaved>800 || output.length-lastSize>1000){
-     const state=await env.DB.prepare('SELECT status FROM messages WHERE id=?').bind(assistantId).first<{status:string}>();if(state?.status!=='pending')throw new Error('生成已停止');
-     await owns();await env.DB.prepare("UPDATE messages SET content=? WHERE id=? AND status='pending' AND EXISTS(SELECT 1 FROM sessions WHERE id=? AND generation_id=?)").bind(output,assistantId,id,assistantId).run();lastSaved=Date.now();lastSize=output.length;
+     await owns();if(!store.saveOutput(assistantId,output))throw new Error('生成已停止');lastSaved=Date.now();lastSize=output.length;
     }
    }
    if(streamLimit){syncOutput(wireAtStart);conversation.contextTokens=streamLimit;const before=conversation.prompt(continuation).estimatedTokens;await conversation.compress();prompt=await conversation.fit(continuation);if(prompt.estimatedTokens>=before)throw new Error('会话压缩未缩短输入');await saveSummary();continue;}
@@ -109,8 +100,7 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
    if(!parserFinished)output+=parser.finish().body;
    request.signal.removeEventListener('abort',onDisconnect);
    try{
-    await env.DB.batch([env.DB.prepare("UPDATE messages SET content=?,candidates_json=CASE WHEN status='aborted' OR ?<>'completed' THEN NULL ELSE ? END,finish_reason=CASE WHEN status='aborted' AND finish_reason IS NOT NULL THEN finish_reason ELSE ? END,status=CASE WHEN status='aborted' THEN 'aborted' ELSE ? END WHERE id=? AND EXISTS(SELECT 1 FROM sessions WHERE id=? AND generation_id=?)").bind(output,status,candidates.length?JSON.stringify(candidates):null,finishReason,status,assistantId,id,assistantId),env.DB.prepare('UPDATE sessions SET generation_id=NULL,generation_until=NULL,updated_at=? WHERE id=? AND generation_id=?').bind(Date.now(),id,assistantId)]);
-    const saved=await env.DB.prepare('SELECT * FROM messages WHERE id=?').bind(assistantId).first<MessageRow>();
+    const saved=store.finish(assistantId,output,status,finishReason,candidates);await onSettled(assistantId);
     console.info('tavern-generation-outcome',{messageId:assistantId,requestId,gatewayLogId,finishReason:saved?.finish_reason,status:saved?.status,model,modelRequests,metricsScope:'last-model-request',...metrics.snapshot(),firstBodyMs:firstBodyAt===null?null:firstBodyAt-started,modelFirstBodyMs:firstBodyAt===null||firstModelStarted===null?null:firstBodyAt-firstModelStarted,promptBudget:prompt.budget,estimatedInputTokens:prompt.estimatedTokens,chars:output.length,candidateCount:saved?.candidates_json?JSON.parse(saved.candidates_json).length:0,elapsedMs:Date.now()-started});
     if(!disconnected&&!leaseLost){if(failure)await send({type:'error',message:failure});await send({type:'done',message:message(saved!)});}
    }finally{clearInterval(stopWatcher);await writer.close().catch(()=>{});}

@@ -58,5 +58,21 @@
       "binding": "FILES",
       "bucket_name": "tavern"
     }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SESSIONS",
+        "class_name": "TavernSession"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "session-v1",
+      "new_sqlite_classes": [
+        "TavernSession"
+      ]
+    }
   ]
 }

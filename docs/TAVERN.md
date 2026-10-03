@@ -4,7 +4,7 @@
 
 整体调用、单次正文与候选、动态短上下文预算见 [HTML 架构图](TAVERN-ARCHITECTURE.html)。
 
-后续32K本地模型优化、会话Agent与状态/记忆/工具见[七步长期方案](TAVERN-AGENT-PLAN.md)。
+后续32K本地模型优化、会话Agent与状态/记忆/工具见[长期方案与优先级](TAVERN-AGENT-PLAN.md)。
 
 代码入口为仓库根下 `apps/tavern`；仓库名 `financial` 不改变应用归属。当前交付状态见 [TAVERN-PROGRESS.md](TAVERN-PROGRESS.md)，模型参数、默认关闭思考、模型选择与续聊候选的实现契约见 [TAVERN-MODEL-SETTINGS.md](TAVERN-MODEL-SETTINGS.md)。
 
@@ -39,7 +39,9 @@
 ```mermaid
 flowchart LR
   Browser[浏览器 SPA] -->|Auth0 JWT| Worker[Tavern Worker]
-  Worker --> DB[(独立 D1 tavern)]
+  Worker --> DO[每用户会话 SQLite DO]
+  DO --> Gateway
+  Worker --> DB[(D1 目录 / 角色 / 世界书 / 设置)]
   Worker --> Files[(私有 R2 tavern)]
   Worker --> Sources[公开角色源]
   Worker -->|dynamic/rp| Gateway[AI Gateway default]
@@ -48,7 +50,7 @@ flowchart LR
 
 Auth0：复用北极小站共享配置（现有API标识为 `https://financial.hasbai.xyz/api`），禁止Tavern audience限定；现有 SPA client 增量加入回调/logout/origin。JWT 验签/exp/issuer/audience 在 Worker 完成，共享顶层 `_roles` 数组必须包含 superadmin，实际用户名使用顶层 `username`，邮箱使用顶层 `email`。数据按 sub 归属，所有查询含 owner。客户端只含公开配置与内存 Access Token。财务 PostgreSQL 权限封装限制不适用于独立 Tavern Worker。
 
-D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整同步后原子切换，不包含私人数据。私人 D1 表：characters（完整卡 JSON、摘要、来源、原文件与头像 key、内容 hash）、worldbooks（原始书 JSON 与启用）、sessions（角色快照、persona/参数、generation lock）、messages（角色/content/status/request ID/顺序）、settings（用户 persona 和生成参数）。已安装角色删除不删除既有会话快照。R2 原文件私有，头像由 Bearer API 转 Blob URL；不创建公共桶，不自动加载角色扩展资源；发现页只显示经过HTTPS/固定头像域校验的公开Chub缩略图。
+D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整同步后原子切换，不包含私人数据。私人 D1 表：characters（完整卡 JSON、摘要、来源、原文件与头像 key、内容 hash）、worldbooks（原始书 JSON 与启用）、sessions（会话目录、可靠世界书引用与迁移占用哨兵）、messages（迁移前原文来源，只读保留）、settings（用户 persona 和生成参数）。会话角色快照、设置、全部消息版本、摘要与生成占用由每会话SQLite DO统一管理；按签名身份owner+session ID路由，旧D1原文惰性导入并保留。已安装角色删除不删除既有会话快照。R2 原文件私有，头像由 Bearer API 转 Blob URL；不创建公共桶，不自动加载角色扩展资源；发现页只显示经过HTTPS/固定头像域校验的公开Chub缩略图。
 
 导入大小限制、PNG chunk 长度/CRC、ZIP 条目数量/未压缩总量/路径遍历验证在解析前执行。CHARX 支持 card.json 与内嵌主头像，原压缩包完整保留可下载；资源脚本不执行。远端安装 URL 只由适配器构造、固定 HTTPS 主机，重定向逐跳校验，有限时与响应大小。HTML 永远转义；聊天按纯文本显示角色动作和对白，链接不自动触发抓取。
 
@@ -60,7 +62,7 @@ D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整
 
 ## 生成、重试与编辑契约
 
-每次发送携带 UUID requestId。D1 原子锁保护每会话仅一个生成；同请求已存在返回既有生成状态而不再次调用模型。用户消息与 assistant pending 先落库；流式完成后 assistant completed。失败、用户停止和上游不完整分别落 error/aborted，不纳入后续 Prompt。服务器每批字符/间隔保存部分文本，刷新能看见部分和状态；占用持续续租并隔离写入，中断后租约过期恢复。
+每次发送携带 UUID requestId。DO SQLite原子占用保护每会话仅一个生成；同请求已存在返回既有生成状态而不再次调用模型。用户消息与 assistant pending 先落库；流式完成后 assistant completed。失败、用户停止和上游不完整分别落 error/aborted，不纳入后续 Prompt。服务器每批字符/间隔保存部分文本，刷新能看见部分和状态；占用持续续租并隔离写入，对象重启后将未完成生成标为中断；正文原文不丢失、不重复推理。停止直接取消DO中的当前上游，Worker断流显式传递requestId取消；准备阶段也记住取消。目录版本通过alarm重试，目录网络不会阻塞done。
 
 停止使用专属 API 改状态；流式泵检测停止并取消上游，不仅隐藏 UI。客户端断网通过 reader.cancel 导致中断；所有结尾都释放本次锁。重新生成追加替代助手消息，旧内容保留；显示最新版本（包括失败或部分回复），不让旧成功版本遮住本次失败。编辑历史创建新会话并复制到编辑点，保留原会话。没有自动隐式重试或切模型。长请求设置最长生成时限，终止异常 upstream SSE，过滤 reasoning_content。
 
@@ -105,3 +107,11 @@ D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整
 `pnpm dev:tavern` 为5176；Worker `pnpm --filter tavern exec wrangler dev --port 8787`；独立 API proxy。本地只做固定 Linux 视觉构建与轻量源码检查；完整测试/typecheck/build在 PR CI。`pnpm visual:tavern --all`生成本地候选，审阅后 `pnpm visual:baseline:import-local <目录> --reviewed`。Tavern manifest覆盖所有页面/状态，iPhone WebKit优先与desktop。
 
 新 Worker 配置 Cloudflare Workers Builds：同 GitHub仓库，rootDirectory `/`，install `pnpm install --frozen-lockfile`，build `pnpm --filter tavern build`，deploy `pnpm --filter tavern exec wrangler deploy`，生产 main，paths include `apps/tavern/**`、`packages/**`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`、`package.json`。迁移先在独立测试 D1验证，再生产迁移。不手动重复部署。主代理编辑/提交、导入基线后，由新子代理推送/建PR/等待CI/合并/部署核验。
+
+## 会话DO迁移与恢复（2026-10-04）
+
+D1增量迁移0007只新增storage_backend和deleted_at，旧数据与ID保留。首次会话访问确认旧生成已结束/到期，在D1写永久do:<sessionId>占用哨兵冻结旧Worker，导入所有消息版本并逐字段校验。失败保留冻结来源供下次重试；DO提交后只写DO，D1仅同步列表和世界书引用。不可直接回退至会继续写旧D1的版本；回滚先停写并导出DO新消息。
+
+世界书更新先标记DO待同步，再原子预留旧+新引用并集，DO成功后才释放旧绑定；崩溃/同步失败由alarm按已提交状态收窄。删除会话保留DO tombstone与旧D1原文，隐藏目录、释放引用，不能清空对象后再次导入。
+
+本地`pnpm --filter tavern test:session-runtime`在Wrangler所带真实workerd/SQLite隔离资源验证导入、隔离、流、幂等、停止、分支和跨实例重启。该固定runtime最高支持2026-09-18，验收harness使用该日期，生产compatibility_date仍为2026-10-03；harness不打包进生产。Node SQLite测试单独覆盖目录故障与竞争。

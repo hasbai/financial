@@ -1,0 +1,54 @@
+import {it,expect,vi,beforeEach,afterEach} from 'vitest';
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync,readdirSync} from 'node:fs';
+import {TavernSession,sessionName} from './session-object';
+import {SessionStore,SESSION_SCHEMA} from './session-store';
+import {DEFAULT_SETTINGS} from '../shared/types';
+vi.mock('cloudflare:workers',()=>({DurableObject:class{constructor(public ctx:DurableObjectState,public env:Env){}}}));
+let db:DatabaseSync,env:Env,sqlDbs:Map<string,DatabaseSync>,objects:Map<string,TavernSession>,work:Promise<unknown>[],alarms:Map<string,number>;
+let intercept:((sql:string)=>Promise<void>|void)|undefined;
+function statement(query:string,values:unknown[]=[]):D1PreparedStatement{return {bind:(...v:unknown[])=>statement(query,v),first:async()=>db.prepare(query).get(...values as never[])??null,all:async()=>({results:db.prepare(query).all(...values as never[])}),run:async()=>{await intercept?.(query);return {meta:{changes:Number(db.prepare(query).run(...values as never[]).changes)}};}} as D1PreparedStatement;}
+function storage(name:string){let sql=sqlDbs.get(name);if(!sql){sql=new DatabaseSync(':memory:');sql.exec(SESSION_SCHEMA);sqlDbs.set(name,sql);}const sqlite=sql;return {sql:{exec:(query:string,...values:unknown[])=>({toArray:()=>sqlite.prepare(query).all(...values as never[])})},transactionSync:<T>(fn:()=>T)=>{sqlite.exec('BEGIN');try{const result=fn();sqlite.exec('COMMIT');return result;}catch(error){sqlite.exec('ROLLBACK');throw error;}},setAlarm:async(time:number)=>{alarms.set(name,time);}} as unknown as DurableObjectStorage;}
+function target(owner='owner',id='s'){const name=sessionName(owner,id);let object=objects.get(name);if(!object){object=new TavernSession({storage:storage(name),waitUntil:(p:Promise<unknown>)=>work.push(p)} as unknown as DurableObjectState,env);objects.set(name,object);}return object;}
+async function invoke(method:Parameters<TavernSession['invoke']>[2],data:Record<string,unknown>={},owner='owner',id='s'){return JSON.parse(await target(owner,id).invoke(owner,id,method,data));}
+function seed(id='s',owner='owner'){db.prepare('INSERT INTO sessions(id,owner,title,character_json,character_name,settings_json,created_at,updated_at,summary_json) VALUES(?,?,?,?,?,?,?,?,?)').run(id,owner,'旅店',JSON.stringify({name:'岚',first_mes:'你好'}),'岚',JSON.stringify(DEFAULT_SETTINGS),1,2,'historical-checkpoint');db.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at,finish_reason,candidates_json) VALUES(?,?,'assistant','旧正文','completed',0,3,'stop',?)").run('m-'+id,id,'["问问往事。"]');}
+beforeEach(()=>{db=new DatabaseSync(':memory:');for(const name of readdirSync(new URL('../migrations/',import.meta.url)).filter(n=>n.endsWith('.sql')).sort())db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));sqlDbs=new Map();objects=new Map();work=[];alarms=new Map();intercept=undefined;env={DB:{prepare:statement,batch:async(stmts:D1PreparedStatement[])=>{db.exec('BEGIN');try{const result=[];for(const stmt of stmts)result.push(await stmt.run());db.exec('COMMIT');return result;}catch(error){db.exec('ROLLBACK');throw error;}}},SESSIONS:{getByName:(name:string)=>{const [owner,id]=JSON.parse(name);return target(owner,id);}}} as unknown as Env;});
+afterEach(async()=>{await Promise.allSettled(work);db.close();for(const sqlite of sqlDbs.values())sqlite.close();});
+it('imports once, fences every legacy write, retains source IDs and all version metadata',async()=>{
+ seed();const old=db.prepare('SELECT * FROM messages').all();const first=await invoke('read');expect(first.ok).toBe(true);expect(first.value.messages[0]).toMatchObject({id:'m-s',content:'旧正文',finishReason:'stop',candidates:['问问往事。']});
+ expect(db.prepare('UPDATE sessions SET generation_id=? WHERE id=? AND (generation_id IS NULL OR generation_until<=?)').run('legacy','s',Date.now()).changes).toBe(0);
+ expect(db.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) SELECT 'late','s','assistant','late','pending',1,4 WHERE EXISTS(SELECT 1 FROM sessions WHERE id='s' AND generation_id='legacy')").run().changes).toBe(0);
+ expect(db.prepare('SELECT * FROM messages').all()).toEqual(old);await invoke('read');expect(sqlDbs.get(sessionName('owner','s'))!.prepare('SELECT count(*) n FROM messages').get()?.n).toBe(1);expect(sqlDbs.get(sessionName('owner','s'))!.prepare('SELECT summary_json FROM sessions').get()?.summary_json).toBe('historical-checkpoint');
+});
+it('rejects an active old generation and retries a frozen but unfinished import',async()=>{
+ seed();db.prepare('UPDATE sessions SET generation_id=?,generation_until=?').run('active',Date.now()+180000);expect((await invoke('read')).status).toBe(409);
+ db.prepare('UPDATE sessions SET generation_until=0').run();let failed=false;intercept=sql=>{if(sql.startsWith('UPDATE messages')&&!failed){failed=true;throw new Error('temporary failure');}};
+ await expect(invoke('read')).rejects.toThrow('temporary');intercept=undefined;expect(db.prepare('SELECT storage_backend FROM sessions').get()?.storage_backend).toBe('do');expect((await invoke('read')).value.messages[0].id).toBe('m-s');
+});
+it('recovers interrupted occupancy on a new object instance and retains completed and partial versions',async()=>{
+ seed();await invoke('read');const name=sessionName('owner','s'),store=new SessionStore(storage(name),'s');store.claim('pending',Date.now());store.start('pending',undefined,{id:'pending',role:'assistant',content:'部分正文',status:'pending',ordinal:1,requestId:'r',createdAt:4});objects.delete(name);
+ const result=await invoke('read');expect(result.value.messages.at(-1)).toMatchObject({id:'pending',content:'部分正文',status:'aborted',finishReason:'interrupted'});expect(result.value.session.generationId).toBeNull();
+});
+it('isolates both owners and sessions in independent SQLite storage',async()=>{
+ seed();seed('other');expect((await invoke('read',{},'stranger')).status).toBe(404);await invoke('read');await invoke('read',{},'owner','other');await invoke('update',{title:'改变'});
+ expect((await invoke('read',{},'owner','other')).value.session.title).toBe('旅店');expect(sqlDbs.get(sessionName('owner','other'))!.prepare('SELECT id FROM messages').all()).toEqual([{id:'m-other'}]);
+});
+it('retains a deletion tombstone across restart and hides the directory without deleting original messages',async()=>{
+ seed();await invoke('remove');objects.delete(sessionName('owner','s'));expect((await invoke('read')).status).toBe(404);expect(db.prepare('SELECT deleted_at FROM sessions').get()?.deleted_at).toBeTruthy();expect(db.prepare('SELECT id FROM messages').get()?.id).toBe('m-s');
+});
+it('retries failed directory synchronization from its durable revision after restart',async()=>{
+ seed();await invoke('read');intercept=sql=>{if(sql.startsWith('UPDATE sessions SET title'))throw new Error('D1 unavailable');};expect((await invoke('update',{title:'新标题'})).value.title).toBe('新标题');expect(db.prepare('SELECT title FROM sessions').get()?.title).toBe('旅店');
+ objects.delete(sessionName('owner','s'));intercept=undefined;await target().alarm();expect(db.prepare('SELECT title FROM sessions').get()?.title).toBe('新标题');
+});
+it('reserves worldbook references through a failed directory sync, then releases them on detach/delete',async()=>{
+ seed();db.prepare('INSERT INTO worldbooks VALUES(?,?,?,?,?,?)').run('b','owner','书','{"entries":[]}',1,1);await invoke('read');intercept=sql=>{if(sql.startsWith('UPDATE sessions SET title'))throw new Error('offline');};await invoke('update',{bookIds:['b']});
+ expect(db.prepare("DELETE FROM worldbooks WHERE id='b' AND NOT EXISTS(SELECT 1 FROM sessions,json_each(book_ids_json) WHERE value='b')").run().changes).toBe(0);
+ intercept=undefined;await target().alarm();await invoke('update',{bookIds:[]});expect(db.prepare("DELETE FROM worldbooks WHERE id='b' AND NOT EXISTS(SELECT 1 FROM sessions,json_each(book_ids_json) WHERE value='b')").run().changes).toBe(1);
+});
+it('remembers cancellation that arrives before the generation fetch can claim occupancy',async()=>{
+ seed();await target().cancel('owner','s','early');const store=new SessionStore(storage(sessionName('owner','s')),'s');expect(store.cancelled('early')).toBe(true);expect(store.get().generation_id).toBeNull();
+});
+
+it('lets the user stop an old in-flight generation before migration without removing its fence',async()=>{
+ seed();db.prepare('UPDATE sessions SET generation_id=?,generation_until=?').run('old-active',Date.now()+180000);db.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) VALUES('old-active','s','assistant','partial','pending',1,4)").run();expect((await invoke('stop',{generationId:'wrong'})).status).toBe(409);expect((await invoke('stop',{generationId:'old-active'})).ok).toBe(true);expect(db.prepare("SELECT status,finish_reason FROM messages WHERE id='old-active'").get()).toEqual({status:'aborted',finish_reason:'stopped'});expect(db.prepare('SELECT storage_backend,generation_id FROM sessions').get()).toEqual({storage_backend:'d1',generation_id:'old-active'});
+});
