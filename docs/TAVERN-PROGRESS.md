@@ -58,10 +58,22 @@ Chub/CharaVault探针403；Chub保留失败状态与适配器，未声称该源�
 
 2026-10-03 已完成 [方案](TAVERN-MODEL-SETTINGS.md)，尚未修改应用或生产数据库：补齐参数默认值、默认关闭思考、白名单模型选择（首个为 RP 动态路由），同一次 roleplay 正文后顺带输出最多三条用户视角候选并支持点击发送，避免再次预填充；短上下文按上游明确能力反馈协商，HTML 架构图见方案。真实 RP 参数能力、关闭思考及候选延迟仍待验收；不能把现有过滤思考输出算作已关闭思考。
 
-## Gateway 归属日志与 JWT 名称（2026-10-03，发布验收中）
+## Gateway 归属日志与 JWT 名称（2026-10-03）
 
 原因已定位：线上 Worker 配置为 default Gateway，应用调用 `dynamic/rp`；原代码 `collectLog:false` 禁止整个 Gateway 日志，不是绕过 Gateway。修复启用日志、独立禁存 payload，服务端统一 `{app:"tavern",task:"roleplay",username:实际账户名称}`，eventId 关联 requestId。用户名由 Tavern 专属 Auth0 Action 写入签名 JWT，前端携带 Access Token，后端验签后直接读名称；没有逐轮 Management API 或 userinfo 调用。旧 Token缺名称时生成前明确重新登录，不使用角色名或 ID。
 
 Auth0 Action 已先发布并回读匹配；真实新 Token包含“时阅”及原 superadmin，其他 audience 的 Action输出不变。相关 auth/生成36项测试和轻量检查通过。参数开关、同次候选与能力预算仅更新方案；HTML 四视图、桌面/390px/深色和16K/32K/unknown预算交互已检查，无JS错误或横向溢出。
 
-待补：PR必需检查、自动部署、真实应用调用对应 Gateway 日志及 payload禁存证据。本机 Wrangler OAuth与受限Agent Token读取Gateway管理API返回403，未将该权限失败算作网关未记录。
+发布与真实应用验收已完成：
+
+| 层级 | 本轮证据 |
+| --- | --- |
+| JWT | audience限定 Action先部署且回读源码一致，实际Token签发username“时阅”；生成前直接取签名claim，不查资料接口 |
+| 聚焦检查 | auth/生成36项、聚焦Worker TypeScript检查、差异/链接检查通过；HTML四视图、桌面/390px/深色、16K/32K/unknown预算交互通过 |
+| CI | 初次仅测试Mock类型过宽导致typecheck失败，显式收窄AiRun修复；[Tavern](https://github.com/hasbai/financial/actions/runs/37116178794)、[Financial](https://github.com/hasbai/financial/actions/runs/37116178790)、[Blog](https://github.com/hasbai/financial/actions/runs/37116178747)、[Zboard](https://github.com/hasbai/financial/actions/runs/37116178758)最终8项必需状态全部成功 |
+| 合并/发布 | [PR #29](https://github.com/hasbai/financial/pull/29)，main `46df3eed2261bc7819e6793606f8faaded845e36`；自动Build `9ca58891-6a5c-4738-b73c-236a1476407e`的commit_hash一致；version `d1dcdad0-ca41-47ea-9df7-8f94feca7bf8`流量100%，health200版本一致；无手动部署 |
+| 真实应用 | 请求 `c1ea8534-0978-464a-a1ea-3ddac5cdf36e`，HTTP200、completed/stop、正文3字、0error、恢复一致、锁释放；故意传前端伪metadata不能改变服务端归属构造 |
+| 返回模型 | Worker事件记录 `@cf/google/gemma-4-26b-a4b-it`；仅记录真实返回标识，不据此假定RP所有路由分支或上下文能力 |
+| 测试数据 | 仅删除本次创建的临时会话与角色，原用户数据保留 |
+
+Gateway 后台的同请求三个metadata及payload禁存尚待直接核实。本机Wrangler OAuth与受限Agent Token读取Gateway管理API返回403，用户正在补齐读取权限；原始响应未提供cf-aig-log-id，因此以requestId/eventId及时间核对。未将权限失败算作网关未记录，未将应用生成成功算作metadata存储验收通过。
