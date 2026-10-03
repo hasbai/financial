@@ -1,0 +1,63 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "tavern",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-03",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "enable_request_signal"
+  ],
+  "routes": [
+    {
+      "pattern": "tavern.hasbai.xyz",
+      "custom_domain": true
+    }
+  ],
+  "assets": {
+    "directory": "dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/api/*",
+      "/health"
+    ]
+  },
+  "vars": {
+    "AUTH0_DOMAIN": "hasbai.eu.auth0.com",
+    "AUTH0_AUDIENCE": "https://tavern.hasbai.xyz/api",
+    "AIG_GATEWAY_ID": "default",
+    "CONTEXT_TOKENS": "16000"
+  },
+  "ai": {
+    "binding": "AI",
+    "remote": true
+  },
+  "version_metadata": {
+    "binding": "VERSION"
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1,
+    "logs": {
+      "invocation_logs": false
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.1
+    }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tavern",
+      "database_id": "1652e81e-ce58-4b23-bb24-020928d89546",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "tavern"
+    }
+  ]
+}

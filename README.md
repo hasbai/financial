@@ -2,11 +2,12 @@
 
 - `apps/financial`：个人财务，Svelte 5 SPA，保留原有配色和三表边界。
 - `apps/blog`：北极手记，SvelteKit SSR，Neutral / Luma / 衬线正文，在线 Markdown 编辑发布。
+- `apps/tavern`：酒馆，标准角色卡、世界书、在线搜索安装与持久角色对话，统一 `dynamic/rp`。
 - `packages/ui`、`packages/auth`、`packages/data`：共享组件、认证和 PostgREST。
 
 `pnpm dev` 启动财务，`pnpm dev:blog` 启动博客。校验只在独立 GitHub Actions 中执行；业务目录改动只跑对应应用，共享依赖改动才跑两边。
 
-设计与接入见 [博客架构](docs/BLOG.md)、[财务架构](docs/ARCHITECTURE.md)、[测试规范](docs/TESTING.md)。
+设计与接入见 [酒馆方案与路线图](docs/TAVERN.md)、[博客架构](docs/BLOG.md)、[财务架构](docs/ARCHITECTURE.md)、[测试规范](docs/TESTING.md)。
 
 # 北极账本 · Financial
 

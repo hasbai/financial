@@ -172,3 +172,7 @@ CI首次跨环境比较检出字体栅格化差异后，单独建立GitHub runne
 移动加号恢复底栏上方，断言56px触控入口与导航至少16px间距。新增三设备账户搜索空态/创建表单，以及WebKit短屏深色失败重试截图；覆盖保存中禁止关闭/重复提交、成功选中并保留金额、取消恢复搜索和焦点、分类类型限制。组件测试额外验证原分录ID保留、创建不提交交易、网络结果不确定时禁止重试并核对列表。
 
 候选35518840392的candidate-check与visual-baseline-candidates均通过；76张候选已核对并导入，普通PR继续严格比较。前次失败定位为共用字段的Svelte pattern字面量插值和单测过早读取选中值，已修复；未放宽校验或增加自动重试。本地未运行测试、typecheck或build，设备模拟不代表iPhone真机验收。
+
+## Tavern（2026-10-03）
+
+`apps/tavern` 独立 `Tavern` workflow，必需验收 `tavern-check`/`tavern-visual`，复用固定 Linux 镜像、覆盖 manifest 与截图门禁。`pnpm visual:tavern --all` 首次生成全部候选；检查结果后导入基线。monorepo共享脚本与依赖变化验证所有受影响应用。Tavern测试夹具只在 `dist-e2e`，不能进入部署的 `dist`。真实角色目录、Auth0 JWT、Gateway普通/SSE/停止与部署版本单独记录于 `docs/TAVERN-PROGRESS.md`。

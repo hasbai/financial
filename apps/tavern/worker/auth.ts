@@ -1,0 +1,49 @@
+import { createRemoteJWKSet, jwtVerify } from "jose";
+export const ROLE_CLAIM = "https://tavern.hasbai.xyz/role";
+export const EMAIL_CLAIM = "https://tavern.hasbai.xyz/email";
+const keys = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+export async function identity(
+  request: Request,
+  env: Pick<Env, "AUTH0_DOMAIN" | "AUTH0_AUDIENCE">,
+) {
+  const token = request.headers
+    .get("Authorization")
+    ?.match(/^Bearer (\S+)$/)?.[1];
+  if (!token) throw new AuthError(401, "请先登录");
+  const issuer = `https://${env.AUTH0_DOMAIN}/`;
+  let jwks = keys.get(issuer);
+  if (!jwks) {
+    jwks = createRemoteJWKSet(new URL(".well-known/jwks.json", issuer));
+    keys.set(issuer, jwks);
+  }
+  try {
+    const { payload } = await jwtVerify(token, jwks, {
+      issuer,
+      audience: env.AUTH0_AUDIENCE,
+      algorithms: ["RS256"],
+      requiredClaims: ["sub", "exp", "iat"],
+    });
+    if (!payload.sub || payload.sub.endsWith("@clients"))
+      throw new Error("Not a user");
+    if (payload[ROLE_CLAIM] !== "superadmin") throw new AuthError(403, "无权访问酒馆");
+    return {
+      sub: payload.sub,
+      admin: payload[ROLE_CLAIM] === "superadmin",
+      email:
+        typeof payload[EMAIL_CLAIM] === "string"
+          ? (payload[EMAIL_CLAIM] as string)
+          : payload.sub,
+    };
+  } catch (error) {
+    if (error instanceof AuthError) throw error;
+    throw new AuthError(401, "登录已失效，请重新登录");
+  }
+}
+export class AuthError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
