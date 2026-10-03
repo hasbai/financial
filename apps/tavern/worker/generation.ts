@@ -1,5 +1,5 @@
 import { capabilities, modelInput, recordFeedback, type Capability } from './models';
-import { candidateDelimiter, candidateInstruction, CandidateStream } from '../shared/candidates';
+import { candidateDelimiter, candidateInstruction, CANDIDATE_REMINDER, CandidateStream } from '../shared/candidates';
 import { roleplayGatewayOptions } from './gateway';
 import { parseBook } from '../shared/cards';
 import { buildPrompt } from '../shared/prompt';
@@ -35,7 +35,7 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
   const userMessage:Message={id:crypto.randomUUID(),role:'user',content:text,status:'completed',ordinal,requestId,createdAt:messageTime};
   const assistantOrdinal=regenerate||continuing?ordinal:ordinal+1;
   const books=await ownedBooks(env,owner,JSON.parse(row.book_ids_json));
-  prompt=buildPrompt(JSON.parse(row.character_json),books.filter(b=>b.enabled).map(b=>parseBook(JSON.parse(b.book_json),b.name)),[...base,...(regenerate||continuing?[]:[userMessage])],settings(JSON.parse(row.settings_json)),capability.contextTokens,continuing?'继续上一条回复，从中断处接着写，不要重复已有内容。':'',{protocol:candidateInstruction(),inputRatio:capability.inputRatio});
+  prompt=buildPrompt(JSON.parse(row.character_json),books.filter(b=>b.enabled).map(b=>parseBook(JSON.parse(b.book_json),b.name)),[...base,...(regenerate||continuing?[]:[userMessage])],settings(JSON.parse(row.settings_json)),capability.contextTokens,continuing?'继续上一条回复，从中断处接着写，不要重复已有内容。':'',{protocol:candidateInstruction(),formatReminder:CANDIDATE_REMINDER,inputRatio:capability.inputRatio});
   modelInput(settings(JSON.parse(row.settings_json)));
   const statements=[];
   if(!regenerate&&!continuing)statements.push(env.DB.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,request_id,created_at) VALUES(?,?,'user',?,'completed',?,?,?)").bind(userMessage.id,id,text,ordinal,requestId,messageTime));

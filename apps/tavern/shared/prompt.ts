@@ -29,7 +29,7 @@ export function activateBook(book: Book, history: Pick<Message, 'content'>[], ex
   }).sort((a,b) => a.order-b.order);
 }
 export type PromptMessage = { role: 'system' | 'user' | 'assistant'; content: string };
-export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], settings: Settings, contextTokens: number | null, continuationInstruction = '', options: { protocol?: string; inputRatio?: number } = {}) {
+export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], settings: Settings, contextTokens: number | null, continuationInstruction = '', options: { protocol?: string; formatReminder?: string; inputRatio?: number } = {}) {
   const card = parseCard(raw), c = card.data;
   const char = c.nickname || c.name, expand = (text: string, original = '') => macros(text, char, settings.userName, original);
   const activeHistory = history.filter(m => m.status === 'completed');
@@ -40,7 +40,7 @@ export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], 
   const post = expand(c.post_history_instructions, '保持角色设定与故事连续性。');
   const count = (s: string) => Math.ceil(estimateTokens(s) * (options.inputRatio ?? 1));
   const budget = contextTokens === null ? Infinity : contextTokens - settings.maxTokens - 512;
-  let used = count(systemText([])) + count(post) + (continuationInstruction ? count(continuationInstruction) + 8 : 0) + (options.protocol ? count(options.protocol) + 8 : 0) + 16;
+  let used = count(systemText([])) + count(post) + (continuationInstruction ? count(continuationInstruction) + 8 : 0) + (options.protocol ? count(options.protocol) + 8 : 0) + (options.formatReminder ? count(options.formatReminder) + 8 : 0) + 16;
   if (used > budget) throw new Error('角色与世界书设定超过上下文上限');
   const turns: Message[][] = [];
   for (const message of activeHistory) { if (message.role === 'user' || !turns.length) turns.push([]); turns.at(-1)!.push(message); }
@@ -56,5 +56,7 @@ export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], 
   const system = [systemText(picked), post, options.protocol].filter(Boolean).join('\n\n');
   const messages: PromptMessage[] = [{ role: 'system', content: system }, ...selected.flat().map(m => ({ role: m.role, content: expand(m.content) }))];
   if (continuationInstruction) messages.push({role:'user',content:continuationInstruction});
+  const latest = messages.at(-1);
+  if (options.formatReminder && latest?.role === 'user') latest.content += '\n\n' + options.formatReminder;
   return { messages, estimatedTokens: used, activatedEntries: picked.map(e => e.id) };
 }

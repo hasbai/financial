@@ -1,8 +1,8 @@
 import { it, expect } from 'vitest';
-import { CandidateStream, candidateDelimiter, candidateInstruction, validateCandidates } from './candidates';
+import { CandidateStream, candidateDelimiter, candidateInstruction, CANDIDATE_REMINDER, validateCandidates } from './candidates';
 import { normalizeSettings } from './settings';
 import { DEFAULT_SETTINGS, LEGACY_SYSTEM_PROMPT } from './types';
-import { buildPrompt } from './prompt';
+import { buildPrompt, estimateTokens } from './prompt';
 import { parseBook } from './cards';
 const card={name:'岚',description:'港城旅店主人',personality:'沉稳'};
 
@@ -54,4 +54,19 @@ it('keeps configured prompt with card instructions and updates only the exact ol
  expect(expanded.messages[0].content.split(configured)).toHaveLength(2);
  expect(normalizeSettings({...DEFAULT_SETTINGS,systemPrompt:configured}).systemPrompt).toBe(configured);
  expect(candidateInstruction()).not.toMatch(/[a-f0-9]{8}-[a-f0-9-]{27,}/);expect(candidateInstruction()).toContain('[TAVERN_NEXT]');
+});
+it('adds the format reminder only to the latest request copy and counts it before budgeting',()=>{
+ const m={id:'a',role:'user' as const,content:'最初的问题',status:'completed' as const,ordinal:0,requestId:null,createdAt:0};
+ const history=[m,{...m,role:'assistant' as const,content:'旧正文',ordinal:1},{...m,content:'当前输入',ordinal:2}];
+ const before=JSON.stringify(history),options={protocol:candidateInstruction(),inputRatio:1.2};
+ const plain=buildPrompt(card,[],history,DEFAULT_SETTINGS,null,'',options);
+ const reminded=buildPrompt(card,[],history,DEFAULT_SETTINGS,null,'',{...options,formatReminder:CANDIDATE_REMINDER});
+ expect(reminded.messages[0]).toEqual(plain.messages[0]);
+ expect(reminded.messages.slice(1,-1)).toEqual(plain.messages.slice(1,-1));
+ expect(reminded.messages.at(-1)?.content).toBe('当前输入\n\n'+CANDIDATE_REMINDER);
+ expect(JSON.stringify(history)).toBe(before);
+ expect(reminded.estimatedTokens-plain.estimatedTokens).toBe(Math.ceil(estimateTokens(CANDIDATE_REMINDER)*1.2)+8);
+ expect(()=>buildPrompt(card,[],history,DEFAULT_SETTINGS,plain.estimatedTokens+DEFAULT_SETTINGS.maxTokens+512,'',{...options,formatReminder:CANDIDATE_REMINDER})).toThrow('上下文上限');
+ const continued=buildPrompt(card,[],history.slice(0,2),DEFAULT_SETTINGS,null,'从中断处继续',{...options,formatReminder:CANDIDATE_REMINDER});
+ expect(continued.messages.at(-1)?.content).toBe('从中断处继续\n\n'+CANDIDATE_REMINDER);
 });

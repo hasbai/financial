@@ -1,5 +1,6 @@
 import {it,expect,vi,beforeEach,afterEach} from 'vitest';import {DatabaseSync} from 'node:sqlite';import {readFileSync} from 'node:fs';
 import worker from './index';import {identity,AuthError} from './auth';import {DEFAULT_SETTINGS,type Message} from '../shared/types';
+import { CANDIDATE_REMINDER } from '../shared/candidates';
 vi.mock('./auth',async(original)=>({...await original<typeof import('./auth')>(),identity:vi.fn()}));
 const card={spec:'chara_card_v2',spec_version:'2.0',data:{name:'岚',description:'港城的旅店主人',personality:'沉稳',scenario:'港城',first_mes:'你好，{{user}}。',mes_example:'',system_prompt:'',post_history_instructions:'',alternate_greetings:['欢迎'],tags:[],creator:'测试',extensions:{}}};
 let db:DatabaseSync,env:Env,work:Promise<unknown>[],files:Map<string,Uint8Array>;type AiRun=(data:AIGatewayUniversalRequest,options?:{gateway?:UniversalGatewayOptions;signal?:AbortSignal})=>Promise<unknown>;let aiRun:ReturnType<typeof vi.fn<AiRun>>;let beforeRun:((sql:string,values:unknown[])=>void)|undefined;
@@ -162,6 +163,18 @@ it('generates, persists and replays candidates in one inference without includin
  await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'往港口走。'})).text();await Promise.all(work);
  const prompt=aiRun.mock.calls[1][0].query as {messages:{content:string}[]};expect(prompt.messages.map(m=>m.content).join('')).not.toContain('问问来路。');
  const fork=await(await call('/api/sessions/'+s.id+'/fork','POST',{messageId:saved.messages.at(-1)!.id,content:'新正文'})).json() as {id:string};expect(db.prepare('SELECT candidates_json FROM messages WHERE session_id=?').all(fork.id).every(m=>!m.candidates_json)).toBe(true);
+});
+it.each(['normal','regenerate','continue'])('reminds the %s request once without changing saved user text',async mode=>{
+ const {s}=await seed();
+ await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'原输入'})).text();await Promise.all(work);
+ if(mode==='continue')db.prepare("UPDATE messages SET status='aborted',finish_reason='stopped' WHERE session_id=? AND request_id IS NOT NULL AND role='assistant'").run(s.id);
+ await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),...(mode==='normal'?{content:'下一轮'}:mode==='regenerate'?{regenerate:true}:{continue:true})})).text();await Promise.all(work);
+ const query=aiRun.mock.calls.at(-1)![0].query as {messages:{role:string;content:string}[]};
+ expect(query.messages.filter(m=>m.role==='system')).toHaveLength(1);
+ expect(query.messages.at(-1)?.content.endsWith('\n\n'+CANDIDATE_REMINDER)).toBe(true);
+ expect(query.messages.map(m=>m.content).join('').split(CANDIDATE_REMINDER)).toHaveLength(2);
+ expect(aiRun).toHaveBeenCalledTimes(2);
+ expect(db.prepare("SELECT content FROM messages WHERE session_id=? AND role='user' ORDER BY ordinal").all(s.id).map(m=>m.content)).toEqual(mode==='normal'?['原输入','下一轮']:['原输入']);
 });
 it.each(['stop','length'])('keeps clean prose with invalid candidates on %s',async finish=>{
  const {s}=await seed(),requestId=crypto.randomUUID();aiRun.mockResolvedValueOnce(new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{content:'正文。\n[TAVERN_NEXT]\n{"candidates":'},finish_reason:finish}]})+'\n\ndata: [DONE]\n\n'));c.close();}}));
