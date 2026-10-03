@@ -45,7 +45,8 @@
         "length",
         "long",
         "candidates",
-        "candidate-tail"
+        "candidate-tail",
+        "composer"
       ]
     },
     {
@@ -303,6 +304,23 @@
           ],
           "snapshots": [
             "chat-candidates-waiting.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "composer",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/tavern.spec.ts",
+          "test": "enter sends shift enter preserves newline and composition does not send",
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "chat-composer-expanded.png"
           ]
         }
       ]

@@ -35,7 +35,7 @@ export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], 
   const activeHistory = history.filter(m => m.status === 'completed');
   const allBooks = c.character_book ? [parseBook(c.character_book), ...books] : books;
   const entries = allBooks.flatMap(b => activateBook(b, activeHistory, s => expand(s)));
-  const systemText = (picked: Entry[]) => [expand(c.system_prompt || '{{original}}', settings.systemPrompt), settings.persona ? `${settings.userName}: ${settings.persona}` : '', ...picked.filter(e => e.position === 'before_char').map(e => expand(e.content)),
+  const systemText = (picked: Entry[]) => [expand(c.system_prompt ? (/\{\{original\}\}/i.test(c.system_prompt) ? c.system_prompt : '{{original}}\n\n' + c.system_prompt) : '{{original}}', settings.systemPrompt), settings.persona ? `${settings.userName}: ${settings.persona}` : '', ...picked.filter(e => e.position === 'before_char').map(e => expand(e.content)),
     expand(c.description), expand(c.personality), expand(c.scenario), ...picked.filter(e => e.position === 'after_char').map(e => expand(e.content)), c.mes_example ? `示例对白：\n${expand(c.mes_example)}` : ''].filter(Boolean).join('\n\n');
   const post = expand(c.post_history_instructions, '保持角色设定与故事连续性。');
   const count = (s: string) => Math.ceil(estimateTokens(s) * (options.inputRatio ?? 1));
@@ -50,9 +50,9 @@ export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], 
   let oldestRequired = turns.length - 1;
   if (turns.length > 1 && turns.at(-1)?.at(-1)?.role === 'user' && turns.at(-2)?.at(-1)?.role === 'assistant') { const previous = turns.at(-2)!; const cost = turnCost(previous); if (used + cost > budget) throw new Error('最新对话超过上下文上限'); used += cost; selected.unshift(previous); oldestRequired--; }
   const picked: Entry[] = [];
-  for (const entry of (contextTokens === null ? [] : [...entries]).sort((a,b) => b.priority-a.priority || a.order-b.order)) { const cost = count(expand(entry.content)) + 8; if (used + cost <= budget) { used += cost; picked.push(entry); } }
+  for (const entry of [...entries].sort((a,b) => b.priority-a.priority || a.order-b.order)) { const cost = count(expand(entry.content)) + 8; if (used + cost <= budget) { used += cost; picked.push(entry); } }
   picked.sort((a,b) => a.order-b.order);
-  for (let i = contextTokens === null ? -1 : oldestRequired - 1; i >= 0; i--) { const cost = turnCost(turns[i]); if (cost + used > budget) break; used += cost; selected.unshift(turns[i]); }
+  for (let i = oldestRequired - 1; i >= 0; i--) { const cost = turnCost(turns[i]); if (cost + used > budget) break; used += cost; selected.unshift(turns[i]); }
   const system = [systemText(picked), post, options.protocol].filter(Boolean).join('\n\n');
   const messages: PromptMessage[] = [{ role: 'system', content: system }, ...selected.flat().map(m => ({ role: m.role, content: expand(m.content) }))];
   if (continuationInstruction) messages.push({role:'user',content:continuationInstruction});

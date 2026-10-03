@@ -13,7 +13,7 @@
 | 角色库 | 搜索已安装角色、导入 JSON/PNG/CHARX、创建/编辑角色、查看设定与来源、导出原卡、删除、选择开场白开始对话 |
 | 发现 | 输入关键词、选择公开来源、按热度/近期热门/发布或更新时间/评分排序、分类与自定义标签、分页、查看作者/源页面、安装角色；安装相同内容去重，不自动覆盖本地编辑 |
 | 世界书 | 独立 JSON 导入/导出、查看编辑原文、条目数量、启用/停用，给会话选择世界书；内嵌角色书自动生效 |
-| 对话 | 会话列表、角色与用户 persona、流式发送/停止、持久化历史、重试、重新生成、编辑历史并派生新会话、导出 JSONL、删除会话 |
+| 对话 | 会话列表、角色与用户 persona、右侧用户气泡、无气泡角色正文、单行自动伸展输入、圆形发送/停止、回答末尾操作、持久化历史、重试、重新生成、编辑历史并派生新会话、导出 JSONL、删除会话 |
 | 设置 | RP模型、默认关闭思考、采样参数、用户名称/persona、系统提示、输出上限、主题；模型路由由服务端固定，不接受客户端覆盖 |
 
 首版不执行外来 JS/Lua、正则替换脚本或扩展工具，不提供多人群聊、图像生成、语音或全量 SillyTavern 插件兼容。未知扩展和资源留在原始卡及导出中；兼容导入不等于执行全部扩展。不会提供伪造角色推荐、示例历史、评分或人数。只有 e2e 独立夹具有合成内容。
@@ -23,7 +23,7 @@
 1. [CCv2 规范](https://github.com/malfoyslastname/character-card-spec-v2/blob/main/spec_v2.md)：核心字段、内嵌 character_book、`{{original}}`、未知扩展保留；creator_notes 不加入模型提示。
 2. [CCv3 规范](https://github.com/kwaroran/character-card-spec-v3/blob/main/SPEC_V3.md)：`ccv3` PNG 元数据优先、CHARX card.json、nickname、资源引用、独立 lorebook_v3。
 3. [SillyTavern World Info](https://docs.sillytavern.app/usage/core-concepts/worldinfo/)：关键词、扫描深度、常驻、选择性副关键词、排序、递归与预算；界面不复制全套复杂控制面板。
-4. [AI Gateway 动态路由](https://developers.cloudflare.com/ai-gateway/features/dynamic-routing/usage/) 与 [Workers binding](https://developers.cloudflare.com/ai-gateway/usage/worker-binding-methods/)：2026-10-02 文档已支持 `AI.run('dynamic/rp', OpenAI chat completions, { gateway: { id } })`。实现采用文档规定的 `AI.run('dynamic/rp', input, { gateway: { id: 'default' } })`，跳过缓存；Gateway 归属日志按 [模型方案](TAVERN-MODEL-SETTINGS.md) 保留，完整请求与回复存储开启。旧兼容 universal binding 在生产返回500，已改用原生动态路由调用；本地旧版 workerd 远程绑定 internal error 不能代表生产结果。默认 BYOK alias 与计费须真实验证，不能据 mock 宣称线上推理可用。
+4. [AI Gateway 动态路由](https://developers.cloudflare.com/ai-gateway/features/dynamic-routing/usage/) 与 [官方Gateway SDK](https://github.com/cloudflare/ai/blob/main/packages/ai-gateway-provider/README.md)：当前通过 `env.AI.gateway('default').run({provider:'compat',endpoint:'chat/completions',query:{model:'dynamic/rp',...}})` 调用动态路由，免运行时密钥；2026-10-03临时边缘预览已实证HTTP200、逐字SSE与完整聚合日志。此前 `AI.run` 的 `/run` 日志记为unknown/application/json，保存了原始SSE；切换到Gateway universal路径后识别custom-pc/text/event-stream并聚合正文。旧Gemma阶段的universal失败与[已知Workers AI转换问题](https://github.com/cloudflare/ai/issues/617)相关，不能把它外推到当前custom-pc；不自动重试、不绕过RP直连模型。
 5. [Hugging Face Dataset Viewer 搜索](https://huggingface.co/docs/dataset-viewer/search)、[公开角色集](https://huggingface.co/datasets/G-reen/TheatreLM-v2.1-Characters)：下载固定 revision `eb8597aec4e3e114b2d28b86c3e2496dd48c5af3` 的完整 worlds.json，SHA256校验后校验5011条原始记录，隔离9条名称损坏记录后同步5002条可用角色至D1；原数据不改写。远端 /search 实测超时/500，故按服务端目录分页检索。安装时从同步内容读取，不相信客户端传回的角色定义；保留 CC-BY-2.0 署名、来源版本与转换标记。
 6. [Chub](https://www.characterhub.org/about)、[SillyTavern 官方导入实现](https://github.com/SillyTavern/SillyTavern/blob/release/src/endpoints/content-manager.js)：标准角色 PNG 下载及 metadata 映射。首次探测403；本轮普通请求和生产Worker均恢复200，实测官方搜索排序、topics标签及PNG下载。以Chub为默认来源，不绕过访问保护；失败仍明确显示。
 7. [RisuRealm API](https://realm.risuai.net/help/api)：仅允许文档化接口且推荐客户端使用。公开文档只有下载，没有搜索契约；首版不使用其未文档化搜索端点。

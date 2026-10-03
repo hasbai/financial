@@ -9,7 +9,7 @@
 - 世界书关键词/副关键词/常驻/扫描深度/递归/优先级/排序/预算，用户 persona、角色、世界设定与历史提示组装。
 - D1/R2、JWT superadmin访问、会话快照、生成幂等与锁、SSE、部分内容落盘、停止、重新生成、编辑分支、JSONL导出。
 - TheatreLM原始5011条，经本轮质量隔离后5002条可用；revision `eb8597aec4e3e114b2d28b86c3e2496dd48c5af3`；worlds.json SHA256 `6acddc549996246cca97a3bda0560b9fbafe188920703815adeb33d3459b165a`。来源、署名、许可和转换标记随角色保存。
-- 固定 `AI.run('dynamic/rp', ..., { gateway: { id: 'default' } })`；不接受前端覆盖模型或密钥，无隐式重试或备用模型。
+- 固定 `AI.gateway('default').run` 调用 `dynamic/rp`（compat/chat/completions）；不接受前端覆盖模型或密钥，无隐式重试或备用模型。
 
 ## 首版验收证据（修订前）
 
@@ -126,3 +126,15 @@ Gateway原payload=false解释了只有metadata没有完整请求；现改为true
 | 原始正文 | `/logs/{id}/request`和`/logs/{id}/response`均HTTP200，1193与25289字节，分别与日志记录的request_size/response_size完全一致。完整请求含3条messages及验收输入，Top K20、Top P0.9、关闭思考；完整响应为SSE，包含正文、3候选、stop及`[DONE]`。原始正文仅保存在本地忽略目录，不提交用户内容或Token |
 
 当前Cloudflare日志详情的`request`/`response`摘要字段为空，但`request_head_complete`/`response_head_complete`为true且正文下载接口可读，因此不能仅凭两个摘要字段判断未保存payload。新日志已有完整正文，旧版本禁存payload的日志无法补回。原生binding仍未返回可用event_id，本次通过完整正文中的唯一验收输入和requestId标记核对对应日志，不声称后台event_id已确认。
+
+## 对话界面、完整历史与聚合日志修订（2026-10-03）
+
+按ChatGPT式交互重做：右侧用户气泡、无气泡角色正文，消息姓名与头像隐藏；圆形箭头发送/方块停止，输入框单行起步、自动伸展至200px后滚动，清空后复位；复制、编辑与最新回答的重新生成置于正文末尾。全局与会话System Prompt可编辑并独立恢复默认，默认鼓励3–6段、约300–600字的对白与场景细节；只升级精确匹配旧默认的设置，保留用户自定义提示和现有会话快照。用户提示不再因角色卡自带提示而被省略。
+
+已确认漏最初消息的根因是未知容量分支主动只保留最近完整问答，现移除该截断：未知窗口保留全部有效历史与激活世界书，已知16K/32K才按容量预算裁旧整轮。候选改用固定独占行`[TAVERN_NEXT]`与最多三行文本，不含UUID、不要求模型输出JSON；请求幂等UUID仍只在API/日志关联字段。增量解析支持跨块/CRLF、去空去重、序号容错与2KB尾部上限，候选仍一次生成、原文点击发送。
+
+真实日志对照纠正了首轮“不能聚合”的判断：Eastmoney `01M3EJXA5KKBWYKD2Q0203BR0P`与`01M3DAPMZJA73Q3H7NM5CAV6EY`均request.stream=true、provider custom-codex、path responses、response_content_type text/event-stream，正文接口返回含完整output及streamed_data的聚合JSON；`01M3EVE04H7R116E32YG9VVJ6X`的Workers AI Chat Completions流同样聚合。Tavern原`AI.run`日志为unknown、/run、application/json，原始SSE未聚合。PATCH只支持metadata不是无法聚合的证据。
+
+直接REST动态compat探针`f69b6587-3eda-4e3d-945a-310f99a5aa7f`HTTP200流式正常，日志`01M410889NVV3EGJQ0VYT4HRFV`识别custom-pc并聚合。Wrangler本地/remote代理预览均超时，取消子进程代理后健康检查仍超时，未把该环境故障当模型失败；经官方edge-preview API直达临时预览，免密钥Gateway绑定请求`75fe9f7f-03b6-483c-9a4e-fe4315ab90c2`HTTP200 SSE+[DONE]，日志`01M410S3TTK0XTPTG314V5WQC5`包含正确app/task/username、完整`choices[0].delta.content`与4个streamed_data块，证明该绑定可用。代码已切至Gateway universal绑定dynamic/rp，待自动发布，未绕过路由、无推理Secret、无第二次调用。旧Workers AI阶段的失败与上游issue617一致；本轮测试的是当前custom-pc路由。
+
+相关64项测试、Svelte零错误/零警告、聚焦Worker TypeScript检查通过；固定Linux桌面/iPhone WebKit28流程、84截图通过并审阅导入（2026-10-03T13-33-20.986Z），仅28张有意聊天/设置变化和2张新展开输入证据，3张≤50像素无关差异保留旧基线。首轮失败为新增恢复提示按钮造成旧模型重置定位歧义，已明确exact定位，未改UI行为或视觉容差。架构复核通过；PR/CI、自动发布及真实多轮验收待完成。
