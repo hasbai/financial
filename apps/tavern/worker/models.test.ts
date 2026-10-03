@@ -11,7 +11,7 @@ afterEach(async () => { await Promise.all(work); db.close(); vi.unstubAllGlobals
 it('always exposes RP and forwards sampling and thinking without route or schema checks', async () => {
  expect(await modelOptions(env,ctx)).toMatchObject([{id:'rp',available:true,contextTokens:null,parameters:{topK:true,thinking:true}}]);
  expect(modelInput({...DEFAULT_SETTINGS,topK:20,thinkingEnabled:false})).toMatchObject({top_k:20,top_p:1,chat_template_kwargs:{enable_thinking:false},presence_penalty:0,frequency_penalty:0});
- expect(modelInput({...DEFAULT_SETTINGS,thinkingEnabled:true}).chat_template_kwargs.enable_thinking).toBe(true);expect(modelInput(DEFAULT_SETTINGS)).not.toHaveProperty('top_k');
+ expect(modelInput({...DEFAULT_SETTINGS,thinkingEnabled:true})).toMatchObject({chat_template_kwargs:{enable_thinking:true},reasoning_effort:'low',reasoning_format:'deepseek'});expect(modelInput(DEFAULT_SETTINGS)).toHaveProperty('reasoning_effort','none');expect(modelInput(DEFAULT_SETTINGS)).not.toHaveProperty('top_k');
  expect(()=>modelInput({...DEFAULT_SETTINGS,modelId:'other'})).toThrow('模型不可用');
 });
 it('discovers actual 32K then 16K runtime capacity in the background, without credentials', async () => {

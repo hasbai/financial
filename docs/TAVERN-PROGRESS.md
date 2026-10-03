@@ -93,3 +93,5 @@ Gateway Read已实证：日志`c09aa204a95e7c5cd4b525557e422d87b6a66f72e32d5d76f
 用户调整RP为本地custom-pc/qwen3.8-27b后，原模型/schema门槛报“模型路由已变更”。按用户要求删除这套准入设计：RP始终可用，参数直接透传；上下文只读探测后台刷新，失败不挡对话。运行时不再访问管理API或依赖管理Token。动态路由Workers binding是唯一推理入口；metadata仍为app/task/真实username，无自动重试。
 
 财务既有Notice提取至packages/ui，财务原入口复用、输出保持一致；Tavern登录、页面和弹层错误及设置保存通知统一引用。AGENTS已记录“禁止过度设计”“尽量复用统一UI”。当前修订相关测试67项通过、Svelte零错误/零警告、聚焦Worker类型检查通过；固定Linux28项流程82张截图通过并审阅导入（2026-10-03T11-46-36.260Z）。保留1/24像素无关渲染差异的原基线。HTML四视图、390px/桌面/深色与16K/32K/unknown交互无错误。架构复核通过；PR/自动部署和真实本地模型验收待完成。
+
+实际本地/apply-template（不执行推理）验证：关闭参数预填充空think块；单独enable_thinking=true会受服务端默认reasoning_effort=none影响报错。显式none/low配合开关后，两种模板均HTTP200，开启预填充开放think。请求指定deepseek解析格式分离思考与可见正文。真实生成仍在发布后验收。
