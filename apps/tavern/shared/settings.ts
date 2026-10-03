@@ -1,10 +1,10 @@
-import { DEFAULT_SETTINGS, LEGACY_SYSTEM_PROMPT, type Settings } from './types';
+import { DEFAULT_SETTINGS, LEGACY_SYSTEM_PROMPT, PREVIOUS_SYSTEM_PROMPT, type Settings } from './types';
 
 /** Missing keys in historic snapshots receive defaults; explicit invalid values never do. */
 export function normalizeSettings(value: unknown): Settings {
  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('设置无效');
  const v = { ...DEFAULT_SETTINGS, ...value };
- if (v.systemPrompt === LEGACY_SYSTEM_PROMPT) v.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
+ if (v.systemPrompt === LEGACY_SYSTEM_PROMPT || v.systemPrompt === PREVIOUS_SYSTEM_PROMPT) v.systemPrompt = DEFAULT_SETTINGS.systemPrompt;
  const range = (n: unknown, min: number, max: number, integer = false) => typeof n === 'number' && Number.isFinite(n) && n >= min && n <= max && (!integer || Number.isInteger(n));
  if (typeof v.userName !== 'string' || !v.userName.trim() || v.userName.length > 80) throw new Error('请检查你的名字');
  if (typeof v.persona !== 'string' || v.persona.length > 12000 || typeof v.systemPrompt !== 'string' || !v.systemPrompt.trim() || v.systemPrompt.length > 12000) throw new Error('请检查角色设定与系统提示');

@@ -29,6 +29,11 @@ export function activateBook(book: Book, history: Pick<Message, 'content'>[], ex
   }).sort((a,b) => a.order-b.order);
 }
 export type PromptMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+// User-declared local window; runtime discovery remains separate and may lower it.
+export const PLANNING_CONTEXT_TOKENS = 32768;
+export const INPUT_TARGET_TOKENS = 12288;
+export const HISTORY_BLOCK_TOKENS = 2048;
+export const PROMPT_SAFETY_TOKENS = 512;
 export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], settings: Settings, contextTokens: number | null, continuationInstruction = '', options: { protocol?: string; formatReminder?: string; inputRatio?: number } = {}) {
   const card = parseCard(raw), c = card.data;
   const char = c.nickname || c.name, expand = (text: string, original = '') => macros(text, char, settings.userName, original);
@@ -39,24 +44,51 @@ export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], 
     expand(c.description), expand(c.personality), expand(c.scenario), ...picked.filter(e => e.position === 'after_char').map(e => expand(e.content)), c.mes_example ? `示例对白：\n${expand(c.mes_example)}` : ''].filter(Boolean).join('\n\n');
   const post = expand(c.post_history_instructions, '保持角色设定与故事连续性。');
   const count = (s: string) => Math.ceil(estimateTokens(s) * (options.inputRatio ?? 1));
-  const budget = contextTokens === null ? Infinity : contextTokens - settings.maxTokens - 512;
-  let used = count(systemText([])) + count(post) + (continuationInstruction ? count(continuationInstruction) + 8 : 0) + (options.protocol ? count(options.protocol) + 8 : 0) + (options.formatReminder ? count(options.formatReminder) + 8 : 0) + 16;
+  const planningWindow = Math.min(contextTokens ?? PLANNING_CONTEXT_TOKENS, PLANNING_CONTEXT_TOKENS);
+  const budget = planningWindow - settings.maxTokens - PROMPT_SAFETY_TOKENS;
+  const coreTokens = count(systemText([])) + count(post) + (options.protocol ? count(options.protocol) + 8 : 0) + 16;
+  const requestTokens = (continuationInstruction ? count(continuationInstruction) + 8 : 0) + (options.formatReminder ? count(options.formatReminder) + 8 : 0);
+  let used = coreTokens + requestTokens;
   if (used > budget) throw new Error('角色与世界书设定超过上下文上限');
   const turns: Message[][] = [];
   for (const message of activeHistory) { if (message.role === 'user' || !turns.length) turns.push([]); turns.at(-1)!.push(message); }
   const turnCost = (turn: Message[]) => turn.reduce((sum,m) => sum + count(expand(m.content)) + 8, 0);
-  const selected: Message[][] = [];
-  if (turns.length) { const latest = turns.at(-1)!; const cost = turnCost(latest); if (used + cost > budget) throw new Error('最新对话超过上下文上限'); used += cost; selected.push(latest); }
-  let oldestRequired = turns.length - 1;
-  if (turns.length > 1 && turns.at(-1)?.at(-1)?.role === 'user' && turns.at(-2)?.at(-1)?.role === 'assistant') { const previous = turns.at(-2)!; const cost = turnCost(previous); if (used + cost > budget) throw new Error('最新对话超过上下文上限'); used += cost; selected.unshift(previous); oldestRequired--; }
+  const selected = new Set<number>();
+  const requireTurn = (index: number) => { const cost = turnCost(turns[index]); if (used + cost > budget) throw new Error('最新对话超过上下文上限'); used += cost; selected.add(index); };
+  if (turns.length) requireTurn(turns.length - 1);
+  if (turns.length > 1 && turns.at(-1)?.at(-1)?.role === 'user' && turns.at(-2)?.at(-1)?.role === 'assistant') requireTurn(turns.length - 2);
+  // Mandatory context can exceed the soft target; never slice a user message.
+  const target = Math.max(used, Math.min(INPUT_TARGET_TOKENS, budget));
   const picked: Entry[] = [];
-  for (const entry of [...entries].sort((a,b) => b.priority-a.priority || a.order-b.order)) { const cost = count(expand(entry.content)) + 8; if (used + cost <= budget) { used += cost; picked.push(entry); } }
+  let worldbookTokens = 0;
+  for (const entry of [...entries].sort((a,b) => b.priority-a.priority || a.order-b.order)) { const cost = count(expand(entry.content)) + 8; if (used + cost <= target) { used += cost; worldbookTokens += cost; picked.push(entry); } }
   picked.sort((a,b) => a.order-b.order);
-  for (let i = oldestRequired - 1; i >= 0; i--) { const cost = turnCost(turns[i]); if (cost + used > budget) break; used += cost; selected.unshift(turns[i]); }
+  // Boundaries are anchored at the beginning, not recomputed from the newest turn.
+  const blocks: number[][] = []; let block: number[] = [], blockTokens = 0;
+  turns.forEach((turn, index) => {
+    const cost = turnCost(turn);
+    if (block.length && blockTokens + cost > HISTORY_BLOCK_TOKENS) { blocks.push(block); block = []; blockTokens = 0; }
+    block.push(index); blockTokens += cost;
+  });
+  if (block.length) blocks.push(block);
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const optional = blocks[i].filter(index => !selected.has(index));
+    const cost = optional.reduce((sum, index) => sum + turnCost(turns[index]), 0);
+    if (cost + used > target) break;
+    used += cost; optional.forEach(index => selected.add(index));
+  }
+  const selectedHistory = [...selected].sort((a,b) => a-b).flatMap(index => turns[index]);
   const system = [systemText(picked), post, options.protocol].filter(Boolean).join('\n\n');
-  const messages: PromptMessage[] = [{ role: 'system', content: system }, ...selected.flat().map(m => ({ role: m.role, content: expand(m.content) }))];
+  const messages: PromptMessage[] = [{ role: 'system', content: system }, ...selectedHistory.map(m => ({ role: m.role, content: expand(m.content) }))];
   if (continuationInstruction) messages.push({role:'user',content:continuationInstruction});
   const latest = messages.at(-1);
   if (options.formatReminder && latest?.role === 'user') latest.content += '\n\n' + options.formatReminder;
-  return { messages, estimatedTokens: used, activatedEntries: picked.map(e => e.id) };
+  return { messages, estimatedTokens: used, activatedEntries: picked.map(e => e.id), budget: {
+    coreTokens, worldbookTokens, historyTokens: used - coreTokens - requestTokens - worldbookTokens, requestTokens,
+    inputTargetTokens: Math.min(INPUT_TARGET_TOKENS, budget), hardInputTokens: budget,
+    outputTokens: settings.maxTokens, safetyTokens: PROMPT_SAFETY_TOKENS,
+    planningContextTokens: planningWindow, detectedContextTokens: contextTokens,
+    contextSource: contextTokens !== null && contextTokens <= PLANNING_CONTEXT_TOKENS ? 'runtime' : 'user-declared',
+    includedMessages: selectedHistory.length, omittedMessages: activeHistory.length - selectedHistory.length,
+  } };
 }

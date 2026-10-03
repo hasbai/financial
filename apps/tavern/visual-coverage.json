@@ -262,7 +262,7 @@
       "evidence": [
         {
           "spec": "e2e/tavern.spec.ts",
-          "test": "model controls defaults persistence and reset preserve persona",
+          "test": "model controls compact prompt defaults persistence and reset preserve persona",
           "projects": [
             "iphone",
             "desktop"

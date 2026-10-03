@@ -117,7 +117,7 @@ test('long chat reading width and scroll position',async({page})=>{
  expect(await page.locator('.reading-column').evaluate(e=>e.getBoundingClientRect().width)).toBeLessThanOrEqual(741);
 });
 
-test('model controls defaults persistence and reset preserve persona',async({page})=>{
+test('model controls compact prompt defaults persistence and reset preserve persona',async({page})=>{
  await fixture(page);await nav(page,'设置');const thinking=page.getByRole('switch',{name:'启用思考'});await expect(thinking).toHaveAttribute('aria-checked','false');await expect(page.getByLabel('对话模型')).toHaveValue('rp');await expect(page.getByLabel('Top K',{exact:false})).toBeEnabled();await page.getByLabel('Top K',{exact:false}).fill('20');
  await page.getByLabel('你的角色设定',{exact:true}).fill('保留这份角色设定');await thinking.click();await page.getByLabel('Top P',{exact:true}).fill('0.85');await page.getByLabel('频率惩罚',{exact:false}).fill('0.2');
  await page.getByLabel('System Prompt',{exact:true}).fill('用详细的对白和动作继续，每次写四段。');

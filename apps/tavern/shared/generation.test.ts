@@ -1,8 +1,8 @@
 import { it, expect } from 'vitest';
 import { CandidateStream, candidateDelimiter, candidateInstruction, CANDIDATE_REMINDER, validateCandidates } from './candidates';
 import { normalizeSettings } from './settings';
-import { DEFAULT_SETTINGS, LEGACY_SYSTEM_PROMPT } from './types';
-import { buildPrompt, estimateTokens } from './prompt';
+import { DEFAULT_SETTINGS, LEGACY_SYSTEM_PROMPT, PREVIOUS_SYSTEM_PROMPT } from './types';
+import { buildPrompt, estimateTokens, INPUT_TARGET_TOKENS } from './prompt';
 import { parseBook } from './cards';
 const card={name:'岚',description:'港城旅店主人',personality:'沉稳'};
 
@@ -48,6 +48,7 @@ it('accepts CRLF, blank lines and simple list prefixes at every split',()=>{
 });
 it('keeps configured prompt with card instructions and updates only the exact old default',()=>{
  expect(normalizeSettings({...DEFAULT_SETTINGS,systemPrompt:LEGACY_SYSTEM_PROMPT}).systemPrompt).toBe(DEFAULT_SETTINGS.systemPrompt);
+ expect(normalizeSettings({...DEFAULT_SETTINGS,systemPrompt:PREVIOUS_SYSTEM_PROMPT}).systemPrompt).toBe(DEFAULT_SETTINGS.systemPrompt);
  const configured='每次详细写出对白与动作。';const prompt=buildPrompt({...card,system_prompt:'沿用角色口吻。'},[],[],{...DEFAULT_SETTINGS,systemPrompt:configured},null);
  expect(prompt.messages[0].content).toContain(configured);expect(prompt.messages[0].content).toContain('沿用角色口吻。');
  const expanded=buildPrompt({...card,system_prompt:'{{original}}\n角色口吻'},[],[],{...DEFAULT_SETTINGS,systemPrompt:configured},null);
