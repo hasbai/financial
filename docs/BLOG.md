@@ -42,8 +42,8 @@ Financial `Check`、Blog `Blog` 独立 workflow，均有廉价 changes job。业
 
 ## 登录字段兼容（2026-10-04）
 
-统一 Auth0 Action 使用 `auth0/login-claims.js`：顶层 `username`、`email` 为身份字段，`_roles` 为角色数组，`role` 为 Neon 数据库角色字符串。角色数组包含 superadmin 时签发 `role=superadmin`，其他账号为 authenticated；Zboard 保留独立 audience，通过 `_roles` 判断管理员。酒馆同样读取 `_roles`，保留统一 audience。两份应用 setup 脚本复用同一 Action，并移除旧应用角色 Action 的重复绑定，避免重新签发旧字段。
+统一 Auth0 Action 使用 `auth0/login-claims.js`：顶层 `username`、`email` 为身份字段，`_roles` 为角色数组，`role` 为 Neon 数据库角色字符串。共享财务/博客 audience 的角色数组包含 superadmin 时签发 `role=superadmin`，其他 audience 或账号为 authenticated；Zboard 保留独立 audience，通过 `_roles` 判断管理员。酒馆同样读取 `_roles`，保留统一 audience。两份应用 setup 脚本复用同一 Action，并移除旧应用角色 Action 的重复绑定，避免重新签发旧字段。
 
-`role` 改成数组后，Neon 仍按 anonymous 执行，导致 `permission denied for table page`；生产 page CRUD GRANT 和编辑 RLS 本身正常。本次保留 Data API `.role` 和全部生产表权限，不添加授权 SQL 包装或扩大匿名权限。新令牌已在隔离生产副本 `auth-role-array-20261004` / `br-blue-feather-b38q5syq` 实测页面草稿创建、读取、更新、删除及文章 RPC 创建/更新；匿名公开读取、草稿隔离和写入拒绝通过。生产真实 JWT 已验证 page UPDATE 权限及财务读权限；完整页面与文章写入在隔离分支实测。最新线上统一 Action 的 blocked、邮箱验证及东方财富组织资料字段保留；仅将错误的字符串 contains 调用修正为 includes，避免登录返回 access_denied。旧浏览器会话需重新登录取得新签名字段，未保存编辑应先保留。
+`role` 改成数组后，Neon 仍按 anonymous 执行，导致 `permission denied for table page`；生产 page CRUD GRANT 和编辑 RLS 本身正常。本次保留 Data API `.role` 和全部生产表权限，不添加授权 SQL 包装或扩大匿名权限。新令牌已在隔离生产副本 `auth-role-array-20261004` / `br-blue-feather-b38q5syq` 实测页面草稿创建、读取、更新、删除及文章 RPC 创建/更新；匿名公开读取、草稿隔离和写入拒绝通过。生产真实 JWT 已验证 page UPDATE 权限及财务读权限；完整页面与文章写入在隔离分支实测。最新线上统一 Action 的 blocked、邮箱验证及东方财富组织资料字段保留；将错误的字符串 contains 调用修正为 includes，避免登录返回 access_denied；数据库 superadmin 角色限定到共享财务/博客 audience。新 Zboard JWT 仍在 `_roles` 中保留 superadmin，但其数据库 role 为 authenticated，财务读取返回 403、博客写入返回 400（缺少对应 audience）。已经签发的旧令牌不会因 Action 更新被撤销，需等待过期或重新登录。旧浏览器会话需重新登录取得新签名字段，未保存编辑应先保留。
 
 本地固定 Linux 流程完成博客全站和四应用代表页面截图审阅，无有意视觉修改；原视觉基线保留。完整单测、类型和视觉比较由 PR CI 执行；线上应用版本与真实 Worker JWT 验收在发布后独立核验。

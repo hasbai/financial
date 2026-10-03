@@ -14,7 +14,7 @@
 
 ## 权限
 
-Auth0 的顶层 `_roles` 为角色数组，`role` 为数据库角色字符串。`_roles` 包含 superadmin 时签发 `role=superadmin`，其他账号为 authenticated；Data API 的 jwt_role_claim_key 为 `.role`，验证 JWT 后切换 PostgreSQL 角色。superadmin 是 NOLOGIN/NOSUPERUSER/NOBYPASSRLS 的业务角色，不是 PostgreSQL 超级用户。authenticator 与管理用 neondb_owner 可切换到该角色。
+Auth0 的顶层 `_roles` 为角色数组，`role` 为数据库角色字符串。共享财务/博客 audience 中 `_roles` 包含 superadmin 时签发 `role=superadmin`，其他 audience 或账号为 authenticated；Data API 的 jwt_role_claim_key 为 `.role`，验证 JWT 后切换 PostgreSQL 角色。superadmin 是 NOLOGIN/NOSUPERUSER/NOBYPASSRLS 的业务角色，不是 PostgreSQL 超级用户。authenticator 与管理用 neondb_owner 可切换到该角色。
 
 superadmin 具有 financial schema USAGE、三表及现有业务视图 SELECT、save_transaction/save_account EXECUTE；没有基表 DML 或直接刷新权限。anonymous、authenticated 和 PUBLIC 的 financial 访问授权撤销。删除 is_owner、personal_read/personal_write，关闭三表 RLS；不再检查固定 subject，不在前端检查角色。
 

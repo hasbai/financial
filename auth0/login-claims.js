@@ -6,7 +6,7 @@ exports.onExecutePostLogin = async (event, api) => {
 
   let dbRole = "authenticated";
   let roles = event.authorization?.roles ?? [];
-  if (roles.includes("superadmin")) {
+  if (event.resource_server?.identifier === "https://financial.hasbai.xyz/api" && roles.includes("superadmin")) {
     dbRole = "superadmin";
   }
   api.accessToken.setCustomClaim("role", dbRole);

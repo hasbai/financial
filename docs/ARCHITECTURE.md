@@ -22,7 +22,7 @@ flowchart LR
 - Callback：`https://financial.hasbai.xyz/auth/callback`、`http://localhost:5173/auth/callback`。
 - Logout / Web Origins：上述两个 origin。
 - `@auth0/auth0-spa-js` 官方 SPA SDK 使用 Authorization Code + PKCE，token 仅在内存；每次请求调用 getTokenSilently，退出清除查询缓存。生产代码不处理密码。
-- Auth0 Access Token 使用顶层 `username`、`email` 与 `_roles`（角色数组）；`role` 为数据库角色字符串。`_roles` 包含 superadmin 时签发 `role=superadmin`，其他账号为 authenticated，Neon Data API 使用 `.role` 切换 PostgreSQL 角色。
+- Auth0 Access Token 使用顶层 `username`、`email` 与 `_roles`（角色数组）；`role` 为数据库角色字符串。共享财务/博客 audience 中 `_roles` 包含 superadmin 时签发 `role=superadmin`，其他 audience 或账号为 authenticated，Neon Data API 使用 `.role` 切换 PostgreSQL 角色。
 
 Neon 项目 `mute-king-39794724` / neondb。开发分支 `br-proud-bread-b3hl3asf`，production 分支 `br-billowing-violet-b3pkbm3s`。公开的前端配置见 src/lib/config.ts；默认使用生产 endpoint，测试可通过 VITE_DATA_API_URL 替换目标 endpoint。
 
