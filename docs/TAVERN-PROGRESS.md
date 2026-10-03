@@ -224,9 +224,27 @@ PR #37八项必需状态通过并squash为`fe2b7df6ce4241ca3fc5322f52a776432244d
 - 旧会话在空闲/到期时先写D1永久generation哨兵冻结旧Worker，再事务导入所有消息/候选/终态/摘要并逐字段核对；失败可重试且保留来源。旧活跃生成仍可通过原pending状态停止，未解除旧占用前不迁移。删除保留tombstone，不能从旧D1重新出现。
 - 停止立即取消当前模型；Worker断流显式传递取消，准备阶段取消也持久记录并在claim前检查。没有增加硬轮数、输出预算或整轮运行时限。
 - DO记录目录revision与已同步revision，alarm重试D1同步；目录慢不阻塞done或下轮推理。世界书绑定先保留旧+新引用并集，DO提交后才收窄；失败和重启不丢引用保护。
-- 真实JWT访问已恢复。35188字符样本正常完成但未超限，不能当摘要验收。100152字符样本上游报70234tokens超过32768；旧摘要assistant-last导致角色续写，回送25040字符源文本、仅2个新输出tokens，未形成有效checkpoint。摘要已改成system规则+user来源数据，角色标记保留，待自动发布后复验。
+- 真实JWT访问已恢复。35188字符样本正常完成但未超限，不能当摘要验收。100152字符样本上游报70234tokens超过32768；旧摘要assistant-last导致角色续写，回送25040字符源文本、仅2个新输出tokens，未形成有效checkpoint。摘要已改成system规则+user来源数据，角色标记保留；修复后的真实复验见下方。
 - 109项Node核心/Worker测试与Svelte诊断0错误/0警告；真实workerd SQLite隔离harness验证导入/fence、跨用户/会话隔离、流式候选、回放、分支、停止、跨实例数据恢复、未完成回合恢复、删除不复活。runtime模型为夹具，不能算生产推理通过。已加入Tavern CI。
 - 固定Linux28流程/84截图通过，4张原始像素差1/24/27/62均无UI修改，未替换基线；62像素的中断场景另以原50容差严格比较通过。桌面/iPhone WebKit为设备模拟。
 - 远程隔离D1 `a2798176-f09d-430b-a47b-33c46e02951d`验证0007、原ID/摘要/候选/正文与旧写入fence，已删除。生产迁移前后均2会话/26消息，均仍legacy，只新增storage_backend/deleted_at；实际访问后才惰性迁移。
 
-PR、Workers Builds与生产DO/模型验收待发布后补齐；不把本地夹具测试当真实模型/cache证据。
+### 本批发布及真实验收
+
+- [PR #43](https://github.com/hasbai/financial/pull/43)八项必需状态全成功；Check37148381900、Blog37148381887、Zboard37148382012、Tavern37148381907各只等一次。Squash main `8ec1f71cdcc5fd9a5b64404ba0557bfb364cb512`。
+- 自动Build `81358ed7-891d-4871-ae58-f9b3c95b4e19` success、push_event/main及commit_hash精确匹配；version `a1bf6820-c87e-4134-9f18-32018f8c6660`流量100%，health200同版本，线上migration_tag=session-v1、SESSIONS binding存在。没有手动重复部署。
+- 正常Universal Login + PKCE/JWT下，两条既有会话（5/21个版本）已惰性迁移。原ID/正文/状态/序号/时间/finish_reason及选中版本逐项保持；D1来源仍26版本，storage_backend=do且generation_id=do:<对应ID>，没有重写旧正文。
+- 另一旧Worker创建的临时会话在发布后导入，问候ID/角色快照不变。正常/重生成各80/15字、stop/3候选，UUID回放、刷新读回、编辑分支、导出全部4消息版本、即时停止及删除后404通过。测试两会话/一角色3/3逻辑删除与R2原文件清理；D1迁移来源和DO删除标记按设计保留。
+- 100152字符开场真实压缩：四次summary请求均为system+user/HTTP200，实际输入17531/17651/17651/17648 tokens、输出121/117/117/115 tokens；没有max_tokens。生成前形成152字摘要，抽查船未出港、钥匙仍在掌柜手中、岚未答应离开三项否定事实正确；没有声称完整语义保真。不是截断源文本。
+- 该长聊两轮真实正文76/80字，completed/stop/3候选，无error/协议泄露，原开场SHA256不变、回复刷新与UUID回放一致。Gateway聚合正文SHA256与应用保存逐字一致。第一轮4次摘要+1次roleplay，第二轮只1次roleplay；第二轮system全文SHA256相同，证实从DO复用持久checkpoint，不重复摘要。临时2会话/1角色3/3逻辑清理，原26版本未删。
+
+| 长聊轮次 | 模型实际输入tokens | cached tokens | roleplay prefill ms | 客户端首正文ms | 摘要请求 |
+| --- | --- | --- | --- | --- | --- |
+| 1，超限压缩后 | 462 | 0 | 791.586 | 82313 | 4 |
+| 2，复用checkpoint | 547 | 0 | 1089.417 | 2138 | 0 |
+
+第一轮总验收85430ms包含四段摘要的预填与生成，不能说慢模型的摘要无额外成本；第二轮5560ms包含持久化/回放。两条增长历史cached仍0，DO不等于GPU缓存命中。独立临时短会话正常/重生成的输入均338 tokens，cached为0/334，新prefill为338/4，prefill为658.330/243.173ms；只有重复完整前缀证明KV复用，不能推广为所有长聊。
+
+上述真实日志均经eventId关联，cache_prompt=true、完整payload、三项metadata={app:tavern,task:roleplay,username:时阅}，没有应用输出硬限。摘要152字与原始/用户正文仅保存在本地忽略验收目录；文档不复制私人角色内容。原100K失败样本仍记录，未替换成成功统计。当前主目录在最新main；工作树证据已复制保留。下一优先state快照和search_memory/update_state工具闭环，缓存增长历史稳定性同步优化，世界书RAG后置。
+
+本批未新增真实连续length样本，其超过三次续写及长正文压缩仍为自动化覆盖；不把超限摘要恢复当作length链路实测。整个Agent目标仍未完成。
