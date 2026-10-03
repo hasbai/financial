@@ -180,3 +180,21 @@ PR #36八项必需状态通过并squash为`cf1dfeb459570a23b0f4999bfa1efb4e649cb
 PR #37八项必需状态通过并squash为`fe2b7df6ce4241ca3fc5322f52a776432244de5f`，自动Build`c3681dea-cdef-4b7b-91ee-495599670daa`成功且SHA一致，version`b3d70086-079b-4d60-a063-aeebf717234a`线上一致。恢复旧协议后的真实前两轮正文254/227字、3/3候选、持久化和原UUID回放通过；第三轮正文正常stop但候选0。原始日志`01M419GQ3G7YZ4NT30C4NK0DC4`实际输出3条有效短句，分隔符紧接正文缺少前置换行，既有解析器没有进入尾部，故该轮未通过正文隔离验收。
 
 已按原始响应修复默认保留标记的流式容错：同时接受完整换行标记和缺前置换行的标记，仍要求后置换行；完整形式优先，跨chunk不提前泄露协议，自定义marker语义不变。新增所有切分位置、CRLF、标记中断、Worker delta/终态/持久化和单次模型调用测试，65相关测试通过；不再修改提示词、不补发候选推理、不改截图基线。此前3轮真实cache_n均0，保留失败样本，不宣称缓存命中；剩余有限样本在修正版发布后核验新临时会话和重新生成。
+
+## Agent 第一阶段最终交付（2026-10-04）
+
+[PR #38](https://github.com/hasbai/financial/pull/38)八项必需状态通过并squash为`d482ed5c0002d4bcad06966da988b709a1b0ad7d`。自动Build`32db16cc-6f69-49ef-ade3-967c483d3c01`成功，push_event/main与commit_hash一致；deployment`0341a2ae-efc7-4c7b-8f4c-9bd2f7a53e92`、version`9f53f4c9-2994-4f01-8778-19266bfd222a`流量100%。Node原生fetch health200且版本一致，未手动部署；Python urllib同URL一度403，未将它认定为Worker发布失败。当前主目录已回到最新main。
+
+既定6轮样本保留前3轮及第3轮失败记录，不重置抽样。修复后剩余3轮使用新临时会话A/B/A重生成（原前3轮会话已清理，不能声称返回原已删除会话）：正文407/245/382字，全部completed/stop、3候选、无协议泄露、刷新读回一致、原UUID回放一致、锁释放。临时2会话/1角色清理3/3；早先两个探针各2会话/1角色也已全部清理。此次未新增真实续写验收，相关续写预算/解析由自动化覆盖。
+
+| 样本 | Gateway日志 | 输入tokens | cached tokens | 实际新prefill tokens | prefill ms | 客户端首正文ms | 应用总验收ms |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 4，新A正常 | `01M41AEP4R9TYXMAS0TF8YDH1X` | 426 | 0 | 426 | 700.516 | 3579 | 15194 |
+| 5，切至新B | `01M41AF554FNYAB2P91D4B0FB7` | 426 | 422 | 4 | 258.423 | 3338 | 11256 |
+| 6，返回新A重生成 | `01M41AFFS161H0MBC7N1Y9WG5Q` | 426 | 422 | 4 | 246.464 | 2461 | 12830 |
+
+三条日志event_id逐轮匹配真实请求，HTTP200、custom-pc/qwen3.8-27b、3条messages、cache_prompt:true、Gateway cached:false和三项metadata正确；完整聚合正文经同一解析器处理后的SHA256与应用正文一致，streamed_data分别345/220/341。原UUID回放无额外模型请求。缓存token同时由usage.prompt_tokens_details.cached_tokens及timings.cache_n证实；应用总验收时间包含持久化读取/回放，不能冒充纯模型耗时。
+
+同卡、相同输入、同开场的后两条请求具有相同模型可见前缀，因此证实当前部署支持实际KV复用；不是仅字段存在。此前连续增长3轮输入426/626/805、cached均0，不能将最后两条重复前缀样本推广为长聊稳定命中，也不承诺统一百分比提速。
+
+只读本地/props当前HTTP200：实际n_ctx32768、total_slots1、model_alias qwen38-27b、build b11200-81bc6b83f；chat_template_caps报告supports_tools/tool_calls/object_arguments/parallel_tool_calls/preserve_reasoning等为true。该元数据不等于真实工具闭环验收，未修改本地推理配置。下一优先项是增长历史缓存/实际slot行为，再接会话DO、state与摘要、有限工具循环。首批仅短写作规则、受控分块预算、缓存请求/观测和候选协议隔离；DO/长期记忆/工具/RAG尚未上线。
