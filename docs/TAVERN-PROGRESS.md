@@ -135,7 +135,7 @@ Gateway原payload=false解释了只有metadata没有完整请求；现改为true
 
 真实日志对照纠正了首轮“不能聚合”的判断：Eastmoney `01M3EJXA5KKBWYKD2Q0203BR0P`与`01M3DAPMZJA73Q3H7NM5CAV6EY`均request.stream=true、provider custom-codex、path responses、response_content_type text/event-stream，正文接口返回含完整output及streamed_data的聚合JSON；`01M3EVE04H7R116E32YG9VVJ6X`的Workers AI Chat Completions流同样聚合。Tavern原`AI.run`日志为unknown、/run、application/json，原始SSE未聚合。PATCH只支持metadata不是无法聚合的证据。
 
-直接REST动态compat探针`f69b6587-3eda-4e3d-945a-310f99a5aa7f`HTTP200流式正常，日志`01M410889NVV3EGJQ0VYT4HRFV`识别custom-pc并聚合。Wrangler本地/remote代理预览均超时，取消子进程代理后健康检查仍超时，未把该环境故障当模型失败；经官方edge-preview API直达临时预览，免密钥Gateway绑定请求`75fe9f7f-03b6-483c-9a4e-fe4315ab90c2`HTTP200 SSE+[DONE]，日志`01M410S3TTK0XTPTG314V5WQC5`包含正确app/task/username、完整`choices[0].delta.content`与4个streamed_data块，证明该绑定可用。代码已切至Gateway universal绑定dynamic/rp，待自动发布，未绕过路由、无推理Secret、无第二次调用。旧Workers AI阶段的失败与上游issue617一致；本轮测试的是当前custom-pc路由。
+直接REST动态compat探针`f69b6587-3eda-4e3d-945a-310f99a5aa7f`HTTP200流式正常，日志`01M410889NVV3EGJQ0VYT4HRFV`识别custom-pc并聚合。Wrangler本地/remote代理预览均超时，取消子进程代理后健康检查仍超时，未把该环境故障当模型失败；经官方edge-preview API直达临时预览，免密钥Gateway绑定请求`75fe9f7f-03b6-483c-9a4e-fe4315ab90c2`HTTP200 SSE+[DONE]，日志`01M410S3TTK0XTPTG314V5WQC5`包含正确app/task/username、完整`choices[0].delta.content`与4个streamed_data块，证明该绑定可用。当时待发布的Gateway universal绑定dynamic/rp已由下方PR #33上线，未绕过路由、无推理Secret、无第二次调用。旧Workers AI阶段的失败与上游issue617一致；本轮测试的是当前custom-pc路由。
 
 相关64项测试、Svelte零错误/零警告、聚焦Worker TypeScript检查通过；固定Linux桌面/iPhone WebKit28流程、84截图通过并审阅导入（2026-10-03T13-33-20.986Z），仅28张有意聊天/设置变化和2张新展开输入证据，3张≤50像素无关差异保留旧基线。首轮失败为新增恢复提示按钮造成旧模型重置定位歧义，已明确exact定位，未改UI行为或视觉容差。架构复核通过；PR/CI、自动发布及真实多轮验收待完成。
 
@@ -149,4 +149,18 @@ Gateway原payload=false解释了只有metadata没有完整请求；现改为true
 
 [PR #34](https://github.com/hasbai/financial/pull/34)八项必需检查通过并squash为`f954b2b3e5b7f6cd028eb673c5157e85811499ca`，自动Build`05d05f2d-581a-4512-a28f-827be5a193b8`成功且SHA一致；deployment`e2e4a49b-8911-4d3b-8f85-e1079642db95`、version`79ea20ee-d08a-4649-bab7-8957385bc3e9`流量100%，health200一致。生产两轮436/509字、3/0候选，仍有续轮漏尾部，未把预览成功当作生产稳定性证明。日志`01M4134BJEC1GT6SVDA45ZEDSV`和`01M4134RDEYHQWVWHWXY3YV111`的完整正文均与应用正文及流式拼接一致，三项metadata正确、event_id逐轮匹配，最初消息保留；临时1会话/1角色清理成功。
 
-架构复核指出此前手组预览与生产在角色内容、连续性规则和采样参数上存在差异。最终小改只在模型请求的最后一条user副本末尾追加固定应用格式提醒，先计入预算，三种生成模式共用，用户保存/显示/导出原文不变；System仍固定、历史候选不入Prompt、无额外推理。复用真实失败请求，仅更改提醒后连续三轮5/7/9条messages：日志`01M413GET8A5X0E9DMTJWRAJN8`、`01M413H204D2829Z2N5NP36JP4`、`01M413HFJBGPPEF6DMBJN8W7AG`，正文391/423/537字、均3候选，332/358/396块全部与聚合正文一致。相关68项测试、聚焦Worker类型和diff-check通过；HTML日志路径更新后四视图、1440/390px、深浅主题无溢出或JS错误。最终自动发布后的真实应用验收待完成。
+架构复核指出此前手组预览与生产在角色内容、连续性规则和采样参数上存在差异。最终小改只在模型请求的最后一条user副本末尾追加固定应用格式提醒，先计入预算，三种生成模式共用，用户保存/显示/导出原文不变；System仍固定、历史候选不入Prompt、无额外推理。复用真实失败请求，仅更改提醒后连续三轮5/7/9条messages：日志`01M413GET8A5X0E9DMTJWRAJN8`、`01M413H204D2829Z2N5NP36JP4`、`01M413HFJBGPPEF6DMBJN8W7AG`，正文391/423/537字、均3候选，332/358/396块全部与聚合正文一致。相关68项测试、聚焦Worker类型和diff-check通过；HTML日志路径更新后四视图、1440/390px、深浅主题无溢出或JS错误。最终自动发布及真实应用验收结果如下。
+
+## 最终对话与日志验收（2026-10-03）
+
+| 层级 | 结果 |
+| --- | --- |
+| PR/CI | [PR #35](https://github.com/hasbai/financial/pull/35)八项必需状态成功、基于最新main，squash为`b11df3b762cf29f00afd01446fa3734219a13608` |
+| 自动发布 | Build`6f511ee8-a97e-445c-a133-d0541c2652e0`：push_event/main、build_outcome=success、commit_hash与上述SHA一致。deployment`5380b2ef-9821-4e0f-9285-12a31f94412a`、version`d4003453-7e87-4d64-bf43-e7d2400665e3`流量100%；匿名health200版本一致，无手动部署 |
+| 真实两轮 | 共享PKCE/JWT请求`4c02d153-30cf-4b6a-87cb-1a7de3024b58`和`e40f8c1f-da7b-4894-a5a2-e7b2dcf0ab29`，正文354/319字、3/3候选、218/203次delta，均completed/stop、0error；首正文4.51/5.20秒，总耗时12.99/13.37秒，仅为本次样本 |
+| 持久化/幂等 | 两轮正文与候选刷新读回一致，用户保存原文不含应用提醒，所有delta拼接等于终态正文；原UUID回放成功、锁释放；同一时间范围恰好两条匹配真实请求的模型日志，无候选补发或回放推理 |
+| Gateway日志 | 首轮`01M413Z89CZ8EMDJ32Z3WM89SN`，续轮`01M413ZPHZA5VNWRVHZB69243G`，custom-pc/chat/completions、stream=true、三项metadata=`{app:"tavern",task:"roleplay",username:"时阅"}`，event_id逐轮等于requestId。请求分别3/5条messages，保留最初问候及首轮输入，稳定System不含UUID |
+| 完整聚合 | 两条响应均包含完整`choices[0].delta.content`与`streamed_data`，可见正文逐字等于应用保存正文，全部delta拼接等于聚合正文。请求/回复字节分别2407/79582、3568/72675，与Gateway记录精确一致；正文及Token只存本地忽略目录 |
+| 清理与局限 | 临时1会话/1角色DELETE成功，读回均404；临时预览公共入口及持久脚本均404。实际`/api/models`容量仍null，不能宣称线上发现32K；未知容量保留全部有效历史与激活世界书，不阻断聊天。模型仍可能不遵守格式，不承诺候选永久必达、不追加第二次推理 |
+
+架构最终复核通过。实现、固定Linux桌面/iPhone WebKit视觉、PR必需CI、自动部署及上述真实JWT/API/模型日志均独立验收；不把设备模拟宣称为真机验收。前面待验收叙述均为相应历史阶段。
