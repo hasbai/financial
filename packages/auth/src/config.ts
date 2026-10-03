@@ -4,4 +4,4 @@ export const authConfig = {
   audience: "https://financial.hasbai.xyz/api",
   organization: "org_qR4E7HTZE1Zv10go",
 } as const;
-export const authClaims = { role: "role", username: "https://hasbai.xyz/username", email: "https://hasbai.xyz/email" } as const;
+export const authClaims = { role: "role", roles: "_roles", username: "username", email: "email" } as const;

@@ -46,7 +46,7 @@ flowchart LR
   Gateway --> Model[路由配置中的模型]
 ```
 
-Auth0：复用北极小站共享配置（现有API标识为 `https://financial.hasbai.xyz/api`），禁止Tavern audience限定；现有 SPA client 增量加入回调/logout/origin。JWT 验签/exp/issuer/audience 在 Worker 完成，共享顶层 role 要求 superadmin，实际用户名使用公共 `https://hasbai.xyz/username` claim。数据按 sub 归属，所有查询含 owner。客户端只含公开配置与内存 Access Token。财务 PostgreSQL 权限封装限制不适用于独立 Tavern Worker。
+Auth0：复用北极小站共享配置（现有API标识为 `https://financial.hasbai.xyz/api`），禁止Tavern audience限定；现有 SPA client 增量加入回调/logout/origin。JWT 验签/exp/issuer/audience 在 Worker 完成，共享顶层 `_roles` 数组必须包含 superadmin，实际用户名使用顶层 `username`，邮箱使用顶层 `email`。数据按 sub 归属，所有查询含 owner。客户端只含公开配置与内存 Access Token。财务 PostgreSQL 权限封装限制不适用于独立 Tavern Worker。
 
 D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整同步后原子切换，不包含私人数据。私人 D1 表：characters（完整卡 JSON、摘要、来源、原文件与头像 key、内容 hash）、worldbooks（原始书 JSON 与启用）、sessions（角色快照、persona/参数、generation lock）、messages（角色/content/status/request ID/顺序）、settings（用户 persona 和生成参数）。已安装角色删除不删除既有会话快照。R2 原文件私有，头像由 Bearer API 转 Blob URL；不创建公共桶，不自动加载角色扩展资源；发现页只显示经过HTTPS/固定头像域校验的公开Chub缩略图。
 

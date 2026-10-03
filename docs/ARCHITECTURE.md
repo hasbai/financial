@@ -22,7 +22,7 @@ flowchart LR
 - Callback：`https://financial.hasbai.xyz/auth/callback`、`http://localhost:5173/auth/callback`。
 - Logout / Web Origins：上述两个 origin。
 - `@auth0/auth0-spa-js` 官方 SPA SDK 使用 Authorization Code + PKCE，token 仅在内存；每次请求调用 getTokenSilently，退出清除查询缓存。生产代码不处理密码。
-- Auth0 Post Login Action 将 superadmin 写入 Access Token 顶层 role；Neon Data API 使用 `.role` 切换到 PostgreSQL superadmin。
+- Auth0 Access Token 使用顶层 `username`、`email` 与 `_roles`（角色数组）；`role` 为数据库角色字符串。共享财务/博客 audience 中 `_roles` 包含 superadmin 时签发 `role=superadmin`，其他 audience 或账号为 authenticated，Neon Data API 使用 `.role` 切换 PostgreSQL 角色。
 
 Neon 项目 `mute-king-39794724` / neondb。开发分支 `br-proud-bread-b3hl3asf`，production 分支 `br-billowing-violet-b3pkbm3s`。公开的前端配置见 src/lib/config.ts；默认使用生产 endpoint，测试可通过 VITE_DATA_API_URL 替换目标 endpoint。
 
@@ -59,7 +59,7 @@ GitHub Actions只在PR创建/更新时进行完整验收（手动dispatch保留�
 
 按用户要求，本地 `.env` 保存 AUTH0_TEST_EMAIL / AUTH0_TEST_PASSWORD，权限600且被Git忽略，不进入构建。`scripts/auth0-token.mjs` 只供本机检查：通过 Auth0 Universal Login 正常账号页/密码页、Cookie 会话、Authorization Code + PKCE 获取本人 Access Token。无需 Auth0 CLI 管理登录、client secret 或临时修改 grant；不改写 `.env`。授权回调严格校验 state，凭据仅提交同一 Auth0 origin，遇 MFA/CAPTCHA 等额外验证时明确停止。生产 SPA 继续使用官方 SDK，测试脚本不进入浏览器。
 
-北极小站共享配置位于 packages/auth/src/config.ts。Tavern复用相同audience与顶层role，不再使用专属audience。auth0/financial-role.js保留原superadmin角色映射，并对各audience统一签发 https://hasbai.xyz/username 实际名称与已验证email；不查询逐轮用户资料。2026-09-15 隔离实测命名空间 claim 虽被注入 JWT，Neon 未切换角色；顶层 role 配合 `.role` 已通过真实 API。错误签名、错误 audience 与无 token 均由 Data API 拒绝；业务函数不再重复检查 JWT。
+北极小站共享配置位于 packages/auth/src/config.ts。Tavern复用相同audience与顶层_roles，不再使用专属audience。auth0/login-claims.js 与当前统一 Post Login Action 一致，签发顶层 username/email/_roles，应用通过 _roles 数组包含 superadmin 授权，财务/博客数据库使用标量 role；不查询逐轮用户资料。Neon 的现有标量角色映射须独立验证，不能把公开内容 HTTP 200 当成管理员授权成功。错误签名、错误 audience 与无 token 均由 Data API 拒绝；业务函数不再重复检查 JWT。
 
 ## 首页请求复用
 
