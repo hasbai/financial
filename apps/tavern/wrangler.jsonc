@@ -25,8 +25,7 @@
   "vars": {
     "AUTH0_DOMAIN": "hasbai.eu.auth0.com",
     "AUTH0_AUDIENCE": "https://tavern.hasbai.xyz/api",
-    "AIG_GATEWAY_ID": "default",
-    "CONTEXT_TOKENS": "16000"
+    "AIG_GATEWAY_ID": "default"
   },
   "ai": {
     "binding": "AI",
