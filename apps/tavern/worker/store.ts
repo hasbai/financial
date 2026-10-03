@@ -3,25 +3,25 @@ import { importCard, parseBook, parseCard, string, strings } from '../shared/car
 import { HttpError } from './http';
 export type CharacterRow = {id:string;name:string;description:string;creator:string;tags_json:string;card_json:string;format:string;source:string;source_url:string;original_key:string;original_filename:string;avatar_key:string|null;avatar_type:string|null};
 export type SessionRow = {id:string;owner:string;title:string;character_name:string;character_json:string;settings_json:string;book_ids_json:string;generation_id:string|null;generation_until:number|null;created_at:number;updated_at:number};
-export type MessageRow = {id:string;role:'user'|'assistant';content:string;status:Message['status'];ordinal:number;request_id:string|null;created_at:number};
+export type MessageRow = {id:string;role:'user'|'assistant';content:string;status:Message['status'];ordinal:number;request_id:string|null;created_at:number;finish_reason:Message['finishReason']};
 export type BookRow = {id:string;name:string;enabled:number;book_json:string};
 export function character(row: CharacterRow, full = false): Character { const card = parseCard(JSON.parse(row.card_json));return {id:row.id,name:row.name,description:row.description,creator:row.creator,tags:JSON.parse(row.tags_json),format:row.format,hasAvatar:!!row.avatar_key,originalFilename:row.original_filename,source:row.source,sourceUrl:row.source_url,unsupported:card.unsupported,...(full ? {card:card.raw}: {})}; }
 export function session(row: SessionRow, full = false): Session {return {id:row.id,title:row.title,characterName:row.character_name,updatedAt:row.updated_at,settings:JSON.parse(row.settings_json),bookIds:JSON.parse(row.book_ids_json),generationId:row.generation_id,...(full ? {character:JSON.parse(row.character_json)}:{})};}
-export function message(row:MessageRow):Message {return {id:row.id,role:row.role,content:row.content,status:row.status,ordinal:row.ordinal,requestId:row.request_id,createdAt:row.created_at};}
+export function message(row:MessageRow):Message {return {id:row.id,role:row.role,content:row.content,status:row.status,ordinal:row.ordinal,requestId:row.request_id,createdAt:row.created_at,finishReason:row.finish_reason};}
 export function worldbook(row:BookRow):Worldbook {const b=parseBook(JSON.parse(row.book_json),row.name);return {id:row.id,name:row.name,enabled:row.enabled===1,count:b.entries.length,raw:b.raw,unsupported:b.unsupported};}
 export function settings(value:unknown):Settings {
  const v=value as Partial<Settings>; if (!v || typeof v !== 'object') throw new HttpError(400,'设置无效');
  const userName=string(v.userName).trim(),persona=string(v.persona),systemPrompt=string(v.systemPrompt);
- if (!userName || userName.length>80 || persona.length>12000 || !systemPrompt.trim() || systemPrompt.length>12000 || !Number.isFinite(v.temperature) || v.temperature!<0 || v.temperature!>2 || !Number.isInteger(v.maxTokens) || v.maxTokens!<128 || v.maxTokens!>4096) throw new HttpError(400,'请检查用户名、设定、温度与输出上限');
+ if (!userName || userName.length>80 || persona.length>12000 || !systemPrompt.trim() || systemPrompt.length>12000 || !Number.isFinite(v.temperature) || v.temperature!<0 || v.temperature!>2 || !Number.isInteger(v.maxTokens) || v.maxTokens!<128 || v.maxTokens!>8192) throw new HttpError(400,'请检查用户名、设定、温度与输出上限');
  return {userName,persona,systemPrompt,temperature:v.temperature!,maxTokens:v.maxTokens!};
 }
 export async function userSettings(env:Env,owner:string) {const r=await env.DB.prepare('SELECT settings_json FROM settings WHERE owner=?').bind(owner).first<{settings_json:string}>();return r?settings(JSON.parse(r.settings_json)):{...DEFAULT_SETTINGS};}
 export async function getSession(env:Env,owner:string,id:string) {const r=await env.DB.prepare('SELECT * FROM sessions WHERE owner=? AND id=?').bind(owner,id).first<SessionRow>(); if (!r) throw new HttpError(404,'会话不存在');return r;}
 export async function getMessages(env:Env,id:string) { const r=await env.DB.prepare('SELECT * FROM messages WHERE session_id=? ORDER BY ordinal,created_at,id').bind(id).all<MessageRow>();return r.results.map(message);}
-/** Regenerated assistants share the same ordinal; newest completed version is used. */
+/** Regenerated assistants share the same ordinal; newest version is displayed, including partial/error outcomes. */
 export function currentMessages(messages:Message[]):Message[] {
  const chosen=new Map<number,Message>();
- for(const m of messages) {const prev=chosen.get(m.ordinal);if (!prev || m.status==='completed' || prev.status!=='completed') chosen.set(m.ordinal,m);}
+ for(const m of messages) {chosen.set(m.ordinal,m);}
  return [...chosen.values()].sort((a,b)=>a.ordinal-b.ordinal);
 }
 export async function ownedBooks(env:Env,owner:string,ids:unknown) {

@@ -21,7 +21,10 @@ export default {
    if(p==='/api/discover' && method==='GET'){
     const query=(url.searchParams.get('q')??'').trim();const page=Number(url.searchParams.get('page')??'1');
     if(query.length>150 || !Number.isInteger(page) || page<1 || page>10000)throw new HttpError(400,'搜索条件无效');
-    return json(await discover(env,url.searchParams.get('source')??'theatrelm',query,page));
+    const source=url.searchParams.get('source')??'chub',sort=url.searchParams.get('sort')??(source==='theatrelm'?'catalog':'popular');
+    const tags=(url.searchParams.get('tags')??'').split(',').map(t=>t.trim()).filter(Boolean);
+    if(tags.length>6||tags.some(t=>t.length>60))throw new HttpError(400,'分类条件无效');
+    return json(await discover(env,source,query,page,sort,tags));
    }
    if(p==='/api/install' && method==='POST'){
     const d=await body(request),source=string(d.source),id=string(d.id),card=await download(env,source,id);
@@ -79,10 +82,10 @@ export default {
     if(method==='POST'&&chat[2]==='generate')return await generate(request,env,ctx,owner,row.id,await body(request));
     if(method==='POST'&&chat[2]==='stop'){
      const data=await body(request);if(string(data.generationId)!==row.generation_id)throw new HttpError(409,'生成状态已改变');
-     await env.DB.prepare("UPDATE messages SET status='aborted' WHERE session_id=? AND id=? AND status='pending'").bind(row.id,row.generation_id).run();return json({ok:true});
+     await env.DB.prepare("UPDATE messages SET status='aborted',finish_reason='stopped' WHERE session_id=? AND id=? AND status='pending'").bind(row.id,row.generation_id).run();return json({ok:true});
     }
     if(method==='GET'&&chat[2]==='export'){
-     const messages=await getMessages(env,row.id);const lines=[{user_name:JSON.parse(row.settings_json).userName,character_name:row.character_name,create_date:new Date(row.created_at).toISOString()},...messages.map(m=>({name:m.role==='user'?JSON.parse(row.settings_json).userName:row.character_name,is_user:m.role==='user',is_system:false,send_date:new Date(m.createdAt).toISOString(),mes:m.content,extra:{tavern_status:m.status,ordinal:m.ordinal}}))];
+     const messages=await getMessages(env,row.id);const lines=[{user_name:JSON.parse(row.settings_json).userName,character_name:row.character_name,create_date:new Date(row.created_at).toISOString()},...messages.map(m=>({name:m.role==='user'?JSON.parse(row.settings_json).userName:row.character_name,is_user:m.role==='user',is_system:false,send_date:new Date(m.createdAt).toISOString(),mes:m.content,extra:{tavern_status:m.status,tavern_finish_reason:m.finishReason??null,ordinal:m.ordinal}}))];
      return new Response(lines.map(l=>JSON.stringify(l)).join('\n')+'\n',{headers:{'Content-Type':'application/x-ndjson','Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(row.title+'.jsonl')}`,'Cache-Control':'no-store'}});
     }
     if(method==='POST'&&chat[2]==='fork'){
@@ -90,10 +93,10 @@ export default {
      const data=await body(request),text=string(data.content).trim();if(!text||text.length>24000)throw new HttpError(400,'消息需为 1–24000 字符');
      const all=currentMessages(await getMessages(env,row.id)),index=all.findIndex(m=>m.id===data.messageId);if(index<0)throw new HttpError(404,'消息不存在');
      const id=crypto.randomUUID(),now=Date.now(),copied=[...all.slice(0,index),{...all[index],content:text,status:'completed' as const}];
-     const result=await env.DB.batch([env.DB.prepare("INSERT INTO sessions(id,owner,title,character_json,character_name,settings_json,book_ids_json,created_at,updated_at) SELECT ?,owner,title||' · 分支',character_json,character_name,settings_json,book_ids_json,?,? FROM sessions WHERE id=? AND owner=? AND (generation_id IS NULL OR generation_until<=?) AND (SELECT count(*) FROM worldbooks WHERE owner=? AND id IN(SELECT value FROM json_each(sessions.book_ids_json)))=json_array_length(book_ids_json)").bind(id,now,now,row.id,owner,now,owner),...copied.map((m,i)=>env.DB.prepare('INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM sessions WHERE id=?)').bind(crypto.randomUUID(),id,m.role,m.content,m.status,i,now+i,id))]);if(!result[0].meta.changes)throw new HttpError(409,'会话状态已改变，请重试');return json(session(await getSession(env,owner,id),true),201);
+     const result=await env.DB.batch([env.DB.prepare("INSERT INTO sessions(id,owner,title,character_json,character_name,settings_json,book_ids_json,created_at,updated_at) SELECT ?,owner,title||' · 分支',character_json,character_name,settings_json,book_ids_json,?,? FROM sessions WHERE id=? AND owner=? AND (generation_id IS NULL OR generation_until<=?) AND (SELECT count(*) FROM worldbooks WHERE owner=? AND id IN(SELECT value FROM json_each(sessions.book_ids_json)))=json_array_length(book_ids_json)").bind(id,now,now,row.id,owner,now,owner),...copied.map((m,i)=>env.DB.prepare('INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at,finish_reason) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM sessions WHERE id=?)').bind(crypto.randomUUID(),id,m.role,m.content,m.status,i,now+i,m.finishReason??null,id))]);if(!result[0].meta.changes)throw new HttpError(409,'会话状态已改变，请重试');return json(session(await getSession(env,owner,id),true),201);
     }
     if(!chat[2]&&method==='GET'){
-     if(row.generation_id&&(row.generation_until??0)<=Date.now()){await env.DB.batch([env.DB.prepare("UPDATE messages SET status='aborted' WHERE session_id=? AND id=? AND status='pending' AND EXISTS(SELECT 1 FROM sessions WHERE id=? AND generation_id=? AND generation_until<=?)").bind(row.id,row.generation_id,row.id,row.generation_id,Date.now()),env.DB.prepare('UPDATE sessions SET generation_id=NULL,generation_until=NULL WHERE id=? AND generation_id=? AND generation_until<=?').bind(row.id,row.generation_id,Date.now())]);}
+     if(row.generation_id&&(row.generation_until??0)<=Date.now()){await env.DB.batch([env.DB.prepare("UPDATE messages SET status='aborted',finish_reason='expired' WHERE session_id=? AND id=? AND status='pending' AND EXISTS(SELECT 1 FROM sessions WHERE id=? AND generation_id=? AND generation_until<=?)").bind(row.id,row.generation_id,row.id,row.generation_id,Date.now()),env.DB.prepare('UPDATE sessions SET generation_id=NULL,generation_until=NULL WHERE id=? AND generation_id=? AND generation_until<=?').bind(row.id,row.generation_id,Date.now())]);}
      return json({session:session(await getSession(env,owner,row.id),true),messages:currentMessages(await getMessages(env,row.id))});
     }
     if(!chat[2]&&method==='PATCH'){

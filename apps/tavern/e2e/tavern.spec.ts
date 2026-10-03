@@ -1,13 +1,13 @@
 import {test,expect,type Page} from '@playwright/test';
 const raw={spec:'chara_card_v2',spec_version:'2.0',data:{name:'岚',description:'港城旅店的主人。她守着一盏长明的灯，等待远行的旅人。',personality:'冷静、敏锐，善于倾听。',scenario:'雨夜，北方港城的一间旅店。',first_mes:'门外传来脚步声。岚放下手中的书，望向你。\n「雨很大，进来坐坐吧。」',mes_example:'',system_prompt:'',post_history_instructions:'',alternate_greetings:['清晨，窗外的海风带来潮声。'],tags:['奇幻','旅店'],creator:'测试作者',extensions:{}}};
 const character={id:'c1',name:'岚',description:raw.data.description,creator:'测试作者',tags:['奇幻','旅店'],format:'V2',hasAvatar:false,source:'',sourceUrl:'',unsupported:[],card:raw};
-const settings={userName:'旅人',persona:'一位从北方归来的旅人。',systemPrompt:'保持角色与故事连贯。',temperature:0.9,maxTokens:1024};
+const settings={userName:'旅人',persona:'一位从北方归来的旅人。',systemPrompt:'保持角色与故事连贯。',temperature:0.9,maxTokens:4096};
 const book={id:'b1',name:'北境港城',enabled:true,count:2,raw:{name:'北境港城',entries:[{keys:['港城'],content:'港城的灯塔每晚亮起。',enabled:true},{keys:[],content:'故事发生在初秋。',constant:true,enabled:true}]},unsupported:[]};
 const session={id:'s1',title:'港城的雨夜',characterName:'岚',updatedAt:1790990000000,settings,bookIds:['b1'],character:raw,generationId:null as string|null};
 const greeting={id:'m1',role:'assistant',content:raw.data.first_mes,status:'completed',ordinal:0,requestId:null,createdAt:1790990000000};
-async function fixture(page:Page,{empty=false,fail=false,delay=false,streamDelay=false,stopDelay=false}={}) {
+async function fixture(page:Page,{empty=false,fail=false,delay=false,streamDelay=false,stopDelay=false,partial=false,long=false}={}) {
  const current=structuredClone(session);
- const cards=empty?[]:[structuredClone(character)],books=empty?[]:[structuredClone(book)],sessions=empty?[]:[structuredClone(current)];let messages:Record<string,unknown>[]=empty?[]:[structuredClone(greeting)];let pending='';let savedSettings=structuredClone(settings);
+ const cards=empty?[]:[structuredClone(character)],books=empty?[]:[structuredClone(book)],sessions=empty?[]:[structuredClone(current)];let messages:Record<string,unknown>[]=empty?[]:[structuredClone(greeting)];let pending='';let generationCount=0;let savedSettings=structuredClone(settings);if(long)messages=[{...greeting,content:Array.from({length:18},(_,i)=>`第${i+1}段。雨点敲着旅店的窗，岚整理好桌边的书，等待你的回答。`).join('\n\n')}];
  await page.route('**/api/**',async route=>{
   const req=route.request(),url=new URL(req.url()),p=url.pathname,method=req.method();if(delay)return;
   if(fail){await route.fulfill({status:503,json:{message:'服务暂时不可用'}});return;}
@@ -18,7 +18,7 @@ async function fixture(page:Page,{empty=false,fail=false,delay=false,streamDelay
   else if(p==='/api/characters/c1'&&method==='PATCH'){Object.assign(cards[0],{card:body.card,name:body.card.data.name});data=cards[0];}
   else if(p==='/api/characters/c1'&&method==='DELETE')cards.splice(0,1);
   else if(p==='/api/characters/c1')data=character;
-  else if(p==='/api/discover')data={source:url.searchParams.get('source'),page:Number(url.searchParams.get('page')),hasMore:false,results:url.searchParams.get('q')==='无结果'?[]:[{id:'source1',name:'伊莲',description:'一位守护山间书库的学者。',creator:'G-reen',tags:['奇幻'],source:'theatrelm',sourceUrl:'https://huggingface.co/datasets/G-reen/TheatreLM-v2.1-Characters'}]};
+  else if(p==='/api/discover')data={total:13,sort:url.searchParams.get('sort'),source:url.searchParams.get('source'),page:Number(url.searchParams.get('page')),hasMore:Number(url.searchParams.get('page'))===1,results:url.searchParams.get('q')==='无结果'?[]:[{id:'source1',name:'伊莲',description:'一位守护山间书库的学者。',creator:'G-reen',tags:['奇幻'],popularity:1240,createdAt:'2026-10-01T00:00:00Z',source:url.searchParams.get('source'),sourceUrl:'https://chub.ai/characters/test/role'}]};
   else if(p==='/api/install'){cards.push({...character,id:'installed',name:'伊莲'});data=cards.at(-1);}
   else if(p==='/api/worldbooks'&&method==='GET')data={worldbooks:books};
   else if(p==='/api/worldbooks'&&method==='POST'){books.push({...book,id:'b2'});data=books.at(-1);}
@@ -27,18 +27,18 @@ async function fixture(page:Page,{empty=false,fail=false,delay=false,streamDelay
   else if(p==='/api/sessions'&&method==='GET')data={sessions};
   else if(p==='/api/sessions'&&method==='POST'){data=current;sessions.splice(0,sessions.length,current);messages=[greeting];}
   else if(p==='/api/sessions/s1/generate'){
-   pending='pending';current.generationId=pending;
-   if(!body.regenerate)messages.push({id:'user2',role:'user',content:body.content,status:'completed',ordinal:1,requestId:body.requestId,createdAt:1790990000001});
-   const generated={id:pending,role:'assistant',content:'岚把热茶放在桌上。\n「你从哪里来？」',status:'completed',ordinal:2,requestId:body.requestId,createdAt:1790990000002};messages.push(generated);
-   const frames=[{type:'start',messageId:pending,requestId:body.requestId},{type:'delta',text:generated.content}];
+   pending='pending-'+(++generationCount);current.generationId=pending;const prefix=body.continue?String(messages.at(-1)?.content??''):'';
+   if(!body.regenerate&&!body.continue)messages.push({id:'user2',role:'user',content:body.content,status:'completed',ordinal:1,requestId:body.requestId,createdAt:1790990000001});
+   const generated={id:pending,role:'assistant',content:prefix+(partial&&!body.continue?'岚轻轻抬起头，':'岚把热茶放在桌上。\n「你从哪里来？」'),status:partial&&!body.continue?'error':'completed',finishReason:partial&&!body.continue?'length':'stop',ordinal:2,requestId:body.requestId,createdAt:1790990000002};messages.push(generated);
+   const frames=[{type:'start',messageId:pending,requestId:body.requestId},{type:'delta',text:generated.content.slice(prefix.length)}];
    if(streamDelay){messages[messages.length-1]={...generated,status:'pending'};await route.fulfill({contentType:'text/event-stream',body:frames.map(e=>'data: '+JSON.stringify(e)+'\n\n').join('')});return;}
-   current.generationId=null;frames.push({type:'done',message:generated} as never);await route.fulfill({contentType:'text/event-stream',body:frames.map(e=>'data: '+JSON.stringify(e)+'\n\n').join('')});return;
+   current.generationId=null;if(partial&&!body.continue)frames.push({type:'error',message:'回复达到长度上限，内容已保存'} as never);frames.push({type:'done',message:generated} as never);await route.fulfill({contentType:'text/event-stream',body:frames.map(e=>'data: '+JSON.stringify(e)+'\n\n').join('')});return;
   }
-  else if(p==='/api/sessions/s1/stop'){messages=messages.map(m=>m.id===pending?{...m,status:'aborted'}:m);if(stopDelay)setTimeout(()=>current.generationId=null,1700);else current.generationId=null;}
+  else if(p==='/api/sessions/s1/stop'){messages=messages.map(m=>m.id===pending?{...m,status:'aborted',finishReason:'stopped'}:m);if(stopDelay)setTimeout(()=>current.generationId=null,1700);else current.generationId=null;}
   else if(p==='/api/sessions/s1/fork'){data={...current,id:'fork',title:'港城的雨夜 · 分支'};sessions.push(data as typeof session);messages=[{...greeting,id:'fork-message',content:body.content}];}
   else if(p==='/api/sessions/s1'&&method==='PATCH'){Object.assign(current,body);data=current;}
   else if(p==='/api/sessions/s1'&&method==='DELETE')sessions.splice(0,sessions.length);
-  else if(p==='/api/sessions/s1'||p==='/api/sessions/fork')data={session:sessions.find(s=>p.endsWith(s.id)),messages};
+  else if(p==='/api/sessions/s1'||p==='/api/sessions/fork')data={session:sessions.find(s=>p.endsWith(s.id)),messages:[...new Map(messages.map(m=>[m.ordinal,m] as const)).values()]};
   else if(p.endsWith('/export')){await route.fulfill({contentType:'application/json',body:JSON.stringify(raw)});return;}
   await route.fulfill({json:data});
  });
@@ -53,14 +53,14 @@ test('library and character editor',async({page})=>{
  const upload=page.getByLabel('导入角色卡',{exact:true});await upload.setInputFiles({name:'character.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(raw))});await expect(page.getByRole('heading',{name:'角色库 2'})).toBeVisible();
 });
 test('search and install real adapter contract',async({page})=>{
- await fixture(page);await nav(page,'发现');await shot(page,'discover.png');await page.getByLabel('关键词').fill('学者');await page.getByRole('button',{name:'搜索',exact:true}).click();await expect(page.getByRole('heading',{name:'伊莲'})).toBeVisible();await shot(page,'search-results.png');await page.getByRole('button',{name:'安装',exact:true}).click();await expect(page.getByRole('button',{name:'已安装'})).toBeDisabled();await shot(page,'installed.png');await nav(page,'角色库');await expect(page.getByRole('heading',{name:'伊莲'})).toBeVisible();
+ await fixture(page);await nav(page,'发现');await expect(page.getByRole('heading',{name:'伊莲'})).toBeVisible();await shot(page,'discover.png');await page.getByLabel('关键词').fill('学者');await page.getByRole('button',{name:'搜索',exact:true}).click();await expect(page.getByRole('heading',{name:'伊莲'})).toBeVisible();await shot(page,'search-results.png');await page.getByRole('button',{name:'安装',exact:true}).click();await expect(page.getByRole('button',{name:'已安装'})).toBeDisabled();await shot(page,'installed.png');await nav(page,'角色库');await expect(page.getByRole('heading',{name:'伊莲'})).toBeVisible();
 });
 test('worldbooks settings and dark mode',async({page})=>{
  await fixture(page);await nav(page,'世界书');await expect(page.getByRole('heading',{name:'北境港城'})).toBeVisible();await shot(page,'worldbooks.png');await page.getByRole('button',{name:'编辑 北境港城'}).click();await shot(page,'worldbook-editor.png');await page.keyboard.press('Escape');await nav(page,'设置');await page.getByLabel('你的名字').fill('远行者');await page.getByRole('button',{name:'保存设置'}).click();await expect(page.getByRole('status')).toHaveText('已保存');await shot(page,'settings.png');await page.getByRole('button',{name:'切换深色模式'}).last().click();await nav(page,'角色库');await shot(page,'library-dark.png');
 });
 test('chat stream editing export and keyboard',async({page})=>{
- await fixture(page);await page.getByRole('button',{name:'开始对话',exact:true}).click();await expect(page.getByText('门外传来脚步声。',{exact:false})).toBeVisible();await shot(page,'chat.png');await page.getByLabel('发送消息',{exact:true}).fill('我是从北方回来的旅人。');await page.getByLabel('发送消息',{exact:true}).press('Control+Enter');await expect(page.getByText('岚把热茶放在桌上。',{exact:false})).toBeVisible();await shot(page,'chat-reply.png');
- await page.getByRole('button',{name:'会话设置'}).click();await expect(page.getByRole('dialog')).toBeVisible();if(page.viewportSize()!.width>639)await expect(page.getByLabel('会话名称')).toBeFocused();else await expect(page.getByRole('dialog')).toBeFocused();await shot(page,'chat-settings.png');await page.keyboard.press('Escape');await page.getByRole('button',{name:'编辑第 2 条消息'}).click();await expect(page.getByRole('dialog')).toBeVisible();await shot(page,'chat-edit.png');await page.getByLabel('消息内容').fill('新的旅程。');await page.getByRole('button',{name:'创建分支',exact:true}).click();await expect(page.getByText('新的旅程。',{exact:true})).toBeVisible();
+ await fixture(page);await page.getByRole('button',{name:'开始对话',exact:true}).click();await expect(page.getByText('门外传来脚步声。',{exact:false})).toBeVisible();await shot(page,'chat.png');await page.getByLabel('发送消息',{exact:true}).fill('我是从北方回来的旅人。');await page.getByLabel('发送消息',{exact:true}).press('Enter');await expect(page.getByText('岚把热茶放在桌上。',{exact:false})).toBeVisible();await expect(page.getByRole('button',{name:'会话设置'})).toBeEnabled();await expect.poll(()=>page.getByRole('log',{name:'消息历史'}).evaluate(e=>e.scrollHeight-e.scrollTop-e.clientHeight)).toBeLessThanOrEqual(1);await shot(page,'chat-reply.png');
+ await page.getByRole('button',{name:'会话设置'}).click();await expect(page.getByRole('dialog')).toBeVisible();if(page.viewportSize()!.width>639)await expect(page.getByLabel('会话名称')).toBeFocused();else await expect(page.getByRole('dialog')).toBeFocused();await shot(page,'chat-settings.png');await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);const editTrigger=page.getByRole('button',{name:'编辑第 2 条消息'});await editTrigger.focus();await expect(editTrigger).toBeFocused();const messageLog=page.getByRole('log',{name:'消息历史'});await messageLog.evaluate(e=>e.scrollTop=0);await expect.poll(()=>messageLog.evaluate(e=>e.scrollTop)).toBe(0);await editTrigger.click();await expect(page.getByRole('dialog')).toBeVisible();await shot(page,'chat-edit.png');await page.getByLabel('消息内容').fill('新的旅程。');await page.getByRole('button',{name:'创建分支',exact:true}).click();await expect(page.getByText('新的旅程。',{exact:true})).toBeVisible();
  const download=page.waitForEvent('download');await page.getByRole('button',{name:'导出对话'}).click();expect((await download).suggestedFilename()).toMatch(/\.jsonl$/);
 });
 test('empty error and loading states',async({page})=>{
@@ -68,26 +68,49 @@ test('empty error and loading states',async({page})=>{
  await page.unroute('**/api/**');await fixture(page,{fail:true});await expect(page.getByRole('alert')).toContainText('服务暂时不可用');await shot(page,'library-error.png');await page.unroute('**/api/**');await fixture(page,{delay:true});await expect(page.getByRole('status')).toContainText('正在加载角色');await shot(page,'library-loading.png');
 });
 test('interrupted stream can be stopped and recovered',async({page})=>{
- await fixture(page,{streamDelay:true,stopDelay:true});await page.getByRole('button',{name:'开始对话',exact:true}).click();await page.getByLabel('发送消息',{exact:true}).fill('继续');await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByRole('button',{name:'停止',exact:true})).toBeVisible();await shot(page,'chat-interrupted.png');await page.getByRole('button',{name:'停止',exact:true}).click();await expect(page.getByText('已停止',{exact:true})).toBeVisible();await expect(page.getByLabel('发送消息',{exact:true})).toBeEnabled();await shot(page,'chat-stopped.png');
+ await fixture(page,{streamDelay:true,stopDelay:true});await page.getByRole('button',{name:'开始对话',exact:true}).click();await page.getByLabel('发送消息',{exact:true}).fill('继续');await page.getByRole('button',{name:'发送',exact:true}).click();await expect(page.getByRole('button',{name:'停止',exact:true})).toBeVisible();await shot(page,'chat-interrupted.png');await page.getByRole('button',{name:'停止',exact:true}).click();await expect(page.getByText('已停止生成',{exact:true})).toBeVisible();await expect(page.getByLabel('发送消息',{exact:true})).toBeEnabled();await shot(page,'chat-stopped.png');
 });
 
 test('every page dark error loading and keyboard states',async({page})=>{
  await fixture(page);await nav(page,'设置');await page.getByRole('button',{name:'切换深色模式'}).last().click();
  for(const [name,slug] of [['世界书','worldbooks'],['设置','settings'],['发现','discover'],['对话','chat']]){
-  await nav(page,name);if(name==='发现'){await page.getByRole('button',{name:'浏览角色'}).click();await expect(page.getByRole('heading',{name:'伊莲'})).toBeVisible();}
+  await nav(page,name);if(name==='发现'){await expect(page.getByRole('heading',{name:'伊莲'})).toBeVisible();}
   await shot(page,slug+'-dark.png');
  }
  await page.unroute('**/api/**');await fixture(page,{fail:true});
  for(const [name,slug] of [['世界书','worldbooks'],['设置','settings'],['发现','discover'],['对话','chat']]){
-  await nav(page,name);if(name==='发现')await page.getByRole('button',{name:'浏览角色'}).click();await expect(page.getByRole('alert')).toContainText('服务暂时不可用');await shot(page,slug+'-error.png');
+  await nav(page,name);await expect(page.getByRole('alert')).toContainText('服务暂时不可用');await shot(page,slug+'-error.png');
   if(name==='设置')await expect(page.getByRole('button',{name:'保存设置'})).toHaveCount(0);
  }
  await page.unroute('**/api/**');await fixture(page,{delay:true});
  for(const [name,slug] of [['世界书','worldbooks'],['设置','settings'],['发现','discover'],['对话','chat']]){
-  await nav(page,name);if(name==='发现')await page.getByRole('button',{name:'浏览角色'}).click();await expect(page.getByRole('status')).toContainText(/正在/);await shot(page,slug+'-loading.png');
+  await nav(page,name);await expect(page.getByRole('status')).toContainText(/正在/);await shot(page,slug+'-loading.png');
  }
  await page.unroute('**/api/**');await fixture(page);await page.getByLabel('搜索角色',{exact:true}).focus();await page.keyboard.type('不存在');await expect(page.getByRole('heading',{name:'没有匹配的角色'})).toBeVisible();
- await nav(page,'发现');await page.getByLabel('关键词').focus();await page.keyboard.type('学者');await page.keyboard.press('Enter');await expect(page.getByRole('heading',{name:'伊莲'})).toBeVisible();
+ await nav(page,'发现');await expect(page.getByRole('button',{name:'搜索',exact:true})).toBeEnabled();const keyboardSearch=page.waitForRequest(r=>r.url().includes('/api/discover')&&new URL(r.url()).searchParams.get('q')==='学者');await page.getByLabel('关键词').focus();await page.keyboard.type('学者');await page.keyboard.press('Enter');await keyboardSearch;await expect(page.getByRole('heading',{name:'伊莲'})).toBeVisible();
  await nav(page,'世界书');await page.getByRole('button',{name:'编辑 北境港城'}).focus();await page.keyboard.press('Enter');await expect(page.getByRole('dialog')).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
  await nav(page,'设置');await page.getByLabel('你的名字').focus();await page.keyboard.press('Control+A');await page.keyboard.type('键盘旅人');await page.keyboard.press('Enter');await expect(page.getByRole('status')).toHaveText('已保存');
+});
+test('discovery ranking categories tags and source capabilities',async({page})=>{
+ await fixture(page);await nav(page,'发现');await expect(page.getByRole('heading',{name:'伊莲'})).toBeVisible();await expect(page.getByLabel('排序',{exact:true})).toHaveValue('popular');
+ const ranking=page.waitForRequest(r=>r.url().includes('/api/discover')&&new URL(r.url()).searchParams.get('sort')==='newest');await page.getByLabel('排序',{exact:true}).selectOption('newest');await ranking;await expect(page.getByRole('heading',{name:'伊莲'})).toBeVisible();
+ const filtered=page.waitForRequest(r=>r.url().includes('/api/discover')&&new URL(r.url()).searchParams.get('tags')==='Fantasy');await page.getByLabel('分类',{exact:true}).selectOption('Fantasy');await filtered;await expect(page.getByRole('heading',{name:'伊莲'})).toBeVisible();
+ await page.getByText('更多标签',{exact:true}).click();await page.getByLabel('标签',{exact:true}).fill('OC');const tagged=page.waitForRequest(r=>r.url().includes('/api/discover')&&new URL(r.url()).searchParams.get('tags')==='Fantasy,OC');await page.getByRole('button',{name:'搜索',exact:true}).click();await tagged;await expect(page.getByRole('heading',{name:'伊莲'})).toBeVisible();await shot(page,'discover-filtered.png');
+ const next=page.waitForRequest(r=>r.url().includes('/api/discover')&&new URL(r.url()).searchParams.get('page')==='2');await page.getByRole('button',{name:'下一页'}).click();await next;await expect(page.getByText('第 2 页')).toBeVisible();
+ await page.getByLabel('角色来源').selectOption('theatrelm');await expect(page.getByLabel('排序',{exact:true})).toHaveValue('catalog');await expect(page.getByLabel('分类',{exact:true})).toBeDisabled();await expect(page.getByLabel('标签',{exact:true})).toHaveValue('');
+});
+test('enter sends shift enter preserves newline and composition does not send',async({page})=>{
+ await fixture(page);await page.getByRole('button',{name:'开始对话',exact:true}).click();const input=page.getByLabel('发送消息',{exact:true});await input.fill('来自北方。');
+ let sent=0;page.on('request',r=>{if(r.url().endsWith('/generate'))sent++;});
+ await input.dispatchEvent('compositionstart');await input.dispatchEvent('keydown',{key:'Enter',keyCode:229,isComposing:true});await input.dispatchEvent('compositionend');expect(sent).toBe(0);
+ await input.press('Shift+Enter');await input.pressSequentially('愿意休息一下。');await expect(input).toHaveValue('来自北方。\n愿意休息一下。');expect(sent).toBe(0);
+ const request=page.waitForRequest(r=>r.url().endsWith('/generate'));await input.press('Enter');expect((await request).postDataJSON().content).toBe('来自北方。\n愿意休息一下。');await expect(page.getByText('岚把热茶放在桌上。',{exact:false})).toBeVisible();expect(sent).toBe(1);
+});
+test('partial reply survives reopening and explicit continuation appends saved content',async({page})=>{
+ await fixture(page,{partial:true});await page.getByRole('button',{name:'开始对话',exact:true}).click();await page.getByLabel('发送消息',{exact:true}).fill('你是谁');await page.getByLabel('发送消息',{exact:true}).press('Enter');await expect(page.getByText('回复达到长度上限，内容已保存',{exact:true})).toBeVisible();await shot(page,'chat-length.png');
+ await nav(page,'角色库');await nav(page,'对话');await page.getByRole('button',{name:/港城的雨夜/}).click();await expect(page.getByText('回复达到长度上限，内容已保存',{exact:true})).toBeVisible();await page.getByRole('button',{name:'继续回复'}).click();await expect(page.getByText('岚轻轻抬起头，岚把热茶放在桌上。',{exact:false})).toBeVisible();await expect(page.getByText('回复达到长度上限，内容已保存',{exact:true})).toHaveCount(0);
+});
+test('long chat reading width and scroll position',async({page})=>{
+ await fixture(page,{long:true});await nav(page,'对话');await page.getByRole('button',{name:/港城的雨夜/}).click();const log=page.getByRole('log',{name:'消息历史'});await expect(log.getByText('第18段。',{exact:false})).toBeVisible();await expect.poll(()=>log.evaluate(e=>e.scrollTop>0)).toBe(true);await log.evaluate(e=>e.scrollTop=0);await expect.poll(()=>log.evaluate(e=>e.scrollTop)).toBe(0);await shot(page,'chat-long.png');
+ expect(await page.locator('.reading-column').evaluate(e=>e.getBoundingClientRect().width)).toBeLessThanOrEqual(741);
 });

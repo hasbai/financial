@@ -350,32 +350,50 @@ export async function withUserToken(run) {
   return run(accessToken, tokenData);
 }
 
-const base=process.argv[2]||'https://tavern.hasbai.xyz';
-await withUserToken(async(token)=>{
- const headers={Authorization:'Bearer '+token};
- const tail=await fetch(base+'/api/discover?q=&page=418',{headers});const tailData=await tail.json();if(!tail.ok||tailData.results?.length!==7||tailData.hasMore)throw new Error('Complete catalog last page failed');
- const tailInstall=await fetch(base+'/api/install',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({source:'theatrelm',id:tailData.results.at(-1).id})});if(!tailInstall.ok)throw new Error('Last catalog page install failed');console.log(JSON.stringify({stage:'catalog-tail',page:418,count:tailData.results.length,installed:true}));
- const response=await fetch(base+'/api/discover?q=Kaida',{headers});
- const data=await response.json();
- console.log(JSON.stringify({stage:'search',status:response.status,count:data.results?.length,first:data.results?.[0]?.name}));
- if(!response.ok||!data.results?.length)throw new Error('Real search failed');
- const installed=await fetch(base+'/api/install',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({source:'theatrelm',id:data.results[0].id})});
- const character=await installed.json();if(!installed.ok)throw new Error('Real install failed');
- const chat=await fetch(base+'/api/sessions',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({characterId:character.id})});
- const session=await chat.json();if(!chat.ok)throw new Error('Real session failed');
- console.log(JSON.stringify({stage:'install',character:character.name,session:session.id,status:chat.status}));
- const result=await fetch(base+'/api/sessions/'+session.id+'/generate',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),content:'A traveler enters the tavern. Respond with one short sentence in character.'}),signal:AbortSignal.timeout(180000)});
- const stream=await result.text();
- console.log(JSON.stringify({stage:'generation',status:result.status,hasDelta:stream.includes('"type":"delta"'),hasDone:stream.includes('"type":"done"'),hasError:stream.includes('"type":"error"'),bytes:stream.length}));
- const restored=await fetch(base+'/api/sessions/'+session.id,{headers});const saved=await restored.json();
- console.log(JSON.stringify({stage:'restored',messages:saved.messages?.map(m=>({role:m.role,status:m.status,chars:m.content.length}))}));
- if(!stream.includes('"type":"delta"')||stream.includes('"type":"error"'))throw new Error('Real gateway generation failed');
- const stopped=await fetch(base+'/api/sessions/'+session.id+'/generate',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),content:'Continue the story.'}),signal:AbortSignal.timeout(45000)});
- if(!stopped.ok||!stopped.body)throw new Error('Stop generation request failed');const reader=stopped.body.getReader(),decoder=new TextDecoder();let frames='',generationId='';
- while(!generationId){const next=await reader.read();if(next.done)throw new Error('No start frame');frames+=decoder.decode(next.value,{stream:true});for(const line of frames.split('\n'))if(line.startsWith('data: ')){try{const event=JSON.parse(line.slice(6));if(event.type==='start')generationId=event.messageId;}catch{}}}
- const stop=await fetch(base+'/api/sessions/'+session.id+'/stop',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({generationId})});if(!stop.ok)throw new Error('Real stop failed');
- while(!(await reader.read()).done){}let recovery;for(let i=0;i<15;i++){recovery=await(await fetch(base+'/api/sessions/'+session.id,{headers})).json();if(!recovery.session?.generationId)break;await new Promise(resolve=>setTimeout(resolve,1000));}
- const last=recovery.messages?.find(m=>m.id===generationId);console.log(JSON.stringify({stage:'stop-recovery',status:last?.status,lockCleared:!recovery.session?.generationId}));if(last?.status!=='aborted'||recovery.session?.generationId)throw new Error('Stop recovery failed');
- const removed=await fetch(base+'/api/sessions/'+session.id,{method:'DELETE',headers});if(!removed.ok)throw new Error('Probe cleanup failed');
-
-});
+export async function checkRuntime(base='https://tavern.hasbai.xyz') {
+ await withUserToken(async token=>{
+  const headers={Authorization:'Bearer '+token},createdSessions=[],createdCharacters=[];
+  async function api(path,method='GET',body){const r=await fetch(base+'/api/'+path,{method,headers:{...headers,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(180000)});if(!r.ok)throw new Error(path+' HTTP '+r.status);return r;}
+  const before=await(await api('characters')).json(),owned=new Set(before.characters.map(c=>c.id));
+  async function install(source,id){const c=await(await api('install','POST',{source,id})).json();if(!owned.has(c.id)&&!createdCharacters.includes(c.id))createdCharacters.push(c.id);return c;}
+  function frames(text){return text.split('\n').filter(l=>l.startsWith('data: ')).map(l=>JSON.parse(l.slice(6)));}
+  try{
+   const popular=await(await api('discover?source=chub&sort=popular&tags=Fantasy')).json();
+   if(popular.results.length!==12||popular.results.some(c=>!Number.isFinite(c.popularity))||!popular.results.every(c=>c.tags.includes('Fantasy')))throw new Error('Chub category failed');
+   for(let i=1;i<popular.results.length;i++)if(popular.results[i].popularity>popular.results[i-1].popularity)throw new Error('Chub ranking failed');
+   const newest=await(await api('discover?source=chub&sort=newest&tags=Fantasy')).json();
+   if(!newest.results.length||newest.results.some(c=>!Number.isFinite(Date.parse(c.createdAt))))throw new Error('Invalid newest page');
+   for(let i=1;i<newest.results.length;i++)if(Date.parse(newest.results[i].createdAt)>Date.parse(newest.results[i-1].createdAt))throw new Error('Chub time sort failed');
+   const next=await(await api('discover?source=chub&sort=popular&tags=Fantasy&page=2')).json();if(!next.results.length||next.results[0]?.id===popular.results[0]?.id)throw new Error('Chub page failed');
+   const upstream=await install('chub',popular.results[0].id);if(!upstream.hasAvatar)throw new Error('Chub PNG avatar missing');
+   console.log(JSON.stringify({stage:'upstream',popular:popular.results.length,newest:newest.results.length,page2:next.results.length,category:true,installed:true,avatar:true}));
+   const corpus=await(await api('discover?source=theatrelm&sort=catalog')).json();if(corpus.total!==5002||corpus.results.some(c=>c.name.length>160))throw new Error('Catalog quality failed');
+   const tailPage=Math.ceil(corpus.total/12),tail=await(await api('discover?source=theatrelm&sort=catalog&page='+tailPage)).json();if(tail.hasMore||tail.results.length!==corpus.total-(tailPage-1)*12)throw new Error('Catalog tail failed');
+   const invalid=await fetch(base+'/api/install',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({source:'theatrelm',id:'eb8597aec4e3e114b2d28b86c3e2496dd48c5af3:2921'})});if(invalid.status!==404&&invalid.status!==422)throw new Error('Malformed card accepted');
+   const elara=await(await api('discover?source=theatrelm&sort=catalog&q=Abbess%20Elara')).json();const c=await install('theatrelm',elara.results[0].id);
+   const s=await(await api('sessions','POST',{characterId:c.id})).json();createdSessions.push(s.id);if(s.settings.maxTokens!==4096)throw new Error('Default budget not upgraded');
+   const normal=frames(await(await api('sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你是谁？请用中文，以角色身份简短回答。'})).text());const done=normal.find(e=>e.type==='done');
+   if(!done||done.message.status!=='completed'||done.message.finishReason!=='stop'||!done.message.content.trim())throw new Error('Real generation incomplete');
+   console.log(JSON.stringify({stage:'normal',finishReason:done.message.finishReason,chars:done.message.content.length,maxTokens:s.settings.maxTokens,catalog:corpus.total,tailPage,tailCount:tail.results.length}));
+   await api('sessions/'+s.id,'PATCH',{settings:{...s.settings,maxTokens:1024}});
+   const partial=frames(await(await api('sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'请至少写2000个汉字，详细描绘你生活的世界和环境，连续写作，不要提前收尾。'})).text());const partialDone=partial.find(e=>e.type==='done');
+   if(!partialDone||partialDone.message.status!=='error'||partialDone.message.finishReason!=='length'||!partial.some(e=>e.type==='error'))throw new Error('Length end not classified');
+   const restored=await(await api('sessions/'+s.id)).json();if(restored.messages.at(-1).finishReason!=='length'||restored.session.generationId)throw new Error('Length recovery failed');
+   console.log(JSON.stringify({stage:'length',persisted:true,chars:partialDone.message.content.length,finishReason:'length'}));
+   if(partialDone.message.content.trim()){
+    await api('sessions/'+s.id,'PATCH',{settings:{...s.settings,maxTokens:4096}});
+    const continued=frames(await(await api('sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),continue:true})).text());const end=continued.find(e=>e.type==='done');if(!end||end.message.status!=='completed'||end.message.finishReason!=='stop'||!end.message.content.startsWith(partialDone.message.content)||end.message.content.length<=partialDone.message.content.length)throw new Error('Continuation lost prefix');
+    console.log(JSON.stringify({stage:'continuation',prefixPreserved:true,status:end.message.status,finishReason:end.message.finishReason,chars:end.message.content.length}));
+   }else throw new Error('Continuation acceptance requires nonempty saved partial');
+   const result=await api('sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'继续讲述。'}),reader=result.body.getReader();let chunk='',generationId='';
+   while(!generationId){const next=await reader.read();if(next.done)throw new Error('No start');chunk+=new TextDecoder().decode(next.value);for(const line of chunk.split('\n'))if(line.startsWith('data: ')){try{const e=JSON.parse(line.slice(6));if(e.type==='start')generationId=e.messageId;}catch{}}}
+   await api('sessions/'+s.id+'/stop','POST',{generationId});while(!(await reader.read()).done){}const stopped=await(await api('sessions/'+s.id)).json();if(stopped.messages.at(-1).finishReason!=='stopped'||stopped.session.generationId)throw new Error('Stop reason failed');console.log(JSON.stringify({stage:'stop',reason:'stopped',lockCleared:true}));
+  }finally{
+   const clean=[];for(const id of createdSessions){try{await api('sessions/'+id,'DELETE');clean.push(id);}catch{console.log(JSON.stringify({stage:'cleanup-pending',type:'session',id}));}}
+   for(const id of createdCharacters){try{await api('characters/'+id,'DELETE');clean.push(id);}catch{console.log(JSON.stringify({stage:'cleanup-pending',type:'character',id}));}}
+   if(clean.length!==createdSessions.length+createdCharacters.length)throw new Error('Cleanup incomplete');
+   console.log(JSON.stringify({stage:'cleanup',sessions:createdSessions.length,characters:createdCharacters.length}));
+  }
+ });
+}
+if(process.argv[1]===fileURLToPath(import.meta.url))await checkRuntime(process.argv[2]);
