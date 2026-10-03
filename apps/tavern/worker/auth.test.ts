@@ -1,6 +1,6 @@
 import { it, expect, vi, afterEach } from "vitest";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
-import { identity, ROLE_CLAIM } from "./auth";
+import { identity, authenticatedUsername, ROLE_CLAIM, USERNAME_CLAIM } from "./auth";
 afterEach(() => vi.unstubAllGlobals());
 it("verifies signature, issuer, audience, expiry and grants admin only from the signed claim", async () => {
   const keys = await generateKeyPair("RS256");
@@ -19,7 +19,7 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
     exp = "1h",
     issuer = "https://hasbai.eu.auth0.com/",
   ) =>
-    new SignJWT({ [ROLE_CLAIM]: "superadmin" })
+    new SignJWT({ [ROLE_CLAIM]: "superadmin", [USERNAME_CLAIM]: "月石" })
       .setProtectedHeader({ alg: "RS256", kid: "test" })
       .setSubject("auth0|test")
       .setIssuer(issuer)
@@ -31,7 +31,9 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
     new Request("https://tavern.test/api/me", {
       headers: { Authorization: "Bearer " + token },
     });
-  expect((await identity(req(await sign()), env)).admin).toBe(true);
+  const verified=await identity(req(await sign()),env);
+  expect(verified.admin).toBe(true);expect(verified.username).toBe("月石");
+  expect(authenticatedUsername(verified)).toBe("月石");
   for (const token of [
     await sign("https://financial.hasbai.xyz/api"),
     await sign(env.AUTH0_AUDIENCE, "-1h"),
@@ -46,4 +48,14 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
   await expect(
     identity(new Request("https://tavern.test/api/me"), env),
   ).rejects.toMatchObject({ status: 401 });
+});
+
+
+it("requires a real signed account name without calling an identity API or falling back to the subject",()=>{
+ const fetcher=vi.fn();vi.stubGlobal("fetch",fetcher);
+ for(const username of [undefined," ","auth0|owner","bad\nname","x".repeat(257)]){
+  expect(()=>authenticatedUsername({sub:"auth0|owner",admin:true,email:"owner@example.test",username})).toThrow("账户名称未更新，请重新登录后重试");
+ }
+ expect(authenticatedUsername({sub:"auth0|owner",admin:true,email:"owner@example.test",username:"真实姓名"})).toBe("真实姓名");
+ expect(fetcher).not.toHaveBeenCalled();
 });

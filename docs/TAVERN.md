@@ -2,6 +2,8 @@
 
 日期：2026-10-03。目标：在 Hasbai monorepo 提供私人角色扮演对话应用，完成网络搜卡、安装、本地角色卡/世界书导入、持久会话与 `dynamic/rp` 推理闭环。财务三表边界不适用于 Tavern；不改动财务、博客或 Zboard 数据。
 
+整体调用、单次正文与候选、动态短上下文预算见 [HTML 架构图](TAVERN-ARCHITECTURE.html)。
+
 代码入口为仓库根下 `apps/tavern`；仓库名 `financial` 不改变应用归属。当前交付状态见 [TAVERN-PROGRESS.md](TAVERN-PROGRESS.md)，模型参数、默认关闭思考、模型选择与续聊候选的待实施方案见 [TAVERN-MODEL-SETTINGS.md](TAVERN-MODEL-SETTINGS.md)。
 
 ## 产品与首版交付
@@ -21,7 +23,7 @@
 1. [CCv2 规范](https://github.com/malfoyslastname/character-card-spec-v2/blob/main/spec_v2.md)：核心字段、内嵌 character_book、`{{original}}`、未知扩展保留；creator_notes 不加入模型提示。
 2. [CCv3 规范](https://github.com/kwaroran/character-card-spec-v3/blob/main/SPEC_V3.md)：`ccv3` PNG 元数据优先、CHARX card.json、nickname、资源引用、独立 lorebook_v3。
 3. [SillyTavern World Info](https://docs.sillytavern.app/usage/core-concepts/worldinfo/)：关键词、扫描深度、常驻、选择性副关键词、排序、递归与预算；界面不复制全套复杂控制面板。
-4. [AI Gateway 动态路由](https://developers.cloudflare.com/ai-gateway/features/dynamic-routing/usage/) 与 [Workers binding](https://developers.cloudflare.com/ai-gateway/usage/worker-binding-methods/)：2026-10-02 文档已支持 `AI.run('dynamic/rp', OpenAI chat completions, { gateway: { id } })`。实现采用文档规定的 `AI.run('dynamic/rp', input, { gateway: { id: 'default' } })`，关闭缓存和内容日志。旧兼容 universal binding 在生产返回500，已改用原生动态路由调用；本地旧版 workerd 远程绑定 internal error 不能代表生产结果。默认 BYOK alias 与计费须真实验证，不能据 mock 宣称线上推理可用。
+4. [AI Gateway 动态路由](https://developers.cloudflare.com/ai-gateway/features/dynamic-routing/usage/) 与 [Workers binding](https://developers.cloudflare.com/ai-gateway/usage/worker-binding-methods/)：2026-10-02 文档已支持 `AI.run('dynamic/rp', OpenAI chat completions, { gateway: { id } })`。实现采用文档规定的 `AI.run('dynamic/rp', input, { gateway: { id: 'default' } })`，跳过缓存；Gateway 归属日志按 [模型方案](TAVERN-MODEL-SETTINGS.md) 保留，正文存储单独关闭。旧兼容 universal binding 在生产返回500，已改用原生动态路由调用；本地旧版 workerd 远程绑定 internal error 不能代表生产结果。默认 BYOK alias 与计费须真实验证，不能据 mock 宣称线上推理可用。
 5. [Hugging Face Dataset Viewer 搜索](https://huggingface.co/docs/dataset-viewer/search)、[公开角色集](https://huggingface.co/datasets/G-reen/TheatreLM-v2.1-Characters)：下载固定 revision `eb8597aec4e3e114b2d28b86c3e2496dd48c5af3` 的完整 worlds.json，SHA256校验后校验5011条原始记录，隔离9条名称损坏记录后同步5002条可用角色至D1；原数据不改写。远端 /search 实测超时/500，故按服务端目录分页检索。安装时从同步内容读取，不相信客户端传回的角色定义；保留 CC-BY-2.0 署名、来源版本与转换标记。
 6. [Chub](https://www.characterhub.org/about)、[SillyTavern 官方导入实现](https://github.com/SillyTavern/SillyTavern/blob/release/src/endpoints/content-manager.js)：标准角色 PNG 下载及 metadata 映射。首次探测403；本轮普通请求和生产Worker均恢复200，实测官方搜索排序、topics标签及PNG下载。以Chub为默认来源，不绕过访问保护；失败仍明确显示。
 7. [RisuRealm API](https://realm.risuai.net/help/api)：仅允许文档化接口且推荐客户端使用。公开文档只有下载，没有搜索契约；首版不使用其未文档化搜索端点。
