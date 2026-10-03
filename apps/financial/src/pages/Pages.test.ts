@@ -296,7 +296,9 @@ it("clears all filters after selecting a mobile filter", async () => {
 });
 
 it("drills from cash day links into the same half-open day", async () => {
-  const { api } = setup("overview");
+  // Keep the September report fixture inside the selected reporting month.
+  setup("overview");
+  router.navigate("/?month=2026-09", true, true);
   await screen.findByText("本期净流入");
   expect(screen.queryByRole("region", { name: "最近交易" })).toBeNull();
   expect(screen.queryByRole("table")).toBeNull();
