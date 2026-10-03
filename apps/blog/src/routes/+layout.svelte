@@ -44,7 +44,7 @@
 </svelte:head>
 <a class="skip" href="#main">跳转至正文</a>
 <BackgroundEffect />
-{#if page.url.pathname === "/about" || page.url.pathname.startsWith("/articles/") || /^\/notes\/\d+$/.test(page.url.pathname)}
+{#if page.route.id === "/[slug=pageSlug]" || page.url.pathname.startsWith("/articles/") || /^\/notes\/\d+$/.test(page.url.pathname)}
   <div class="page-bleed" aria-hidden="true"><svg viewBox="0 0 1440 120" preserveAspectRatio="none"><path d="M-20 18 C260 19 330 12 570 18 S980 23 1460 15" /><path d="M-20 43 C220 40 350 49 610 40 S1030 33 1460 44" /><path d="M-20 68 C300 71 380 59 650 66 S1040 74 1460 65" /><path d="M-20 93 C270 89 410 101 720 92 S1110 87 1460 96" /></svg></div>
 {/if}
 <header class:scrolled class="site-header">
@@ -75,7 +75,6 @@
   {/if}
 </main>
 <footer class="wrap footer">
-  <div><a class="footer-name serif" href="/">{site.name}</a><p>写下此刻，留给以后。</p></div>
-  <nav aria-label="页脚导航"><a href="/articles">文章</a><a href="/notes">手记</a><a href="/timeline">时间线</a><a href="/about">关于</a><a href="https://financial.hasbai.xyz">个人财务 ↗</a></nav>
+  <nav aria-label="页脚导航"><a href="/privacy">隐私政策</a><a href="/terms">服务条款</a></nav>
   <span class="footer-mark">© {new Date().getFullYear()} HASBAI</span>
 </footer>

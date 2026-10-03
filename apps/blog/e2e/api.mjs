@@ -1,4 +1,7 @@
 import { createServer } from 'node:http';
+import { readFileSync } from 'node:fs';
+const seededPages = JSON.parse(readFileSync(new URL('./pages.json', import.meta.url), 'utf8'));
+let pages = structuredClone(seededPages);
 
 const tag = { id: '10000000-0000-4000-8000-000000000001', name: '随笔', slug: 'writing' };
 const article = {
@@ -44,7 +47,7 @@ createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   if (req.method === 'OPTIONS') { res.end(); return; }
   if (url.pathname === '/reset') {
-    articles = [{ ...article }]; notes = [{ ...note }]; tags = [{ ...tag }];
+    articles = [{ ...article }]; notes = [{ ...note }]; tags = [{ ...tag }]; pages = structuredClone(seededPages);
     links = [{ article_id: article.id, tag_id: tag.id }]; fail = false;
     res.end('{}'); return;
   }
@@ -71,7 +74,7 @@ createServer(async (req, res) => {
   }
 
   const table = url.pathname.split('/').pop();
-  const collections = { article: articles, note: notes, content: [...articles, ...notes], tag: tags, article_tag: links };
+  const collections = { article: articles, note: notes, page: pages, content: [...articles, ...notes, ...pages], tag: tags, article_tag: links };
   let data = collections[table] ?? [];
   if (req.method === 'GET') data = filter(data, url);
   if (req.method === 'POST') {
@@ -83,6 +86,12 @@ createServer(async (req, res) => {
     } else if (table === 'note') {
       data = values.map((value) => ({ ...note, ...value, kind: 'note', sequence: notes.length + 1 }));
       notes.push(...data);
+    } else if (table === 'page') {
+      if (values.some((value) => pages.some((row) => row.slug === value.slug))) {
+        res.statusCode = 409; res.end(JSON.stringify({ code: '23505', message: 'duplicate path' })); return;
+      }
+      data = values.map((value) => ({ ...seededPages[0], ...value, kind: 'page' }));
+      pages.push(...data);
     } else if (table === 'tag') {
       data = values.map((value) => ({ ...value, id: crypto.randomUUID() })); tags.push(...data);
     } else if (table === 'article_tag') { data = values; links.push(...values); }
@@ -90,11 +99,15 @@ createServer(async (req, res) => {
   if (req.method === 'PATCH') {
     const payload = await bodyOf(req);
     const selected = filter(data, url);
+    if (table === 'page' && selected.some((row) => pages.some((other) => other.id !== row.id && other.slug === payload.slug))) {
+      res.statusCode = 409; res.end(JSON.stringify({ code: '23505', message: 'duplicate path' })); return;
+    }
     data = selected.map((row) => Object.assign(row, payload));
   }
   if (req.method === 'DELETE') {
     data = filter(data, url);
     if (table === 'article') articles = articles.filter((row) => !data.includes(row));
+    if (table === 'page') pages = pages.filter((row) => !data.includes(row));
     if (table === 'note') notes = notes.filter((row) => !data.includes(row));
     if (table === 'article_tag') links = links.filter((row) => !data.includes(row));
   }

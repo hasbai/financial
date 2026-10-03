@@ -58,7 +58,7 @@
       editorProps: {
         attributes: {
           role: "textbox",
-          "aria-label": "文章正文",
+          "aria-label": "正文",
           "aria-multiline": "true",
         },
       },
