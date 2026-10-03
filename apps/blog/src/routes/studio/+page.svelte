@@ -2,7 +2,7 @@
   import { getContext, onMount } from "svelte";
   import type { BlogAuth } from "$lib/auth.svelte";
   import { repository } from "$lib/api";
-  import { dateLabel, type StudioContent } from "$lib/content";
+  import { dateLabel, site, type StudioContent } from "$lib/content";
   import { Button } from "@hasbai/ui/button";
   import { Badge } from "@hasbai/ui/badge";
   import { Plus } from "@lucide/svelte";
@@ -32,7 +32,7 @@
   onMount(() => { void load(); });
 </script>
 
-<svelte:head><title>编辑室 · 北极手记</title></svelte:head>
+<svelte:head><title>编辑室 · {site.name}</title></svelte:head>
 <section class="wrap collection studio-page">
   <div class="collection-heading flex flex-wrap items-end justify-between gap-6">
     <div><span class="eyebrow">THE WRITING ROOM</span><h1 class="serif">编辑室</h1></div>

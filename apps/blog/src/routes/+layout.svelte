@@ -49,7 +49,7 @@
 {/if}
 <header class:scrolled class="site-header">
   <div class="header-inner wrap">
-    <a class="wordmark" href="/" aria-label="北极手记首页"><span class="wordmark-symbol" aria-hidden="true"><SnowflakeMark size={27} strokeWidth={2.3} /></span><span class="wordmark-label">{site.name}</span></a>
+    <a class="wordmark" href="/" aria-label={site.name + "首页"}><span class="wordmark-symbol" aria-hidden="true"><SnowflakeMark size={27} strokeWidth={2.3} /></span><span class="wordmark-label">{site.name}</span></a>
     <nav class="site-nav" aria-label="主导航">
       {#each nav as item}<a href={item.href} aria-current={current(item.href) ? "page" : undefined}>{item.label}</a>{/each}
     </nav>

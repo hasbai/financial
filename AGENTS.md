@@ -9,7 +9,7 @@
 | 应用 | 代码 | 文档入口 |
 | --- | --- | --- |
 | 财务 / 北极账本 | `apps/financial` | `docs/ARCHITECTURE.md` |
-| 博客 / 北极手记 | `apps/blog` | `docs/BLOG.md` |
+| 博客 / 北极小站 | `apps/blog` | `docs/BLOG.md` |
 | Zboard | `apps/zboard` | `apps/zboard/README.md` |
 | 酒馆 / Tavern | `apps/tavern` | `docs/TAVERN.md`、`docs/TAVERN-PROGRESS.md` |
 

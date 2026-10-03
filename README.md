@@ -1,7 +1,7 @@
 # Hasbai monorepo
 
 - `apps/financial`：个人财务，Svelte 5 SPA，保留原有配色和三表边界。
-- `apps/blog`：北极手记，SvelteKit SSR，Neutral / Luma / 衬线正文，在线 Markdown 编辑发布。
+- `apps/blog`：北极小站，SvelteKit SSR，Neutral / Luma / 衬线正文，在线 Markdown 编辑发布。
 - `apps/zboard`：代理节点、用户管理与订阅配置，入口见 [Zboard](apps/zboard/README.md)。
 - `apps/tavern`：酒馆，标准角色卡、世界书、在线搜索安装与持久角色对话，统一 `dynamic/rp`。
 - `packages/ui`、`packages/auth`、`packages/data`：共享组件、认证和 PostgREST。

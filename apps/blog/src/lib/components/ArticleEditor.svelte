@@ -4,6 +4,7 @@
   import type { BlogAuth } from "$lib/auth.svelte";
   import { repository } from "$lib/api";
   import {
+    site,
     pageSlugSchema,
     pagePath,
     articlePath,
@@ -192,7 +193,7 @@
 </script>
 
 <svelte:window onbeforeunload={beforeUnload} /><svelte:head
-  ><title>{title || `新${label}`} · 编辑室</title></svelte:head
+  ><title>{title || `新${label}`} · 编辑室 · {site.name}</title></svelte:head
 >
 <section class="wrap py-8">
   <div class="flex flex-wrap items-center justify-between gap-4 pb-6">

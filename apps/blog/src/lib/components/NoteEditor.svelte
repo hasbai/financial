@@ -3,7 +3,7 @@
   import { beforeNavigate, goto } from "$app/navigation";
   import type { BlogAuth } from "$lib/auth.svelte";
   import { repository } from "$lib/api";
-  import { excerptFromMarkdown, imagePath, notePath, type Note } from "$lib/content";
+  import { excerptFromMarkdown, site, imagePath, notePath, type Note } from "$lib/content";
   import MarkdownEditor from "./MarkdownEditor.svelte";
   import { Button } from "@hasbai/ui/button";
   import { ArrowLeft, ImagePlus, X } from "@lucide/svelte";
@@ -107,7 +107,7 @@
 </script>
 
 <svelte:window onbeforeunload={beforeUnload} />
-<svelte:head><title>{original ? `手记 №${original.sequence}` : "新手记"} · 编辑室</title></svelte:head>
+<svelte:head><title>{original ? `手记 №${original.sequence}` : "新手记"} · 编辑室 · {site.name}</title></svelte:head>
 <section class="wrap py-8">
   <div class="flex flex-wrap items-center justify-between gap-4 pb-6">
     <Button variant="ghost" href="/studio"><ArrowLeft size={16} />编辑室</Button>
