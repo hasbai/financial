@@ -14,6 +14,5 @@ export function normalizeSettings(value: unknown): Settings {
  if (!range(v.topP, Number.MIN_VALUE, 1)) throw new Error('Top P 需大于 0 且不超过 1');
  if (!range(v.topK, 0, 1000, true)) throw new Error('Top K 需为 0–1000 的整数');
  if (!range(v.frequencyPenalty, -2, 2) || !range(v.presencePenalty, -2, 2)) throw new Error('惩罚参数需为 −2–2');
- if (!range(v.maxTokens, 128, 8192, true)) throw new Error('回复长度需为 128–8192 的整数');
- return { userName: v.userName.trim(), persona: v.persona, systemPrompt: v.systemPrompt, modelId: v.modelId, thinkingEnabled: v.thinkingEnabled, temperature: v.temperature, topP: v.topP, topK: v.topK, frequencyPenalty: v.frequencyPenalty, presencePenalty: v.presencePenalty, maxTokens: v.maxTokens };
+ return { userName: v.userName.trim(), persona: v.persona, systemPrompt: v.systemPrompt, modelId: v.modelId, thinkingEnabled: v.thinkingEnabled, temperature: v.temperature, topP: v.topP, topK: v.topK, frequencyPenalty: v.frequencyPenalty, presencePenalty: v.presencePenalty };
 }
