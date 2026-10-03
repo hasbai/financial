@@ -215,3 +215,18 @@ PR #37八项必需状态通过并squash为`fe2b7df6ce4241ca3fc5322f52a776432244d
 - 自动Build `2bd0f253-ed42-4745-8be7-a6118dd04a1e`成功，commit_hash与main一致；deployment `d0e97a3e-16a8-4da7-9769-024149fc84a2`、version `7931cada-ae49-45af-a274-f81025631fc8`流量100%，版本反查Build一致，线上health200版本一致。无手动部署。
 - 真实JWT复验尚未进入模型阶段：正常Universal Login + PKCE取得令牌后，`GET /api/settings`返回403“无权访问酒馆”；未创建验收角色或会话。只读Auth0检查确认验收账号及组织仍有superadmin，共享Action已改为roles/email/username，现有应用仍读取role与命名空间用户名。用户明确选择保留新字段、另行统一迁移应用鉴权；本批未改Auth0、未放宽权限。新的真实摘要/连续length/cache验收待该迁移后补做，不将98项模拟检查或此前缓存样本冒称本批真实模型通过。
 - `/Users/yueshi/src/financial`已回到main并同步远端，稳定代码入口仍为`apps/tavern`。DO/state/工具与世界书RAG按长期方案后续实施。
+
+## 按优先级推进：每会话 DO（2026-10-04）
+
+基于最新main推进；路线改为动态优先级，不固定七步。本批只做SQLite会话DO及真实验收发现的摘要兼容修复，state与工具闭环随后实现。
+
+- 每个签名owner+session对应独立DO；会话快照、设置、完整消息版本、摘要、UUID与生成占用由SQLite统一管理，全部会话接口经同一入口。D1保留目录、角色、世界书与用户设置。
+- 旧会话在空闲/到期时先写D1永久generation哨兵冻结旧Worker，再事务导入所有消息/候选/终态/摘要并逐字段核对；失败可重试且保留来源。旧活跃生成仍可通过原pending状态停止，未解除旧占用前不迁移。删除保留tombstone，不能从旧D1重新出现。
+- 停止立即取消当前模型；Worker断流显式传递取消，准备阶段取消也持久记录并在claim前检查。没有增加硬轮数、输出预算或整轮运行时限。
+- DO记录目录revision与已同步revision，alarm重试D1同步；目录慢不阻塞done或下轮推理。世界书绑定先保留旧+新引用并集，DO提交后才收窄；失败和重启不丢引用保护。
+- 真实JWT访问已恢复。35188字符样本正常完成但未超限，不能当摘要验收。100152字符样本上游报70234tokens超过32768；旧摘要assistant-last导致角色续写，回送25040字符源文本、仅2个新输出tokens，未形成有效checkpoint。摘要已改成system规则+user来源数据，角色标记保留，待自动发布后复验。
+- 109项Node核心/Worker测试与Svelte诊断0错误/0警告；真实workerd SQLite隔离harness验证导入/fence、跨用户/会话隔离、流式候选、回放、分支、停止、跨实例数据恢复、未完成回合恢复、删除不复活。runtime模型为夹具，不能算生产推理通过。已加入Tavern CI。
+- 固定Linux28流程/84截图通过，4张原始像素差1/24/27/62均无UI修改，未替换基线；62像素的中断场景另以原50容差严格比较通过。桌面/iPhone WebKit为设备模拟。
+- 远程隔离D1 `a2798176-f09d-430b-a47b-33c46e02951d`验证0007、原ID/摘要/候选/正文与旧写入fence，已删除。生产迁移前后均2会话/26消息，均仍legacy，只新增storage_backend/deleted_at；实际访问后才惰性迁移。
+
+PR、Workers Builds与生产DO/模型验收待发布后补齐；不把本地夹具测试当真实模型/cache证据。

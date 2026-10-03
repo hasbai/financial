@@ -38,3 +38,8 @@ it('shrinks existing memory when a single-character addition still cannot comple
  const seedContext=new ConversationContext([message('s','user','源'.repeat(1000)),message('n','user','新')],card,[],DEFAULT_SETTINGS,1024,options,async()=>'记忆'.repeat(100));await seedContext.compress();
  c.summary={...seedContext.summary!,covered:[],text:'记忆'.repeat(100)};await c.compress();expect(c.summary?.text).toBe('事实');expect(infer).toHaveBeenCalled();
 });
+
+it('presents assistant history as source data in a user message instead of continuing that assistant',async()=>{
+ const infer=vi.fn(async(_messages:{role:string;content:string}[])=> '尚未出港。');const c=new ConversationContext([message('g','assistant','旧角色正文'.repeat(900)),message('u','user','后来呢')],card,[],DEFAULT_SETTINGS,1024,options,infer);await c.fit();
+ const messages=infer.mock.calls[0]?.[0] as {role:string;content:string}[]|undefined;expect(messages?.map(m=>m.role)).toEqual(['system','user']);expect(messages?.at(-1)?.content).toContain('角色：旧角色正文');expect(messages?.at(-1)?.content).toContain('请压缩以上会话。');
+});

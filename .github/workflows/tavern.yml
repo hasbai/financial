@@ -50,6 +50,8 @@ jobs:
         if: needs.changes.outputs.tavern == 'true'
       - run: pnpm test
         if: needs.changes.outputs.tavern == 'true'
+      - run: pnpm test:session-runtime
+        if: needs.changes.outputs.tavern == 'true'
       - run: pnpm build
         if: needs.changes.outputs.tavern == 'true'
       - uses: actions/upload-artifact@v4

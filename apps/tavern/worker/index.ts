@@ -2,11 +2,11 @@ import { identity, authenticatedUsername, AuthError } from './auth';
 import { body, boundedBody, HttpError, json } from './http';
 import { discover, download } from './discovery';
 import { modelInput, modelOptions } from './models';
-import { generate } from './generation';
-import { character, currentMessages, getMessages, getSession, installCard, jsonFile, ownedBooks, session, settings, userSettings, worldbook, type BookRow, type CharacterRow } from './store';
+import { callSession, sessionStub } from './session-object';
+export { TavernSession } from './session-object';
+import { character, installCard, jsonFile, ownedBooks, session, settings, userSettings, worldbook, type BookRow, type CharacterRow } from './store';
 import { MAX_FILE_BYTES, object, parseBook, parseCard, string } from '../shared/cards';
 import { macros } from '../shared/prompt';
-import type { Message } from '../shared/types';
 export default {
  async fetch(request:Request,env:Env,ctx:Pick<ExecutionContext,'waitUntil'>):Promise<Response> {
   const url=new URL(request.url),p=url.pathname,method=request.method;
@@ -68,45 +68,41 @@ export default {
     if(!book[2]&&method==='DELETE'){const removed=await env.DB.prepare("DELETE FROM worldbooks WHERE id=? AND owner=? AND NOT EXISTS(SELECT 1 FROM sessions WHERE owner=? AND EXISTS(SELECT 1 FROM json_each(sessions.book_ids_json) WHERE value=?))").bind(row.id,owner,owner,row.id).run();if(!removed.meta.changes)throw new HttpError(409,'世界书仍有会话绑定');return json({ok:true});}
    }
    if(p==='/api/sessions'){
-    if(method==='GET'){const rows=await env.DB.prepare('SELECT * FROM sessions WHERE owner=? ORDER BY updated_at DESC LIMIT 200').bind(owner).all<Parameters<typeof session>[0]>();return json({sessions:rows.results.map(r=>session(r))});}
+    if(method==='GET'){const rows=await env.DB.prepare('SELECT * FROM sessions WHERE owner=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 200').bind(owner).all<Parameters<typeof session>[0]>();return json({sessions:rows.results.map(r=>session(r.storage_backend==='do'?{...r,generation_id:null}:r))});}
     if(method==='POST'){
      const data=await body(request),c=await env.DB.prepare('SELECT * FROM characters WHERE id=? AND owner=?').bind(string(data.characterId),owner).first<CharacterRow>();if(!c)throw new HttpError(404,'角色不存在');
      const opts=await userSettings(env,owner),card=parseCard(JSON.parse(c.card_json)),greetings=[card.data.first_mes,...card.data.alternate_greetings];
      const greeting=Number(data.greeting??0);if(!Number.isInteger(greeting)||greeting<0||greeting>=greetings.length)throw new HttpError(400,'开场白无效');
      const id=crypto.randomUUID(),now=Date.now();
-     await env.DB.batch([env.DB.prepare('INSERT INTO sessions(id,owner,title,character_json,character_name,settings_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,owner,c.name,JSON.stringify(card.raw),c.name,JSON.stringify(opts),now,now),...(greetings[greeting]?[env.DB.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) VALUES(?,?,'assistant',?,'completed',0,?)").bind(crypto.randomUUID(),id,macros(greetings[greeting],card.data.nickname||c.name,opts.userName),now)]:[])]);
-     return json(session(await getSession(env,owner,id),true),201);
+     await env.DB.batch([env.DB.prepare("INSERT INTO sessions(id,owner,title,character_json,character_name,settings_json,created_at,updated_at,storage_backend,generation_id,generation_until) VALUES(?,?,?,?,?,?,?,?,'do',?,?)").bind(id,owner,c.name,JSON.stringify(card.raw),c.name,JSON.stringify(opts),now,now,'do:'+id,Number.MAX_SAFE_INTEGER),...(greetings[greeting]?[env.DB.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) VALUES(?,?,'assistant',?,'completed',0,?)").bind(crypto.randomUUID(),id,macros(greetings[greeting],card.data.nickname||c.name,opts.userName),now)]:[])]);
+     return json((await callSession(env,owner,id,'read')).session,201);
     }
    }
    const chat=p.match(/^\/api\/sessions\/([^/]+)(?:\/(generate|stop|fork|export))?$/);
    if(chat){
-    const row=await getSession(env,owner,chat[1]);
-    if(method==='POST'&&chat[2]==='generate'){const data=await body(request),username=authenticatedUsername(user);return await generate(request,env,ctx,owner,row.id,data,username);}
-    if(method==='POST'&&chat[2]==='stop'){
-     const data=await body(request);if(string(data.generationId)!==row.generation_id)throw new HttpError(409,'生成状态已改变');
-     await env.DB.prepare("UPDATE messages SET status='aborted',finish_reason='stopped' WHERE session_id=? AND id=? AND status='pending'").bind(row.id,row.generation_id).run();return json({ok:true});
+    const id=chat[1],stub=sessionStub(env,owner,id);
+    if(method==='POST'&&chat[2]==='generate'){
+     const data=await body(request),username=authenticatedUsername(user),requestId=String(data.requestId??'');
+     const onAbort=()=>{ctx.waitUntil(stub.cancel(owner,id,requestId).catch(()=>{}));};
+     request.signal.addEventListener('abort',onAbort,{once:true});
+     try{
+      if(request.signal.aborted){onAbort();throw new HttpError(409,'生成已停止');}
+      const upstream=await stub.fetch(new Request('https://session/generate',{method:'POST',headers:{'Content-Type':'application/json','X-Tavern-Owner':owner,'X-Tavern-Session':id,'X-Tavern-Username':encodeURIComponent(username)},body:JSON.stringify(data),signal:request.signal}));
+      if(!upstream.body||!upstream.headers.get('Content-Type')?.includes('text/event-stream')){request.signal.removeEventListener('abort',onAbort);return upstream;}
+      const reader=upstream.body.getReader();
+      const stream=new ReadableStream<Uint8Array>({async pull(controller){try{const {done,value}=await reader.read();if(done){request.signal.removeEventListener('abort',onAbort);controller.close();}else controller.enqueue(value);}catch(error){request.signal.removeEventListener('abort',onAbort);onAbort();controller.error(error);}},async cancel(){request.signal.removeEventListener('abort',onAbort);onAbort();await reader.cancel().catch(()=>{});}});
+      return new Response(stream,{status:upstream.status,headers:upstream.headers});
+     }catch(error){request.signal.removeEventListener('abort',onAbort);throw error;}
     }
+    if(method==='POST'&&chat[2]==='stop')return json(await callSession(env,owner,id,'stop',await body(request)));
     if(method==='GET'&&chat[2]==='export'){
-     const messages=await getMessages(env,row.id);const lines=[{user_name:JSON.parse(row.settings_json).userName,character_name:row.character_name,create_date:new Date(row.created_at).toISOString()},...messages.map(m=>({name:m.role==='user'?JSON.parse(row.settings_json).userName:row.character_name,is_user:m.role==='user',is_system:false,send_date:new Date(m.createdAt).toISOString(),mes:m.content,extra:{tavern_status:m.status,tavern_finish_reason:m.finishReason??null,ordinal:m.ordinal}}))];
+     const {row,messages}=await callSession(env,owner,id,'export');const lines=[{user_name:JSON.parse(row.settings_json).userName,character_name:row.character_name,create_date:new Date(row.created_at).toISOString()},...messages.map(m=>({name:m.role==='user'?JSON.parse(row.settings_json).userName:row.character_name,is_user:m.role==='user',is_system:false,send_date:new Date(m.createdAt).toISOString(),mes:m.content,extra:{tavern_status:m.status,tavern_finish_reason:m.finishReason??null,ordinal:m.ordinal}}))];
      return new Response(lines.map(l=>JSON.stringify(l)).join('\n')+'\n',{headers:{'Content-Type':'application/x-ndjson','Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(row.title+'.jsonl')}`,'Cache-Control':'no-store'}});
     }
-    if(method==='POST'&&chat[2]==='fork'){
-     if(row.generation_id&&(row.generation_until??0)>Date.now())throw new HttpError(409,'请先停止生成');
-     const data=await body(request),text=string(data.content).trim();if(!text||text.length>24000)throw new HttpError(400,'消息需为 1–24000 字符');
-     const all=currentMessages(await getMessages(env,row.id)),index=all.findIndex(m=>m.id===data.messageId);if(index<0)throw new HttpError(404,'消息不存在');
-     const id=crypto.randomUUID(),now=Date.now(),copied=[...all.slice(0,index),{...all[index],content:text,status:'completed' as const}];
-     const result=await env.DB.batch([env.DB.prepare("INSERT INTO sessions(id,owner,title,character_json,character_name,settings_json,book_ids_json,created_at,updated_at) SELECT ?,owner,title||' · 分支',character_json,character_name,settings_json,book_ids_json,?,? FROM sessions WHERE id=? AND owner=? AND (generation_id IS NULL OR generation_until<=?) AND (SELECT count(*) FROM worldbooks WHERE owner=? AND id IN(SELECT value FROM json_each(sessions.book_ids_json)))=json_array_length(book_ids_json)").bind(id,now,now,row.id,owner,now,owner),...copied.map((m,i)=>env.DB.prepare('INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at,finish_reason) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM sessions WHERE id=?)').bind(crypto.randomUUID(),id,m.role,m.content,m.status,i,now+i,m.finishReason??null,id))]);if(!result[0].meta.changes)throw new HttpError(409,'会话状态已改变，请重试');return json(session(await getSession(env,owner,id),true),201);
-    }
-    if(!chat[2]&&method==='GET'){
-     if(row.generation_id&&(row.generation_until??0)<=Date.now()){await env.DB.batch([env.DB.prepare("UPDATE messages SET status='aborted',finish_reason='expired' WHERE session_id=? AND id=? AND status='pending' AND EXISTS(SELECT 1 FROM sessions WHERE id=? AND generation_id=? AND generation_until<=?)").bind(row.id,row.generation_id,row.id,row.generation_id,Date.now()),env.DB.prepare('UPDATE sessions SET generation_id=NULL,generation_until=NULL WHERE id=? AND generation_id=? AND generation_until<=?').bind(row.id,row.generation_id,Date.now())]);}
-     return json({session:session(await getSession(env,owner,row.id),true),messages:currentMessages(await getMessages(env,row.id))});
-    }
-    if(!chat[2]&&method==='PATCH'){
-     const data=await body(request);if(row.generation_id&&(row.generation_until??0)>Date.now())throw new HttpError(409,'请先停止生成');
-     const opts=data.settings?settings(data.settings):settings(JSON.parse(row.settings_json)),ids=data.bookIds??JSON.parse(row.book_ids_json);await ownedBooks(env,owner,ids);if(data.settings)modelInput(opts);const title=data.title===undefined?row.title:string(data.title).trim();if(!title||title.length>120)throw new HttpError(400,'会话名称无效');
-     const result=await env.DB.prepare('UPDATE sessions SET settings_json=?,book_ids_json=?,title=? WHERE id=? AND owner=? AND (generation_id IS NULL OR generation_until<=?) AND (SELECT count(*) FROM worldbooks WHERE owner=? AND id IN(SELECT value FROM json_each(?)))=?').bind(JSON.stringify(opts),JSON.stringify(ids),title,row.id,owner,Date.now(),owner,JSON.stringify(ids),(ids as string[]).length).run();if(!result.meta.changes)throw new HttpError(409,'请先停止生成');return json(session(await getSession(env,owner,row.id),true));
-    }
-    if(!chat[2]&&method==='DELETE'){if(row.generation_id&&(row.generation_until??0)>Date.now())throw new HttpError(409,'请先停止生成');const result=await env.DB.prepare('DELETE FROM sessions WHERE id=? AND owner=? AND (generation_id IS NULL OR generation_until<=?)').bind(row.id,owner,Date.now()).run();if(!result.meta.changes)throw new HttpError(409,'会话状态已改变，请重试');return json({ok:true});}
+    if(method==='POST'&&chat[2]==='fork')return json(await callSession(env,owner,id,'fork',await body(request)),201);
+    if(!chat[2]&&method==='GET')return json(await callSession(env,owner,id,'read'));
+    if(!chat[2]&&method==='PATCH')return json(await callSession(env,owner,id,'update',await body(request)));
+    if(!chat[2]&&method==='DELETE')return json(await callSession(env,owner,id,'remove'));
    }
    throw new HttpError(404,'接口不存在');
   }catch(error){
