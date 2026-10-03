@@ -2,6 +2,19 @@
 
 2026-09-23：新增 `apps/blog`（SvelteKit SSR）、迁移财务至 `apps/financial`。共享 Luma UI、Auth0 与 PostgREST 位于 `packages`。博客使用 `public` 四表和 R2 `image`，业务边界见 docs/BLOG.md。以下三表/schema/基表 DML 限制仅适用于 financial 业务，不限制明确授权的博客四表。所有既有财务脚本、视觉清单相对路径以 `apps/financial` 为工作目录；CI 等待脚本仍在仓库根。
 
+## Monorepo 应用定位
+
+仓库目录名 `financial` 是 Hasbai monorepo 的历史名称，不代表当前任务属于财务。先按用户所指应用定位：
+
+| 应用 | 代码 | 文档入口 |
+| --- | --- | --- |
+| 财务 / 北极账本 | `apps/financial` | `docs/ARCHITECTURE.md` |
+| 博客 / 北极手记 | `apps/blog` | `docs/BLOG.md` |
+| Zboard | `apps/zboard` | `apps/zboard/README.md` |
+| 酒馆 / Tavern | `apps/tavern` | `docs/TAVERN.md`、`docs/TAVERN-PROGRESS.md` |
+
+目标目录缺失时，先核对 `git status --short --branch`、`git worktree list` 与最新 `origin/main` 的目录树；可能是当前分支早于应用合并，或应用位于另一个工作区。核对后复用包含目标应用的干净工作区，不因当前分支缺目录要求用户重新提供已存在的项目地址；不为定位强行切换、重置或覆盖其他任务。机器专属工作区路径不作为永久代码入口。以下 Financial 专属业务限制仅适用于财务，其他应用按各自章节和文档执行。
+
 # Financial 应用指南
 
 个人财务管理，Svelte 5 SPA / TypeScript / Bits UI / shadcn-svelte（Luma，共享 packages/ui）/ Tailwind CSS / Lucide / pnpm。Cloudflare Worker `financial`，域名 `financial.hasbai.xyz`；Neon hasbai / neondb / financial；Auth0 北极小站。
@@ -58,4 +71,4 @@ CI 等待统一使用 `node scripts/wait-ci.mjs <owner/repo> <run-id> <full-sha>
 
 ## Tavern 应用
 
-`apps/tavern`：私人角色扮演对话，Svelte 5 SPA / 共享 Luma / Auth0 独立 audience / Worker / D1 / 私有 R2。财务三表限制不适用。模型由服务端固定 AI Gateway `dynamic/rp`，不得接受前端指定模型或密钥；全部会话由服务端持久化，角色扩展脚本不执行。方案见 `docs/TAVERN.md`。Tavern workflow 的 `tavern-check`/`tavern-visual` 必须通过；`pnpm visual:tavern --all` 在同一固定 Linux 镜像生成审阅基线，交付沿用主代理修改提交、新子代理 PR/CI/squash、Workers Builds 自动部署与线上核验。公开角色目录同步采用固定 revision/完整校验/原子切换，不将失败的上游结果伪装成搜索成功。
+`apps/tavern`：私人角色扮演对话，Svelte 5 SPA / 共享 Luma / Auth0 独立 audience / Worker / D1 / 私有 R2。财务三表限制不适用。当前模型由服务端固定 AI Gateway `dynamic/rp`；模型选择按 [模型与续聊方案](docs/TAVERN-MODEL-SETTINGS.md) 演进，只接受服务端白名单逻辑 ID，不接受任意上游模型、路由、URL 或密钥；全部会话由服务端持久化，角色扩展脚本不执行。方案见 `docs/TAVERN.md`。Tavern workflow 的 `tavern-check`/`tavern-visual` 必须通过；`pnpm visual:tavern --all` 在同一固定 Linux 镜像生成审阅基线，交付沿用主代理修改提交、新子代理 PR/CI/squash、Workers Builds 自动部署与线上核验。公开角色目录同步采用固定 revision/完整校验/原子切换，不将失败的上游结果伪装成搜索成功。

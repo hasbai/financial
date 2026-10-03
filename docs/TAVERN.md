@@ -2,6 +2,8 @@
 
 日期：2026-10-03。目标：在 Hasbai monorepo 提供私人角色扮演对话应用，完成网络搜卡、安装、本地角色卡/世界书导入、持久会话与 `dynamic/rp` 推理闭环。财务三表边界不适用于 Tavern；不改动财务、博客或 Zboard 数据。
 
+代码入口为仓库根下 `apps/tavern`；仓库名 `financial` 不改变应用归属。当前交付状态见 [TAVERN-PROGRESS.md](TAVERN-PROGRESS.md)，模型参数、默认关闭思考、模型选择与续聊候选的待实施方案见 [TAVERN-MODEL-SETTINGS.md](TAVERN-MODEL-SETTINGS.md)。
+
 ## 产品与首版交付
 
 | 页面 | 可执行功能 |

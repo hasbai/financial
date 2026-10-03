@@ -2,10 +2,11 @@
 
 - `apps/financial`：个人财务，Svelte 5 SPA，保留原有配色和三表边界。
 - `apps/blog`：北极手记，SvelteKit SSR，Neutral / Luma / 衬线正文，在线 Markdown 编辑发布。
+- `apps/zboard`：代理节点、用户管理与订阅配置，入口见 [Zboard](apps/zboard/README.md)。
 - `apps/tavern`：酒馆，标准角色卡、世界书、在线搜索安装与持久角色对话，统一 `dynamic/rp`。
 - `packages/ui`、`packages/auth`、`packages/data`：共享组件、认证和 PostgREST。
 
-`pnpm dev` 启动财务，`pnpm dev:blog` 启动博客。校验只在独立 GitHub Actions 中执行；业务目录改动只跑对应应用，共享依赖改动才跑两边。
+仓库沿用 `financial` 名称，包含上述四个独立应用。`pnpm dev` 启动财务，`pnpm dev:blog`、`pnpm dev:zboard`、`pnpm dev:tavern` 启动对应应用。完整校验在各应用的 GitHub Actions 中执行；共享依赖变动按受影响应用执行，具体见测试规范。
 
 设计与接入见 [酒馆方案与路线图](docs/TAVERN.md)、[博客架构](docs/BLOG.md)、[财务架构](docs/ARCHITECTURE.md)、[测试规范](docs/TESTING.md)。
 
@@ -31,9 +32,9 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-自动化验收统一在GitHub CI运行，本地不跑测试或构建验收。每次改完并提交后，由子代理推送功能分支、跟踪单元测试和浏览器集成测试；两项必需检查均成功后通过PR合并。main已启用强制保护，管理员不能绕过。视觉基线及详细交付流程见[测试规范](docs/TESTING.md)。
+完整自动化验收在 GitHub CI 运行；本地可生成固定 Linux 视觉截图并审阅。页面与 API 契约改动由主代理修改提交、子代理推送并跟踪 PR，各项必需检查成功后 squash 合并；独立纯文档改动按规定验证后可快进直推。视觉基线、必需状态与交付流程见 [测试规范](docs/TESTING.md)。
 
-前端公开配置在 `src/lib/config.ts`。本地 `.env` 仅存程序化验证所需的邮箱/密码，被 Git 忽略，不使用 `VITE_` 前缀，不进入前端构建。
+财务前端公开配置在 `apps/financial/src/lib/config.ts`。本地 `.env` 仅存程序化验证所需的邮箱/密码，被 Git 忽略，不使用 `VITE_` 前缀，不进入前端构建。
 
 真实JWT/API的专项核验方式见[接入与发布](docs/ARCHITECTURE.md)，不属于CI合成数据浏览器测试，也不向GitHub上传本地凭据。
 
