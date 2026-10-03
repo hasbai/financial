@@ -1,12 +1,15 @@
 <script lang="ts">
  import { Notice } from '@hasbai/ui/notice';
  import { onMount, onDestroy, tick } from 'svelte';import { Button } from '@hasbai/ui/button';import * as Dialog from '@hasbai/ui/dialog';
- import { MessageCircle, Send, Square, RefreshCw, Pencil, Download, Trash2, SlidersHorizontal, ChevronLeft, ArrowUpRight } from '@lucide/svelte';
+ import { MessageCircle, ArrowUp, Copy, Check, Square, RefreshCw, Pencil, Download, Trash2, SlidersHorizontal, ChevronLeft, ArrowUpRight } from '@lucide/svelte';
  import { generationNotice } from '../../shared/outcomes';
  import type { Api } from '../lib/api';import type { Message, Session, Worldbook, ModelOption } from '../../shared/types';import Confirm from '../lib/Confirm.svelte';import GenerationSettings from '../lib/GenerationSettings.svelte';
  import { DEFAULT_SETTINGS } from '../../shared/types';
  let {api,initialId='',onlibrary}:{api:Api;initialId?:string;onlibrary:()=>void}=$props();
- let models=$state<ModelOption[]>([]),candidatePending=$state('');
+ let models=$state<ModelOption[]>([]),candidatePending=$state(''),copied=$state('');
+ let input=$state<HTMLTextAreaElement>();
+ $effect(()=>{text;if(input){input.style.height='0px';input.style.height=Math.min(input.scrollHeight,200)+'px';scroll();}});
+ async function copyMessage(m:Message){try{await navigator.clipboard.writeText(m.content);copied=m.id;}catch{error='复制失败，请重试';}}
  let sessions=$state<Session[]>([]),active=$state<Session>(),messages=$state<Message[]>([]),loading=$state(true),error=$state(''),busy=$state(false),generating=$state(false),text=$state(''),mobileList=$state(true),config=$state(false),configDraft=$state<Session>(),books=$state<Worldbook[]>([]),edit=$state(false),editMessage=$state<Message>(),editText=$state(''),deleteOpen=$state(false);let abort:AbortController|undefined;let log=$state<HTMLDivElement>();let alive=true;let selectionVersion=0;let generationId='';let follow=true;let composing=false;let poll:ReturnType<typeof setTimeout>|undefined;
  onMount(()=>{void load();});onDestroy(()=>{alive=false;selectionVersion++;abort?.abort();if(poll)clearTimeout(poll);});
  async function load(){loading=true;error='';try{sessions=(await api.request<{sessions:Session[]}>('sessions')).sessions;if(initialId)await select(initialId);}catch(e){error=(e as Error).message;}finally{loading=false;}}
@@ -38,11 +41,52 @@
  <section class="chat-main" aria-label="角色对话">
   {#if active}<header class="chat-header"><div class="actions"><Button class="mobile-back" variant="ghost" aria-label="返回会话列表" disabled={generating} onclick={()=>mobileList=true}><ChevronLeft size={18}/></Button><span class="chat-character-avatar" aria-hidden="true">{active.characterName.slice(0,1)}</span><div><h2>{active.title}</h2>{#if active.title!==active.characterName}<span class="muted">{active.characterName}</span>{/if}</div></div><div class="actions"><Button variant="ghost" aria-label="会话设置" disabled={generating||busy||!!active.generationId} onclick={openConfig}><SlidersHorizontal size={18}/></Button><Button variant="ghost" aria-label="导出对话" onclick={()=>api.download('sessions/'+active!.id+'/export',active!.title+'.jsonl').catch(e=>error=e.message)}><Download size={18}/></Button><Button variant="ghost" aria-label="删除会话" disabled={generating||busy||!!active.generationId} onclick={()=>deleteOpen=true}><Trash2 size={18}/></Button></div></header>
    {#if error}<Notice variant="error">{error}</Notice>{/if}
-   <div class="message-log" bind:this={log} onscroll={trackScroll} role="log" aria-label="消息历史" aria-live="off"><div class="reading-column">{#each messages as m(m.id)}<article class="message" class:from-user={m.role==='user'}><div class="message-avatar" aria-hidden="true">{(m.role==='user'?active.settings.userName:active.characterName).slice(0,1)}</div><div class="message-body"><div class="message-heading"><strong>{m.role==='user'?active.settings.userName:active.characterName}</strong>{#if m.status==='pending'}<span class="status" role="status">{m.content?'正在回复':'正在构思'}</span>{/if}{#if m.status==='completed'}<Button class="message-edit" variant="ghost" aria-label={`编辑第 ${m.ordinal+1} 条消息`} disabled={generating||busy||!!active.generationId} onclick={()=>{editMessage=m;editText=m.content;edit=true;}}><Pencil size={14}/></Button>{/if}</div><p class="message-text">{m.content|| (m.status==='pending'?'…':'')}</p>{#if m.status==='error'||m.status==='aborted'}<div class="message-outcome" role="status"><span>{m.finishReason?generationNotice(m.finishReason):m.status==='aborted'?'已停止生成':'生成失败，请重试'}</span>{#if m.id===messages.at(-1)?.id}<div class="actions">{#if m.content.trim()}<Button variant="ghost" disabled={generating||busy||!!active.generationId} onclick={()=>send(false,true)}>继续回复</Button>{/if}<Button variant="ghost" disabled={generating||busy||!!active.generationId} onclick={()=>send(true)}>重新生成</Button>{#if m.finishReason==='length'}<Button variant="ghost" disabled={generating||busy||!!active.generationId} onclick={openConfig}>调整长度</Button>{/if}</div>{/if}</div>{/if}{#if m.role==='assistant'&&m.id===messages.at(-1)?.id}{#if candidatePending===m.id&&m.status==='pending'}<div class="candidate-wait" role="status"><span>接下来</span><div class="candidate-skeleton"></div></div>{:else if m.status==='completed'&&m.candidates?.length&&!generating&&!active.generationId}<section class="next-directions" aria-label="接下来"><h3>接下来</h3><div class="candidate-list">{#each m.candidates.slice(0,3) as candidate}<button type="button" class="candidate-button" disabled={busy} onclick={()=>send(false,false,{messageId:m.id,content:candidate})}><span>{candidate}</span><ArrowUpRight size={16} aria-hidden="true"/></button>{/each}</div></section>{/if}{/if}</div></article>{/each}</div></div>
-   <form class="composer" onsubmit={e=>{e.preventDefault();void send();}}><div class="composer-inner"><label class="sr-only" for="message-input">发送消息</label><textarea id="message-input" bind:value={text} placeholder="写下你的行动或对白…" rows="2" maxlength={24000} disabled={busy&&!generating} oncompositionstart={()=>composing=true} oncompositionend={()=>composing=false} onkeydown={keydown}></textarea><div class="composer-actions"><Button type="button" variant="ghost" disabled={generating||busy||!!active.generationId||!messages.some(m=>m.role==='user'&&m.status==='completed')} onclick={()=>send(true)}><RefreshCw size={16}/>重新生成</Button>{#if generating||active.generationId}<Button type="button" variant="outline" onclick={stop}><Square size={16}/>停止</Button>{:else}<Button type="submit" disabled={!text.trim()||busy}><Send size={16}/>发送</Button>{/if}</div></div></form>
+   <div class="message-log" bind:this={log} onscroll={trackScroll} role="log" aria-label="消息历史" aria-live="off">
+    <div class="reading-column">
+     {#each messages as m(m.id)}
+      <article class="message" class:from-user={m.role==='user'} aria-label={`${m.role==='user'?'你的消息':'角色回复'}，第 ${m.ordinal+1} 条`}>
+       <div class="message-body">
+        <p class="message-text">{m.content || (m.status==='pending'?'…':'')}</p>
+        {#if m.status==='pending'}<span class="status" role="status">{m.content?'正在回复':'正在构思'}</span>{/if}
+        {#if m.status==='error'||m.status==='aborted'}
+         <div class="message-outcome" role="status"><span>{m.finishReason?generationNotice(m.finishReason):m.status==='aborted'?'已停止生成':'生成失败，请重试'}</span>
+          {#if m.id===messages.at(-1)?.id}<div class="actions">
+           {#if m.content.trim()}<Button variant="ghost" disabled={generating||busy||!!active.generationId} onclick={()=>send(false,true)}>继续回复</Button>{/if}
+           {#if m.finishReason==='length'}<Button variant="ghost" disabled={generating||busy||!!active.generationId} onclick={openConfig}>调整长度</Button>{/if}
+          </div>{/if}
+         </div>
+        {/if}
+        {#if m.status!=='pending'}
+         <div class="message-tools" class:user-tools={m.role==='user'}>
+          {#if m.role==='assistant'&&m.content}<Button variant="ghost" aria-label={copied===m.id?'已复制回复':'复制回复'} onclick={()=>copyMessage(m)}>{#if copied===m.id}<Check size={16} aria-hidden="true"/>{:else}<Copy size={16} aria-hidden="true"/>{/if}</Button>{/if}
+          {#if m.status==='completed'}<Button class="message-edit" variant="ghost" aria-label={`编辑第 ${m.ordinal+1} 条消息`} disabled={generating||busy||!!active.generationId} onclick={()=>{editMessage=m;editText=m.content;edit=true;}}><Pencil size={16} aria-hidden="true"/></Button>{/if}
+          {#if m.role==='assistant'&&m.id===messages.at(-1)?.id&&messages.some(m=>m.role==='user'&&m.status==='completed')}
+           <Button variant="ghost" aria-label="重新生成" disabled={generating||busy||!!active.generationId} onclick={()=>send(true)}><RefreshCw size={16} aria-hidden="true"/></Button>
+          {/if}
+         </div>
+        {/if}
+        {#if m.role==='assistant'&&m.id===messages.at(-1)?.id}
+         {#if candidatePending===m.id&&m.status==='pending'}<div class="candidate-wait" role="status"><span>接下来</span><div class="candidate-skeleton"></div></div>
+         {:else if m.status==='completed'&&m.candidates?.length&&!generating&&!active.generationId}
+          <section class="next-directions" aria-label="接下来"><h3>接下来</h3><div class="candidate-list">{#each m.candidates.slice(0,3) as candidate}<button type="button" class="candidate-button" disabled={busy} onclick={()=>send(false,false,{messageId:m.id,content:candidate})}><span>{candidate}</span><ArrowUpRight size={16} aria-hidden="true"/></button>{/each}</div></section>
+         {/if}
+        {/if}
+       </div>
+      </article>
+     {/each}
+    </div>
+   </div>
+   <form class="composer" onsubmit={e=>{e.preventDefault();void send();}}>
+    <div class="composer-inner">
+     <label class="sr-only" for="message-input">发送消息</label>
+     <textarea id="message-input" bind:this={input} bind:value={text} placeholder="写下你的行动或对白…" rows="1" maxlength={24000} disabled={busy&&!generating} oncompositionstart={()=>composing=true} oncompositionend={()=>composing=false} onkeydown={keydown}></textarea>
+     {#if generating||active.generationId}<Button class="composer-submit" type="button" aria-label="停止" onclick={stop}><Square size={18} fill="currentColor" aria-hidden="true"/></Button>
+     {:else}<Button class="composer-submit" type="submit" aria-label="发送" disabled={!text.trim()||busy}><ArrowUp size={22} strokeWidth={2} aria-hidden="true"/></Button>{/if}
+    </div>
+   </form>
   {:else}<div class="empty chat-empty"><MessageCircle size={36}/><h2>故事从这里开始</h2><Button onclick={onlibrary}>选择角色</Button></div>{/if}
  </section>
 </div>
-<Dialog.Root bind:open={config}><Dialog.Content><Dialog.Header><Dialog.Title>会话设置</Dialog.Title></Dialog.Header>{#if configDraft}<div class="stack detail-body"><div class="field"><label for="session-title">会话名称</label><input id="session-title" bind:value={configDraft.title} maxlength="120"/></div><GenerationSettings bind:settings={configDraft.settings} {models} disabled={busy} scope="当前会话" id="session"/><div class="field"><label for="session-name">你的名字</label><input id="session-name" bind:value={configDraft.settings.userName} maxlength="80"/></div><div class="field"><label for="session-persona">你的角色设定</label><textarea id="session-persona" bind:value={configDraft.settings.persona} rows="4" maxlength="12000"></textarea></div><div class="field"><label for="session-system-prompt">系统提示</label><textarea id="session-system-prompt" bind:value={configDraft.settings.systemPrompt} rows="4" maxlength="12000"></textarea></div><h2>世界书</h2>{#each books as b}<label class="checkbox-row"><input type="checkbox" disabled={!b.enabled} checked={configDraft.bookIds.includes(b.id)} onchange={e=>toggleBook(b.id,e.currentTarget.checked)}/>{b.name}<span class="muted">{b.enabled?`${b.count} 条`:'已停用'}</span></label>{/each}{#if !books.length}<Button variant="outline" onclick={()=>config=false}>关闭</Button>{/if}</div>{/if}{#if error}<Notice variant="error">{error}</Notice>{/if}<Dialog.Footer><Button variant="outline" disabled={busy} onclick={()=>config=false}>取消</Button><Button disabled={busy} onclick={saveConfig}>保存</Button></Dialog.Footer></Dialog.Content></Dialog.Root>
+<Dialog.Root bind:open={config}><Dialog.Content><Dialog.Header><Dialog.Title>会话设置</Dialog.Title></Dialog.Header>{#if configDraft}<div class="stack detail-body"><div class="field"><label for="session-title">会话名称</label><input id="session-title" bind:value={configDraft.title} maxlength="120"/></div><GenerationSettings bind:settings={configDraft.settings} {models} disabled={busy} scope="当前会话" id="session"/><div class="field"><label for="session-name">你的名字</label><input id="session-name" bind:value={configDraft.settings.userName} maxlength="80"/></div><div class="field"><label for="session-persona">你的角色设定</label><textarea id="session-persona" bind:value={configDraft.settings.persona} rows="4" maxlength="12000"></textarea></div><div class="field"><div class="field-heading"><label for="session-system-prompt">System Prompt</label><Button type="button" variant="ghost" disabled={busy} onclick={()=>{if(configDraft)configDraft.settings.systemPrompt=DEFAULT_SETTINGS.systemPrompt;}}>恢复默认提示</Button></div><textarea id="session-system-prompt" bind:value={configDraft.settings.systemPrompt} rows="4" maxlength="12000"></textarea></div><h2>世界书</h2>{#each books as b}<label class="checkbox-row"><input type="checkbox" disabled={!b.enabled} checked={configDraft.bookIds.includes(b.id)} onchange={e=>toggleBook(b.id,e.currentTarget.checked)}/>{b.name}<span class="muted">{b.enabled?`${b.count} 条`:'已停用'}</span></label>{/each}{#if !books.length}<Button variant="outline" onclick={()=>config=false}>关闭</Button>{/if}</div>{/if}{#if error}<Notice variant="error">{error}</Notice>{/if}<Dialog.Footer><Button variant="outline" disabled={busy} onclick={()=>config=false}>取消</Button><Button disabled={busy} onclick={saveConfig}>保存</Button></Dialog.Footer></Dialog.Content></Dialog.Root>
 <Dialog.Root bind:open={edit}><Dialog.Content><Dialog.Header><Dialog.Title>编辑并创建分支</Dialog.Title></Dialog.Header><label for="edit-message">消息内容</label><textarea id="edit-message" bind:value={editText} rows="10" maxlength="24000"></textarea>{#if error}<Notice variant="error">{error}</Notice>{/if}<Dialog.Footer><Button variant="outline" disabled={busy} onclick={()=>edit=false}>取消</Button><Button disabled={busy||!editText.trim()} onclick={fork}>创建分支</Button></Dialog.Footer></Dialog.Content></Dialog.Root>
 <Confirm bind:open={deleteOpen} title={`删除会话「${active?.title??''}」？`} {busy} onconfirm={remove}/>

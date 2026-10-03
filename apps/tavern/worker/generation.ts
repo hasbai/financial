@@ -35,14 +35,14 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
   const userMessage:Message={id:crypto.randomUUID(),role:'user',content:text,status:'completed',ordinal,requestId,createdAt:messageTime};
   const assistantOrdinal=regenerate||continuing?ordinal:ordinal+1;
   const books=await ownedBooks(env,owner,JSON.parse(row.book_ids_json));
-  prompt=buildPrompt(JSON.parse(row.character_json),books.filter(b=>b.enabled).map(b=>parseBook(JSON.parse(b.book_json),b.name)),[...base,...(regenerate||continuing?[]:[userMessage])],settings(JSON.parse(row.settings_json)),capability.contextTokens,continuing?'继续上一条回复，从中断处接着写，不要重复已有内容。':'',{protocol:candidateInstruction(requestId),inputRatio:capability.inputRatio});
+  prompt=buildPrompt(JSON.parse(row.character_json),books.filter(b=>b.enabled).map(b=>parseBook(JSON.parse(b.book_json),b.name)),[...base,...(regenerate||continuing?[]:[userMessage])],settings(JSON.parse(row.settings_json)),capability.contextTokens,continuing?'继续上一条回复，从中断处接着写，不要重复已有内容。':'',{protocol:candidateInstruction(),inputRatio:capability.inputRatio});
   modelInput(settings(JSON.parse(row.settings_json)));
   const statements=[];
   if(!regenerate&&!continuing)statements.push(env.DB.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,request_id,created_at) VALUES(?,?,'user',?,'completed',?,?,?)").bind(userMessage.id,id,text,ordinal,requestId,messageTime));
   statements.push(env.DB.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,request_id,created_at) VALUES(?,?,'assistant',?,'pending',?,?,?)").bind(assistantId,id,prefix,assistantOrdinal,requestId,messageTime+1));
   await env.DB.batch(statements);
  }catch(error){await env.DB.prepare('UPDATE sessions SET generation_id=NULL,generation_until=NULL WHERE id=? AND generation_id=?').bind(id,assistantId).run();if(error instanceof Error&&error.message.includes('上下文上限'))throw new HttpError(400,error.message);throw error;}
- const abort=new AbortController(); let disconnected=false;let output=prefix;let finishReason:FinishReason='interrupted';let abortReason:FinishReason='stopped';let model='';let gatewayLogId:string|null=null;let outputTokens:number|undefined;let promptTokens:number|undefined;let candidates:string[]=[];const parser=new CandidateStream(candidateDelimiter(requestId));let tailAnnounced=false;let parserFinished=false;
+ const abort=new AbortController(); let disconnected=false;let output=prefix;let finishReason:FinishReason='interrupted';let abortReason:FinishReason='stopped';let model='';let gatewayLogId:string|null=null;let outputTokens:number|undefined;let promptTokens:number|undefined;let candidates:string[]=[];const parser=new CandidateStream(candidateDelimiter());let tailAnnounced=false;let parserFinished=false;
  const started=now;const timer=setTimeout(()=>{abortReason='timeout';abort.abort();},Math.max(0,now+175000-Date.now()));
  let checking=false;
  const stopWatcher=setInterval(()=>{if(checking)return;checking=true;void env.DB.prepare('SELECT status FROM messages WHERE id=?').bind(assistantId).first<{status:string}>().then(state=>{if(state?.status!=='pending'){abortReason='stopped';abort.abort();}}).catch(()=>{abortReason='upstream';abort.abort();}).finally(()=>checking=false);},1000);
@@ -54,7 +54,8 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
   try{
    await send({type:'start',messageId:assistantId,requestId});
    const opts=settings(JSON.parse(row.settings_json));
-   finishReason='upstream';const result=await env.AI.run('dynamic/rp',{messages:prompt.messages,stream:true,...modelInput(opts)},{...roleplayGatewayOptions(env,username,requestId),returnRawResponse:true,signal:abort.signal});
+   finishReason='upstream';const gatewayOptions=roleplayGatewayOptions(env,username,requestId);
+   const result=await env.AI.gateway(env.AIG_GATEWAY_ID).run({provider:'compat',endpoint:'chat/completions',headers:{...gatewayOptions.extraHeaders,'Content-Type':'application/json'},query:{model:'dynamic/rp',messages:prompt.messages,stream:true,...modelInput(opts)}},{gateway:gatewayOptions.gateway,signal:abort.signal});
    if(!(result instanceof Response)){finishReason='unsupported';throw new Error('nonstream');}
    gatewayLogId=result.headers.get('cf-aig-log-id');
    if(!result.ok){await inspectLimit(result,env,capability);throw new Error('upstream');}

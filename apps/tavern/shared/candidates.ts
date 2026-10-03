@@ -1,7 +1,7 @@
 const MAX_TAIL_BYTES = 2048;
-export function candidateDelimiter(requestId: string) { return `\n<|tavern_next_${requestId}|>\n`; }
-export function candidateInstruction(requestId: string) {
- return `先完成角色的正文回复。正文结束后，原样输出以下分隔符：${candidateDelimiter(requestId)}随后只输出一个 JSON 对象：{"candidates":["用户可直接发送的完整行动或台词"]}。给出 1–3 个承接本轮故事、方向不同的候选，每条 15–60 字且不超过 120 字。以用户视角写，不替用户作决定，不把尚未发生的事写成事实，不写角色的回答或抽象标签。候选尾部控制在约 384 tokens 内，与正文共用本轮输出上限；正文留出尾部空间。不要代码围栏或额外说明。`;
+export function candidateDelimiter() { return '\n[TAVERN_NEXT]\n'; }
+export function candidateInstruction() {
+ return `先完成角色的正文回复。正文结束后，另起一行原样输出 [TAVERN_NEXT]，随后给出 1–3 条承接本轮故事、方向不同的候选，每条独占一行。候选是用户可直接发送的完整行动或台词，15–60 字且不超过 120 字，以用户视角写，不替用户作决定，不把尚未发生的事写成事实，不写角色的回答或抽象标签。只用换行分隔，不加序号、JSON、代码围栏或额外说明。候选控制在约 384 tokens 内，与正文共用本轮输出上限；正文留出尾部空间。`;
 }
 export function validateCandidates(value: unknown): string[] {
  if (!Array.isArray(value)) return [];
@@ -16,10 +16,13 @@ export function validateCandidates(value: unknown): string[] {
 }
 /** A bounded delimiter parser. Potential marker prefixes are held until disambiguated. */
 export class CandidateStream {
- private buffer = ''; private tail = ''; private overflow = false;
+ private buffer = ''; private tail = ''; private overflow = false; private pendingCR = false;
  inTail = false;
- constructor(private readonly marker: string) {}
+ constructor(private readonly marker: string = candidateDelimiter()) {}
  push(text: string): string {
+  const joined = (this.pendingCR ? '\r' : '') + text;
+  this.pendingCR = joined.endsWith('\r');
+  text = (this.pendingCR ? joined.slice(0, -1) : joined).replace(/\r\n?/g, '\n');
   if (this.inTail) { this.appendTail(text); return ''; }
   this.buffer += text;
   const start = this.buffer.indexOf(this.marker);
@@ -39,10 +42,12 @@ export class CandidateStream {
  }
  finish(): { body: string; candidates: string[] } {
   // An incomplete delimiter is protocol, never persisted as story text.
-  const body = !this.inTail && !(this.buffer.length > 1 && this.marker.startsWith(this.buffer)) ? this.buffer : '';
+  const flushed = this.pendingCR ? this.push('\n') : '';
+  const body = flushed + (!this.inTail && !(this.buffer.length > 1 && this.marker.startsWith(this.buffer)) ? this.buffer : '');
   this.buffer = '';
   if (!this.inTail || this.overflow) return { body, candidates: [] };
-  try { const parsed = JSON.parse(this.tail); return { body, candidates: validateCandidates(parsed?.candidates) }; }
-  catch { return { body, candidates: [] }; }
+  const lines = this.tail.split('\n').map(line => line.trim()).filter(Boolean);
+  if (lines.some(line => /^(?:```|[{}\[\]])/.test(line))) return { body, candidates: [] };
+  return { body, candidates: validateCandidates(lines.map(line => line.replace(/^(?:[-*•]\s+|\d+[.)、]\s*)/u, ''))) };
  }
 }
