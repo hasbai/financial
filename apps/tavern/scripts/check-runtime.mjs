@@ -359,11 +359,12 @@ export async function checkRuntime(base='https://tavern.hasbai.xyz') {
   function frames(text){return text.split('\n').filter(l=>l.startsWith('data: ')).map(l=>JSON.parse(l.slice(6)));}
   try{
    const popular=await(await api('discover?source=chub&sort=popular&tags=Fantasy')).json();
-   if(popular.results.length!==12||!popular.results.every(c=>c.tags.includes('Fantasy')))throw new Error('Chub category failed');
+   if(popular.results.length!==12||popular.results.some(c=>!Number.isFinite(c.popularity))||!popular.results.every(c=>c.tags.includes('Fantasy')))throw new Error('Chub category failed');
    for(let i=1;i<popular.results.length;i++)if(popular.results[i].popularity>popular.results[i-1].popularity)throw new Error('Chub ranking failed');
    const newest=await(await api('discover?source=chub&sort=newest&tags=Fantasy')).json();
+   if(!newest.results.length||newest.results.some(c=>!Number.isFinite(Date.parse(c.createdAt))))throw new Error('Invalid newest page');
    for(let i=1;i<newest.results.length;i++)if(Date.parse(newest.results[i].createdAt)>Date.parse(newest.results[i-1].createdAt))throw new Error('Chub time sort failed');
-   const next=await(await api('discover?source=chub&sort=popular&tags=Fantasy&page=2')).json();if(next.results[0]?.id===popular.results[0]?.id)throw new Error('Chub page failed');
+   const next=await(await api('discover?source=chub&sort=popular&tags=Fantasy&page=2')).json();if(!next.results.length||next.results[0]?.id===popular.results[0]?.id)throw new Error('Chub page failed');
    const upstream=await install('chub',popular.results[0].id);if(!upstream.hasAvatar)throw new Error('Chub PNG avatar missing');
    console.log(JSON.stringify({stage:'upstream',popular:popular.results.length,newest:newest.results.length,page2:next.results.length,category:true,installed:true,avatar:true}));
    const corpus=await(await api('discover?source=theatrelm&sort=catalog')).json();if(corpus.total!==5002||corpus.results.some(c=>c.name.length>160))throw new Error('Catalog quality failed');
@@ -381,15 +382,16 @@ export async function checkRuntime(base='https://tavern.hasbai.xyz') {
    console.log(JSON.stringify({stage:'length',persisted:true,chars:partialDone.message.content.length,finishReason:'length'}));
    if(partialDone.message.content.trim()){
     await api('sessions/'+s.id,'PATCH',{settings:{...s.settings,maxTokens:4096}});
-    const continued=frames(await(await api('sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),continue:true})).text());const end=continued.find(e=>e.type==='done');if(!end||!end.message.content.startsWith(partialDone.message.content)||end.message.content.length<=partialDone.message.content.length)throw new Error('Continuation lost prefix');
+    const continued=frames(await(await api('sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),continue:true})).text());const end=continued.find(e=>e.type==='done');if(!end||end.message.status!=='completed'||end.message.finishReason!=='stop'||!end.message.content.startsWith(partialDone.message.content)||end.message.content.length<=partialDone.message.content.length)throw new Error('Continuation lost prefix');
     console.log(JSON.stringify({stage:'continuation',prefixPreserved:true,status:end.message.status,finishReason:end.message.finishReason,chars:end.message.content.length}));
-   }
+   }else throw new Error('Continuation acceptance requires nonempty saved partial');
    const result=await api('sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'继续讲述。'}),reader=result.body.getReader();let chunk='',generationId='';
    while(!generationId){const next=await reader.read();if(next.done)throw new Error('No start');chunk+=new TextDecoder().decode(next.value);for(const line of chunk.split('\n'))if(line.startsWith('data: ')){try{const e=JSON.parse(line.slice(6));if(e.type==='start')generationId=e.messageId;}catch{}}}
    await api('sessions/'+s.id+'/stop','POST',{generationId});while(!(await reader.read()).done){}const stopped=await(await api('sessions/'+s.id)).json();if(stopped.messages.at(-1).finishReason!=='stopped'||stopped.session.generationId)throw new Error('Stop reason failed');console.log(JSON.stringify({stage:'stop',reason:'stopped',lockCleared:true}));
   }finally{
-   for(const id of createdSessions)await api('sessions/'+id,'DELETE');
-   for(const id of createdCharacters)await api('characters/'+id,'DELETE');
+   const clean=[];for(const id of createdSessions){try{await api('sessions/'+id,'DELETE');clean.push(id);}catch{console.log(JSON.stringify({stage:'cleanup-pending',type:'session',id}));}}
+   for(const id of createdCharacters){try{await api('characters/'+id,'DELETE');clean.push(id);}catch{console.log(JSON.stringify({stage:'cleanup-pending',type:'character',id}));}}
+   if(clean.length!==createdSessions.length+createdCharacters.length)throw new Error('Cleanup incomplete');
    console.log(JSON.stringify({stage:'cleanup',sessions:createdSessions.length,characters:createdCharacters.length}));
   }
  });
