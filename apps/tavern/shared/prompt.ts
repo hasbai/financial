@@ -29,7 +29,7 @@ export function activateBook(book: Book, history: Pick<Message, 'content'>[], ex
   }).sort((a,b) => a.order-b.order);
 }
 export type PromptMessage = { role: 'system' | 'user' | 'assistant'; content: string };
-export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], settings: Settings, contextTokens: number) {
+export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], settings: Settings, contextTokens: number, continuationInstruction = '') {
   const card = parseCard(raw), c = card.data;
   const char = c.nickname || c.name, expand = (text: string, original = '') => macros(text, char, settings.userName, original);
   const activeHistory = history.filter(m => m.status === 'completed');
@@ -41,7 +41,7 @@ export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], 
     expand(c.description), expand(c.personality), expand(c.scenario), ...after, c.mes_example ? `示例对白：\n${expand(c.mes_example)}` : ''].filter(Boolean).join('\n\n');
   const post = expand(c.post_history_instructions, '保持角色设定与故事连续性。');
   const budget = contextTokens - settings.maxTokens - 256;
-  let used = estimateTokens(system) + estimateTokens(post) + 16;
+  let used = estimateTokens(system) + estimateTokens(post) + (continuationInstruction ? estimateTokens(continuationInstruction) + 8 : 0) + 16;
   if (used > budget) throw new Error('角色与世界书设定超过上下文上限');
   const turns: Message[][] = [];
   for (const message of activeHistory) { if (message.role === 'user' || !turns.length) turns.push([]); turns.at(-1)!.push(message); }
@@ -52,6 +52,7 @@ export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], 
     used += cost; selected.unshift(turns[i]);
   }
   const messages: PromptMessage[] = [{ role: 'system', content: system }, ...selected.flat().map(m => ({ role: m.role, content: expand(m.content) }))];
+  if (continuationInstruction) messages.push({role:'user',content:continuationInstruction});
   if (post) messages.push({role:'system',content:post});
   return { messages, estimatedTokens: used, activatedEntries: entries.map(e => e.id) };
 }

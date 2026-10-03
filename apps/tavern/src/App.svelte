@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { createBrowserClient } from "@hasbai/auth";
   import { Button } from "@hasbai/ui/button";
+  import BrandMark from "./lib/BrandMark.svelte";
   import Tavern from "./Tavern.svelte";
   import { createApi } from "./lib/api";
   import type { Api } from "./lib/api";
@@ -57,7 +58,7 @@
 
 {#if authenticated && api}<Tavern {api} {logout} />{:else}
   <main class="login">
-    <div class="login-mark">T</div>
+    <div class="login-mark"><BrandMark size={42}/></div>
     <p class="eyebrow">北极小站</p>
     <h1>Tavern</h1>
     {#if loading}<p role="status">正在恢复登录…</p>{:else}<Button

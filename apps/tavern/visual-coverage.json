@@ -23,7 +23,8 @@
       "source": "src/pages/Discover.svelte",
       "scenarios": [
         "discover",
-        "page-states"
+        "page-states",
+        "filtered"
       ]
     },
     {
@@ -40,7 +41,9 @@
         "chat",
         "stop",
         "states",
-        "page-states"
+        "page-states",
+        "length",
+        "long"
       ]
     },
     {
@@ -194,6 +197,57 @@
             "settings-loading.png",
             "discover-loading.png",
             "chat-loading.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "filtered",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/tavern.spec.ts",
+          "test": "discovery ranking categories tags and source capabilities",
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "discover-filtered.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "length",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/tavern.spec.ts",
+          "test": "partial reply survives reopening and explicit continuation appends saved content",
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "chat-length.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "long",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/tavern.spec.ts",
+          "test": "long chat reading width and scroll position",
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "chat-long.png"
           ]
         }
       ]
