@@ -9,22 +9,108 @@
   ],
   "baselineTemplate": "e2e/__screenshots__/linux-ci/{project}/{snapshot}",
   "pages": [
-    { "source": "src/routes/+page.svelte", "scenarios": ["reading"] },
-    { "source": "src/routes/articles/+page.svelte", "scenarios": ["reading"] },
-    { "source": "src/routes/articles/[title]/+page.svelte", "scenarios": ["reading"] },
-    { "source": "src/routes/notes/+page.svelte", "scenarios": ["reading"] },
-    { "source": "src/routes/notes/[sequence=positiveInteger]/+page.svelte", "scenarios": ["reading"] },
-    { "source": "src/routes/timeline/+page.svelte", "scenarios": ["reading"] },
-    { "source": "src/routes/about/+page.svelte", "scenarios": ["reading"] },
-    { "source": "src/routes/tags/[tag]/+page.svelte", "scenarios": ["reading"] },
-    { "source": "src/routes/[category]/[title]/+page.svelte", "exemption": "Legacy category URLs issue a permanent redirect and have no rendered page; the redirect is asserted in the reading test." },
-    { "source": "src/routes/contents/[id]/+page.svelte", "exemption": "The shared UUID entry redirects to its canonical article or note URL; the redirect is asserted in the reading test." },
-    { "source": "src/routes/auth/callback/+page.svelte", "exemption": "Auth0 callback requires provider redirect and PKCE state; verified separately with production identity." },
-    { "source": "src/routes/studio/+page.svelte", "scenarios": ["writing"] },
-    { "source": "src/routes/studio/new/+page.svelte", "scenarios": ["writing"] },
-    { "source": "src/routes/studio/[id]/+page.svelte", "scenarios": ["writing"] },
-    { "source": "src/routes/studio/notes/new/+page.svelte", "scenarios": ["writing"] },
-    { "source": "src/routes/studio/notes/[id]/+page.svelte", "scenarios": ["writing"] }
+    {
+      "source": "src/routes/+page.svelte",
+      "scenarios": [
+        "reading"
+      ]
+    },
+    {
+      "source": "src/routes/articles/+page.svelte",
+      "scenarios": [
+        "reading"
+      ]
+    },
+    {
+      "source": "src/routes/articles/[title]/+page.svelte",
+      "scenarios": [
+        "reading"
+      ]
+    },
+    {
+      "source": "src/routes/notes/+page.svelte",
+      "scenarios": [
+        "reading"
+      ]
+    },
+    {
+      "source": "src/routes/notes/[sequence=positiveInteger]/+page.svelte",
+      "scenarios": [
+        "reading"
+      ]
+    },
+    {
+      "source": "src/routes/timeline/+page.svelte",
+      "scenarios": [
+        "reading"
+      ]
+    },
+    {
+      "source": "src/routes/tags/[tag]/+page.svelte",
+      "scenarios": [
+        "reading"
+      ]
+    },
+    {
+      "source": "src/routes/[category]/[title]/+page.svelte",
+      "exemption": "Legacy category URLs issue a permanent redirect and have no rendered page; the redirect is asserted in the reading test."
+    },
+    {
+      "source": "src/routes/contents/[id]/+page.svelte",
+      "exemption": "The shared UUID entry redirects to its canonical article or note URL; the redirect is asserted in the reading test."
+    },
+    {
+      "source": "src/routes/auth/callback/+page.svelte",
+      "exemption": "Auth0 callback requires provider redirect and PKCE state; verified separately with production identity."
+    },
+    {
+      "source": "src/routes/studio/+page.svelte",
+      "scenarios": [
+        "writing"
+      ]
+    },
+    {
+      "source": "src/routes/studio/new/+page.svelte",
+      "scenarios": [
+        "writing"
+      ]
+    },
+    {
+      "source": "src/routes/studio/[id]/+page.svelte",
+      "scenarios": [
+        "writing"
+      ]
+    },
+    {
+      "source": "src/routes/studio/notes/new/+page.svelte",
+      "scenarios": [
+        "writing"
+      ]
+    },
+    {
+      "source": "src/routes/studio/notes/[id]/+page.svelte",
+      "scenarios": [
+        "writing"
+      ]
+    },
+    {
+      "source": "src/routes/[slug=pageSlug]/+page.svelte",
+      "scenarios": [
+        "pages"
+      ]
+    },
+    {
+      "source": "src/routes/studio/pages/new/+page.svelte",
+      "scenarios": [
+        "pages"
+      ]
+    },
+    {
+      "source": "src/routes/studio/pages/[id]/+page.svelte",
+      "scenarios": [
+        "pages"
+      ]
+    }
   ],
   "scenarios": [
     {
@@ -34,8 +120,23 @@
         {
           "spec": "e2e/blog.spec.ts",
           "test": "SSR, direct Data API navigation, skeleton, canonical URLs and reading states",
-          "projects": ["iphone", "desktop"],
-          "snapshots": ["home.png", "articles.png", "article.png", "article-dark.png", "notes.png", "note.png", "timeline.png", "about.png", "tag.png", "empty.png", "error.png"]
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "home.png",
+            "articles.png",
+            "article.png",
+            "article-dark.png",
+            "notes.png",
+            "note.png",
+            "timeline.png",
+            "about.png",
+            "tag.png",
+            "empty.png",
+            "error.png"
+          ]
         }
       ]
     },
@@ -46,8 +147,36 @@
         {
           "spec": "e2e/blog.spec.ts",
           "test": "editor writes articles and titleless notes through Data API",
-          "projects": ["iphone", "desktop"],
-          "snapshots": ["studio.png", "editor.png", "note-editor.png"]
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "studio.png",
+            "editor.png",
+            "note-editor.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pages",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/blog.spec.ts",
+          "test": "standalone pages stay out of feeds and support editable paths",
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "privacy.png",
+            "privacy-dark.png",
+            "terms.png",
+            "pages-studio.png",
+            "page-editor.png"
+          ]
         }
       ]
     }

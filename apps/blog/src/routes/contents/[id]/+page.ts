@@ -1,5 +1,5 @@
 import { error, redirect } from "@sveltejs/kit";
-import { articlePath, notePath } from "$lib/content";
+import { articlePath, notePath, pagePath } from "$lib/content";
 import { publicRepository } from "$lib/public-api";
 
 export async function load({ params }: { params: { id: string } }) {
@@ -16,6 +16,11 @@ export async function load({ params }: { params: { id: string } }) {
     const note = await repo.note(content.id);
     if (!note) error(404, "内容不存在");
     redirect(308, notePath(note));
+  }
+  if (content.kind === "page") {
+    const page = await repo.page(content.id);
+    if (!page) error(404, "内容不存在");
+    redirect(308, pagePath(page));
   }
   error(404, "内容不存在");
 }

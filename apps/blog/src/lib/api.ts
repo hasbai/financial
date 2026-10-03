@@ -1,7 +1,7 @@
 import { env } from "$env/dynamic/public";
 import { createDataClient, dataApiUrl } from "@hasbai/data";
-import type { Article, Content, Note, Tag } from "./content";
-import { articleSchema, noteSchema } from "./content";
+import type { Article, Content, Note, Page, Tag } from "./content";
+import { articleSchema, noteSchema, pageSchema } from "./content";
 
 const articleSummary =
   "id,kind,sequence,title,slug,legacy_path,excerpt,cover_id,status,published_at,created_at,updated_at";
@@ -63,6 +63,19 @@ export function repository(
           .lte("published_at", new Date().toISOString());
       return read<Note[]>(q.range((page - 1) * limit, page * limit));
     },
+    async pages({ page = 1, limit = 12 }: { page?: number; limit?: number } = {}) {
+      return read<Page[]>(db.from("page")
+        .select("id,kind,title,slug,excerpt,cover_id,status,published_at,created_at,updated_at")
+        .order("updated_at", { ascending: false }).order("id")
+        .range((page - 1) * limit, page * limit));
+    },
+    page: (id: string) => read<Page | null>(
+      db.from("page").select("*").eq("id", id).maybeSingle(),
+    ),
+    pageBySlug: (slug: string) => read<Page | null>(
+      db.from("page").select("*").eq("slug", slug)
+        .eq("status", "published").lte("published_at", new Date().toISOString()).maybeSingle(),
+    ),
     content: (id: string) =>
       read<Content | null>(
         db
@@ -153,7 +166,23 @@ export function repository(
       if (!rows.length) throw new Error("手记已被更新，请重新打开后编辑");
       return rows[0];
     },
-    async remove(kind: "article" | "note", id: string, updatedAt: string) {
+    async savePage(value: unknown, id?: string, updatedAt?: string) {
+      const fields = pageSchema.parse(value);
+      const payload = { ...fields, updated_at: new Date().toISOString(),
+        ...(id ? {} : { id: crypto.randomUUID() }) };
+      const q = id
+        ? db.from("page").update(payload).eq("id", id).eq("updated_at", updatedAt!).select("*")
+        : db.from("page").insert(payload).select("*");
+      const result = await q;
+      if (result.error) {
+        if (result.error.code === "23505") throw new Error("页面路径已被使用，请换一个路径");
+        throw new Error(result.error.message);
+      }
+      const rows = result.data as Page[];
+      if (!rows.length) throw new Error("页面已被更新，请重新打开后编辑");
+      return rows[0];
+    },
+    async remove(kind: "article" | "note" | "page", id: string, updatedAt: string) {
       const rows = await read<{ id: string }[]>(
         db
           .from(kind)

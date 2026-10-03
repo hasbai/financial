@@ -6,7 +6,7 @@
   import { excerptFromMarkdown, imagePath, notePath, type Note } from "$lib/content";
   import MarkdownEditor from "./MarkdownEditor.svelte";
   import { Button } from "@hasbai/ui/button";
-  import { ArrowLeft, ArrowUpRight, ImagePlus, X } from "@lucide/svelte";
+  import { ArrowLeft, ImagePlus, X } from "@lucide/svelte";
 
   let { id }: { id?: string } = $props();
   const auth = getContext<BlogAuth>("blog-auth");
@@ -113,7 +113,7 @@
     <Button variant="ghost" href="/studio"><ArrowLeft size={16} />编辑室</Button>
     <div class="flex flex-wrap items-center gap-2">
       <span class="meta" role="status">{saving ? "正在保存…" : dirty ? "未保存" : notice || (status === "published" ? "已发布" : "草稿")}</span>
-      {#if original?.status === "published"}<Button variant="ghost" href={notePath(original)} target="_blank">查看<ArrowUpRight size={16} /></Button>{/if}
+      {#if original?.status === "published"}<Button variant="ghost" href={notePath(original)} target="_blank">查看</Button>{/if}
       <Button variant="outline" disabled={loading || saving || uploading} onclick={() => save("draft")}>{status === "published" ? "撤回为草稿" : "保存草稿"}</Button>
       <Button disabled={loading || saving || uploading} onclick={() => save("published")}>{status === "published" ? "更新手记" : "发布手记"}</Button>
     </div>

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { articlePath, articleSchema, excerptFromMarkdown, notePath, noteSchema } from "./content";
+import { articlePath, articleSchema, excerptFromMarkdown, notePath, noteSchema, pagePath, pageSchema, pageSlugSchema, reservedPageSlugs } from "./content";
 import { renderMarkdown } from "./markdown";
 import { boundedImage, imageType, maxImageBytes } from "./images";
 it("preserves public content structure while rejecting executable HTML and links", async () => {
@@ -46,4 +46,14 @@ it("bounds chunked uploads even without a content-length header", async () => {
       } as RequestInit),
     ),
   ).rejects.toThrow("10 MB");
+});
+
+it("keeps pages on editable root paths and rejects reserved or noncanonical paths", () => {
+  expect(pagePath({ slug: "privacy" })).toBe("/privacy");
+  for (const slug of [...reservedPageSlugs, "About", "/about", "a/b", "..", "a?b"])
+    expect(pageSlugSchema.safeParse(slug).success).toBe(false);
+  const fields = { title: "隐私政策", slug: "privacy", excerpt: "", markdown: "政策正文", cover_id: null, status: "published", published_at: "2026-09-23T00:00:00Z" };
+  expect(pageSchema.safeParse(fields).success).toBe(true);
+  expect(pageSchema.safeParse({ ...fields, markdown: "" }).success).toBe(false);
+  expect(pageSchema.safeParse({ ...fields, title: " " }).success).toBe(false);
 });

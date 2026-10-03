@@ -18,5 +18,5 @@
     <time datetime={note.published_at ?? ""}>{dateLabel(note.published_at)}</time>
   </header>
   <div class="note-sheet"><div class="prose">{@html html}</div></div>
-  <div class="reader-end"><a href="/notes">← 返回手记</a><a href={"/studio/notes/" + note.id}>编辑手记 ↗</a></div>
+  <div class="reader-end"><a href="/notes">← 返回手记</a><a href={"/studio/notes/" + note.id}>编辑手记</a></div>
 </article>

@@ -12,7 +12,7 @@ export type ImageRecord = {
 };
 export type Content = {
   id: string;
-  kind: "article" | "note";
+  kind: "article" | "note" | "page";
   excerpt: string;
   markdown: string;
   cover_id: string | null;
@@ -32,11 +32,25 @@ export type Note = Content & {
   kind: "note";
   sequence: number;
 };
+export type Page = Content & {
+  kind: "page";
+  title: string;
+  slug: string;
+};
 export type Writing = Article | Note;
+export type StudioContent = Writing | Page;
+export const reservedPageSlugs = [
+  "articles", "notes", "timeline", "tags", "contents", "studio",
+  "auth", "api", "images", "assets",
+];
 
 export const slugSchema = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-]{0,159}$/, "网址只使用小写字母、数字和连字符");
+export const pageSlugSchema = slugSchema.refine(
+  (slug) => !reservedPageSlugs.includes(slug),
+  "该路径已用于网站功能，请换一个路径",
+);
 const commonFields = {
   excerpt: z.string().max(600),
   markdown: z.string().max(1048576),
@@ -59,6 +73,14 @@ export const articleSchema = z
     ...commonFields,
   })
   .superRefine(publicationCheck);
+export const pageSchema = z.object({
+  title: z.string().trim().min(1, "请填写标题").max(240),
+  slug: pageSlugSchema,
+  ...commonFields,
+}).superRefine(publicationCheck);
+export function pagePath(page: Pick<Page, "slug">) {
+  return `/${encodeURIComponent(page.slug)}`;
+}
 export const noteSchema = z.object(commonFields).superRefine(publicationCheck);
 
 export function articlePath(article: Pick<Article, "slug">) {
