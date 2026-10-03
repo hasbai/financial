@@ -1,6 +1,7 @@
 import { identity, authenticatedUsername, AuthError } from './auth';
 import { body, boundedBody, HttpError, json } from './http';
 import { discover, download } from './discovery';
+import { capabilities, modelInput, modelOptions } from './models';
 import { generate } from './generation';
 import { character, currentMessages, getMessages, getSession, installCard, jsonFile, ownedBooks, session, settings, userSettings, worldbook, type BookRow, type CharacterRow } from './store';
 import { MAX_FILE_BYTES, object, parseBook, parseCard, string } from '../shared/cards';
@@ -14,9 +15,10 @@ export default {
    if(!p.startsWith('/api/'))return env.ASSETS.fetch(request);
    const user=await identity(request,env),owner=user.sub;
    if(method!=='GET' && request.headers.has('Origin') && request.headers.get('Origin')!==url.origin)throw new HttpError(403,'请求来源无效');
+   if(p==='/api/models' && method==='GET')return json({models:await modelOptions(env)});
    if(p==='/api/settings'){
     if(method==='GET')return json(await userSettings(env,owner));
-    if(method==='PUT'){const data=settings(await body(request));await env.DB.prepare('INSERT INTO settings(owner,settings_json) VALUES(?,?) ON CONFLICT(owner) DO UPDATE SET settings_json=excluded.settings_json').bind(owner,JSON.stringify(data)).run();return json(data);}
+    if(method==='PUT'){const data=settings(await body(request));modelInput(data,await capabilities(env));await env.DB.prepare('INSERT INTO settings(owner,settings_json) VALUES(?,?) ON CONFLICT(owner) DO UPDATE SET settings_json=excluded.settings_json').bind(owner,JSON.stringify(data)).run();return json(data);}
    }
    if(p==='/api/discover' && method==='GET'){
     const query=(url.searchParams.get('q')??'').trim();const page=Number(url.searchParams.get('page')??'1');
@@ -101,7 +103,7 @@ export default {
     }
     if(!chat[2]&&method==='PATCH'){
      const data=await body(request);if(row.generation_id&&(row.generation_until??0)>Date.now())throw new HttpError(409,'请先停止生成');
-     const opts=data.settings?settings(data.settings):JSON.parse(row.settings_json),ids=data.bookIds??JSON.parse(row.book_ids_json);await ownedBooks(env,owner,ids);const title=data.title===undefined?row.title:string(data.title).trim();if(!title||title.length>120)throw new HttpError(400,'会话名称无效');
+     const opts=data.settings?settings(data.settings):settings(JSON.parse(row.settings_json)),ids=data.bookIds??JSON.parse(row.book_ids_json);await ownedBooks(env,owner,ids);if(data.settings)modelInput(opts,await capabilities(env));const title=data.title===undefined?row.title:string(data.title).trim();if(!title||title.length>120)throw new HttpError(400,'会话名称无效');
      const result=await env.DB.prepare('UPDATE sessions SET settings_json=?,book_ids_json=?,title=? WHERE id=? AND owner=? AND (generation_id IS NULL OR generation_until<=?) AND (SELECT count(*) FROM worldbooks WHERE owner=? AND id IN(SELECT value FROM json_each(?)))=?').bind(JSON.stringify(opts),JSON.stringify(ids),title,row.id,owner,Date.now(),owner,JSON.stringify(ids),(ids as string[]).length).run();if(!result.meta.changes)throw new HttpError(409,'请先停止生成');return json(session(await getSession(env,owner,row.id),true));
     }
     if(!chat[2]&&method==='DELETE'){if(row.generation_id&&(row.generation_until??0)>Date.now())throw new HttpError(409,'请先停止生成');const result=await env.DB.prepare('DELETE FROM sessions WHERE id=? AND owner=? AND (generation_id IS NULL OR generation_until<=?)').bind(row.id,owner,Date.now()).run();if(!result.meta.changes)throw new HttpError(409,'会话状态已改变，请重试');return json({ok:true});}

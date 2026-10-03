@@ -1,12 +1,12 @@
 # Tavern 模型设置与单次生成续聊候选
 
-2026-10-03。状态：规划完成，功能待实施。入口为 `apps/tavern`，从 [总方案](TAVERN.md) 和 [交付状态](TAVERN-PROGRESS.md) 进入。本次目标是减少回复等待，完整提供参数设置，并在每轮正常回复后提供最多三条可直接发送的后续输入。
+2026-10-03。状态：代码已实现，本地验收通过，PR/生产验收进行中。入口为 `apps/tavern`，从 [总方案](TAVERN.md) 和 [交付状态](TAVERN-PROGRESS.md) 进入。本次目标是减少回复等待，完整提供参数设置，并在每轮正常回复后提供最多三条可直接发送的后续输入。
 
 整体数据流与预算图见 [HTML 架构图](TAVERN-ARCHITECTURE.html)。
 
 ## 当前实现与目标差异
 
-当前 `shared/types.ts` 的默认值为 temperature 0.9、maxTokens 4096；用户设置和会话快照分别保存在 D1 JSON 中。`worker/generation.ts` 固定调用 `AI.run('dynamic/rp', ...)`，只传温度和输出上限。流式解析过滤思考内容，但没有向上游发送关闭思考参数。`Settings.svelte` 只有 persona、系统提示、温度和长度；`Chat.svelte` 没有续聊候选。
+已实现共享参数默认值/校验与会话快照补齐、全局/会话参数组件、同次候选尾部与 D1 持久化、点击原文发送及草稿保留。实际 RP 为单一 Cloudflare 托管 `@cf/google/gemma-4-26b-a4b-it`（不是本地服务），已核实官方 schema 的 `chat_template_kwargs.enable_thinking`、Top P、频率/存在惩罚；Top K 不支持，控件禁用且服务端拒绝非零覆盖。RP 版本 `2230f986-c794-4ac8-9a0f-a1cbbbf35f01` 已配置 retries=0、timeout=170000。以下为实现契约，发布与真实验收证据持续更新在交付状态。
 
 现有正常完成、停止、续写、重新生成、分支和预算校验保留。本地上游模型较慢，新增候选必须与正文共用一次 roleplay 生成和预填充；不安排第二次候选推理。尾部解析失败不能把正常正文改成失败。
 
@@ -69,7 +69,7 @@
 
 ## 上游反馈驱动的短上下文预算
 
-当前实现仍以 `CONTEXT_TOKENS=16000` 固定预算，后续需替换为路由能力驱动的预算协商。16K 和 32K 是需支持的短窗口案例，不是全局写死的模型能力。
+已移除 `CONTEXT_TOKENS=16000` 固定预算。运行时以 Gateway 路由版本、官方模型 schema 和 Workers AI `context_window` 读取能力，D1 缓存5分钟，刷新以 CAS 防止迟到旧版本覆盖；路由变更为未验证的模型/拓扑时明确拒绝生成，不猜参数。现有模型官方反馈为256000；16K/32K为自动化短窗口用例。凭据仅作服务端 Secret，用于能力读取，身份流程依旧直接验签 JWT。16K 和 32K 是需支持的短窗口案例，不是全局写死的模型能力。
 
 可信上限来自上游/路由模型配置、能力端点明确给出的 `context_length` / `max_model_len`，或可归因于实际模型的明确 token-limit 错误。服务端按路由版本和实际模型保存已验证能力/来源/有效期，路由切换或模型能力变化后失效；多可达模型使用共同安全上限。若只有某一次响应的模型标识，不能假定路由以后总是该模型。
 
@@ -97,12 +97,14 @@
 
 真实 JWT/API 验收单列：RP 默认请求确实关闭思考，开启后也确实可切换；受支持参数实际生效；回复正常完成后候选可生成、点击原文进入下一轮、会话恢复一致。比较相同有限任务关闭/开启时首个正文字符耗时及可用 usage，但不把一次快响应、缺少 reasoning_content 或模型口头承诺当作关闭证明。正文首字、正文完成、候选就绪分别计时；验收同一轮只有一次模型调用/一次预填充，候选仅增加尾部解码。
 
-以上模型参数、候选与上下文目标仅完成规划，尚未实施；Gateway 日志与 JWT 名称修复单独记录交付状态。
+代码实现和本地自动化/视觉验收已推进；PR、部署与真实模型效果需单列证明，不能仅以静态检查宣称上线。
 
 ## 官方契约依据与待核实项
 
 - [Cloudflare 动态路由调用](https://developers.cloudflare.com/ai-gateway/features/dynamic-routing/usage/)：使用固定逻辑路由，实际模型由网关决定；应用选择项不能等价于任意上游模型输入。
 - [Cloudflare 路由配置](https://developers.cloudflare.com/ai-gateway/features/dynamic-routing/json-configuration/)：路由可以有多分支、超时和重试，因此能力验证覆盖全部可达模型，不只验证一次返回模型。
-- [OpenRouter 参数](https://openrouter.ai/docs/api_reference/parameters)、[思考参数](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens)：作为供应商参数差异参考，隐藏 reasoning 和关闭 reasoning 需区分。**尚未确认 RP 的实际供应商，不据此直接采用其参数格式。**
+- [OpenRouter 参数](https://openrouter.ai/docs/api_reference/parameters)、[思考参数](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens)：作为供应商参数差异参考，隐藏 reasoning 和关闭 reasoning 需区分。当前 RP 已确认是 Workers AI Gemma 4，实际按其官方 schema 映射，不采用 OpenRouter 格式。
 
 实施时读取真实 RP 路由配置和供应商官方契约并验证透传、参数范围、关闭/开启思考、结构化输出及候选延迟；这些证据尚缺，不影响本轮完成方案，但不能宣称功能已上线。
+
+- [Workers AI 关闭 Gemma 思考示例](https://developers.cloudflare.com/workers-ai/get-started/workers-wrangler/)、[模型参数与窗口](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)：参数映射与能力依据；运行时仍检查真实 schema，缺失布尔关闭字段时拒绝生成。

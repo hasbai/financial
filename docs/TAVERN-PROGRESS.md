@@ -77,3 +77,11 @@ Auth0 Action 已先发布并回读匹配；真实新 Token包含“时阅”及�
 | 测试数据 | 仅删除本次创建的临时会话与角色，原用户数据保留 |
 
 Gateway 后台的同请求三个metadata及payload禁存尚待直接核实。本机Wrangler OAuth与受限Agent Token读取Gateway管理API返回403，用户正在补齐读取权限；原始响应未提供cf-aig-log-id，因此以requestId/eventId及时间核对。未将权限失败算作网关未记录，未将应用生成成功算作metadata存储验收通过。
+
+## 模型与同次候选实施中（2026-10-03）
+
+共享参数默认值/校验、全局与会话设置、默认关闭思考、一次生成正文和候选、D1 nullable候选元数据、刷新和UUID回放、候选原文发送与草稿保留已实现。移除固定窗口，通过上游明确context_window、route version、schema、五分钟缓存/CAS与归属明确的超限反馈校正预算，未知能力拒绝推理；16K/32K用例保留当前输入及最近完整问答，按预算裁世界书/旧整轮，不额外摘要调用。
+
+Gateway Read已实证：日志`c09aa204a95e7c5cd4b525557e422d87b6a66f72e32d5d76f664c61165dba2cf`包含三个正确metadata，request/response为空，独立正文接口404/7002。当前RP唯一模型为Workers AI Gemma4，官方API返回context_window=256000，schema支持布尔enable_thinking和Top P/惩罚，未支持Top K；不把成功usage当窗口。仅RP改为零重试/170秒超时并回读，版本2230f986-c794-4ac8-9a0f-a1cbbbf35f01，其他路由保持原配置。沿用用户授权的AgentToken配置服务端能力Secret，不进入浏览器。
+
+隔离本地D1五个迁移通过、聚焦生成/协议/能力检查通过；固定Linux桌面/iPhone WebKit28项流程与82张截图通过，受影响截图已审阅导入；保留三张与本次UI无关的原基线（1/6/24像素差低于既有50容差）。相关核心/协议/能力/生成69项通过，聚焦Worker类型和Svelte0错误/0警告。两次初始视觉失败已分辨为测试中隐藏主题按钮与候选扩展阅读区的212px跟随问题，修复后原≤1px断言通过，未放宽容差。本地真实Worker探针受remote binding/网络超时影响，未计作真实模型验收；生产0005兼容迁移已成功（3条语句，旧记录与ID保留），PR/CI、自动发布和真实模型仍待完成。
