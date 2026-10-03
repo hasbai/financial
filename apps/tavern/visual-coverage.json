@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "project": "tavern",
+  "inventory": {
+    "root": "src/pages",
+    "suffix": ".svelte"
+  },
+  "baselineDirectories": [
+    "e2e/__screenshots__/linux-ci/iphone",
+    "e2e/__screenshots__/linux-ci/desktop"
+  ],
+  "baselineTemplate": "e2e/__screenshots__/linux-ci/{project}/{snapshot}",
+  "pages": [
+    {
+      "source": "src/pages/Library.svelte",
+      "scenarios": [
+        "library",
+        "states",
+        "page-states"
+      ]
+    },
+    {
+      "source": "src/pages/Discover.svelte",
+      "scenarios": [
+        "discover",
+        "page-states"
+      ]
+    },
+    {
+      "source": "src/pages/Worldbooks.svelte",
+      "scenarios": [
+        "settings",
+        "states",
+        "page-states"
+      ]
+    },
+    {
+      "source": "src/pages/Chat.svelte",
+      "scenarios": [
+        "chat",
+        "stop",
+        "states",
+        "page-states"
+      ]
+    },
+    {
+      "source": "src/pages/Settings.svelte",
+      "scenarios": [
+        "settings",
+        "page-states"
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "library",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/tavern.spec.ts",
+          "test": "library and character editor",
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "library.png",
+            "character-detail.png",
+            "character-invalid.png",
+            "character-create.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "discover",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/tavern.spec.ts",
+          "test": "search and install real adapter contract",
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "discover.png",
+            "search-results.png",
+            "installed.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "settings",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/tavern.spec.ts",
+          "test": "worldbooks settings and dark mode",
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "worldbooks.png",
+            "worldbook-editor.png",
+            "settings.png",
+            "library-dark.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chat",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/tavern.spec.ts",
+          "test": "chat stream editing export and keyboard",
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "chat.png",
+            "chat-reply.png",
+            "chat-settings.png",
+            "chat-edit.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "states",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/tavern.spec.ts",
+          "test": "empty error and loading states",
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "library-empty.png",
+            "worldbooks-empty.png",
+            "chat-empty.png",
+            "library-error.png",
+            "library-loading.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stop",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/tavern.spec.ts",
+          "test": "interrupted stream can be stopped and recovered",
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "chat-interrupted.png",
+            "chat-stopped.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "page-states",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/tavern.spec.ts",
+          "test": "every page dark error loading and keyboard states",
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "worldbooks-dark.png",
+            "settings-dark.png",
+            "discover-dark.png",
+            "chat-dark.png",
+            "worldbooks-error.png",
+            "settings-error.png",
+            "discover-error.png",
+            "chat-error.png",
+            "worldbooks-loading.png",
+            "settings-loading.png",
+            "discover-loading.png",
+            "chat-loading.png"
+          ]
+        }
+      ]
+    }
+  ]
+}

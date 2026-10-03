@@ -23,3 +23,5 @@ backups/
 worker-configuration.d.ts
 
 worker-env.d.ts
+
+.local-tavern/

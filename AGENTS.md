@@ -55,3 +55,7 @@ CI 等待统一使用 `node scripts/wait-ci.mjs <owner/repo> <run-id> <full-sha>
 ## Zboard 应用
 
 `apps/zboard` 为 Svelte 5 SPA / 共享 Luma neutral UI / Auth0 / Worker / D1，业务说明见 `apps/zboard/README.md`。财务三表及 Neon 限制不适用于 zboard。用户确认项目未上线且无旧业务数据，首次 Auth0 登录创建禁用用户，管理员分配权限与节点，不实现旧账户关联。认证必须使用独立 zboard API audience。D1 保留原资源，零流量不上报落库；不得把服务端配置或私钥用于生成用户订阅。`Zboard` workflow 的 zboard-check/zboard-visual 同样必须通过，本地生成并审阅 zboard 截图；本地禁止测试/typecheck/build。发布沿用 Cloudflare Workers Builds，不另行手动重复部署。
+
+## Tavern 应用
+
+`apps/tavern`：私人角色扮演对话，Svelte 5 SPA / 共享 Luma / Auth0 独立 audience / Worker / D1 / 私有 R2。财务三表限制不适用。模型由服务端固定 AI Gateway `dynamic/rp`，不得接受前端指定模型或密钥；全部会话由服务端持久化，角色扩展脚本不执行。方案见 `docs/TAVERN.md`。Tavern workflow 的 `tavern-check`/`tavern-visual` 必须通过；`pnpm visual:tavern --all` 在同一固定 Linux 镜像生成审阅基线，交付沿用主代理修改提交、新子代理 PR/CI/squash、Workers Builds 自动部署与线上核验。公开角色目录同步采用固定 revision/完整校验/原子切换，不将失败的上游结果伪装成搜索成功。
