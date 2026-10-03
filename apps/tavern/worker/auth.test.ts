@@ -1,6 +1,6 @@
 import { it, expect, vi, afterEach } from "vitest";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
-import { identity, authenticatedUsername, ROLE_CLAIM, USERNAME_CLAIM } from "./auth";
+import { identity, authenticatedUsername, EMAIL_CLAIM, ROLE_CLAIM, USERNAME_CLAIM } from "./auth";
 afterEach(() => vi.unstubAllGlobals());
 it("verifies signature, issuer, audience, expiry and grants admin only from the signed claim", async () => {
   const keys = await generateKeyPair("RS256");
@@ -18,8 +18,9 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
     aud = env.AUTH0_AUDIENCE as string,
     exp = "1h",
     issuer = "https://hasbai.eu.auth0.com/",
+    role: unknown = ["member", "superadmin"],
   ) =>
-    new SignJWT({ [ROLE_CLAIM]: "superadmin", [USERNAME_CLAIM]: "月石" })
+    new SignJWT({ [ROLE_CLAIM]: role, [EMAIL_CLAIM]: "owner@example.test", [USERNAME_CLAIM]: "月石" })
       .setProtectedHeader({ alg: "RS256", kid: "test" })
       .setSubject("auth0|test")
       .setIssuer(issuer)
@@ -32,6 +33,8 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
       headers: { Authorization: "Bearer " + token },
     });
   const verified=await identity(req(await sign()),env);
+  expect(USERNAME_CLAIM).toBe("username"); expect(ROLE_CLAIM).toBe("_roles"); expect(EMAIL_CLAIM).toBe("email");
+  expect(verified.email).toBe("owner@example.test");
   expect(verified.admin).toBe(true);expect(verified.username).toBe("月石");
   expect(authenticatedUsername(verified)).toBe("月石");
   for (const token of [
@@ -45,6 +48,10 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
     });
   const noRole = await new SignJWT({}).setProtectedHeader({alg:'RS256',kid:'test'}).setSubject('auth0|ordinary').setIssuer('https://hasbai.eu.auth0.com/').setAudience(env.AUTH0_AUDIENCE).setIssuedAt().setExpirationTime('1h').sign(keys.privateKey);
   await expect(identity(req(noRole),env)).rejects.toMatchObject({status:403});
+  for (const role of [[], ["member"], "superadmin", null, {superadmin: true}]) {
+    const request = req(await sign(env.AUTH0_AUDIENCE, "1h", "https://hasbai.eu.auth0.com/", role));
+    await expect(identity(request, env)).rejects.toMatchObject({status: 403});
+  }
   await expect(
     identity(new Request("https://tavern.test/api/me"), env),
   ).rejects.toMatchObject({ status: 401 });

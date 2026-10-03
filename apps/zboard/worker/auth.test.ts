@@ -1,6 +1,6 @@
 import { it, expect, vi, afterEach } from "vitest";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
-import { identity, ROLE_CLAIM } from "./auth";
+import { identity, EMAIL_CLAIM, ROLE_CLAIM } from "./auth";
 afterEach(() => vi.unstubAllGlobals());
 it("verifies signature, issuer, audience, expiry and grants admin only from the signed claim", async () => {
   const keys = await generateKeyPair("RS256");
@@ -18,8 +18,9 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
     aud = env.AUTH0_AUDIENCE as string,
     exp = "1h",
     issuer = "https://hasbai.eu.auth0.com/",
+    role: unknown = ["member", "superadmin"],
   ) =>
-    new SignJWT({ [ROLE_CLAIM]: "superadmin" })
+    new SignJWT({ [ROLE_CLAIM]: role, [EMAIL_CLAIM]: "owner@example.test" })
       .setProtectedHeader({ alg: "RS256", kid: "test" })
       .setSubject("auth0|test")
       .setIssuer(issuer)
@@ -31,7 +32,10 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
     new Request("https://zboard.test/api/me", {
       headers: { Authorization: "Bearer " + token },
     });
-  expect((await identity(req(await sign()), env)).admin).toBe(true);
+  expect(ROLE_CLAIM).toBe("_roles"); expect(EMAIL_CLAIM).toBe("email");
+  const verified = await identity(req(await sign()), env);
+  expect(verified.admin).toBe(true);
+  expect(verified.email).toBe("owner@example.test");
   for (const token of [
     await sign("https://financial.hasbai.xyz/api"),
     await sign(env.AUTH0_AUDIENCE, "-1h"),
@@ -41,6 +45,10 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
     await expect(identity(req(token), env)).rejects.toMatchObject({
       status: 401,
     });
+  for (const role of [[], ["member"], "superadmin", null, {superadmin: true}]) {
+    const request = req(await sign(env.AUTH0_AUDIENCE, "1h", "https://hasbai.eu.auth0.com/", role));
+    expect((await identity(request, env)).admin).toBe(false);
+  }
   await expect(
     identity(new Request("https://zboard.test/api/me"), env),
   ).rejects.toMatchObject({ status: 401 });

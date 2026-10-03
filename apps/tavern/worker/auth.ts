@@ -1,6 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { authClaims } from "@hasbai/auth/config";
-export const ROLE_CLAIM = authClaims.role;
+export const ROLE_CLAIM = authClaims.roles;
 export const USERNAME_CLAIM = authClaims.username;
 export const EMAIL_CLAIM = authClaims.email;
 const keys = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
@@ -27,10 +27,12 @@ export async function identity(
     });
     if (!payload.sub || payload.sub.endsWith("@clients"))
       throw new Error("Not a user");
-    if (payload[ROLE_CLAIM] !== "superadmin") throw new AuthError(403, "无权访问酒馆");
+    const roles = payload[ROLE_CLAIM];
+    const admin = Array.isArray(roles) && roles.includes("superadmin");
+    if (!admin) throw new AuthError(403, "无权访问酒馆");
     return {
       sub: payload.sub,
-      admin: payload[ROLE_CLAIM] === "superadmin",
+      admin,
       username: profileName(payload[USERNAME_CLAIM], payload.sub),
       email:
         typeof payload[EMAIL_CLAIM] === "string"

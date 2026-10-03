@@ -7,11 +7,11 @@ await withUserToken(async (token, tokenData) => {
   const claims = JSON.parse(
     Buffer.from(token.split(".")[1], "base64url").toString(),
   );
-  assert.equal(
-    claims.role,
-    "superadmin",
-    "Auth0 role claim must map to the database role",
+  assert.ok(
+    Array.isArray(claims._roles) && claims._roles.includes("superadmin"),
+    "Auth0 _roles array must include superadmin",
   );
+  assert.equal(claims.role, "superadmin", "Signed role must map to the database role");
   async function req(path, body, t = token) {
     const r = await fetch(url + path, {
       method: body ? "POST" : "GET",

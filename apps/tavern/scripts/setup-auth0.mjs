@@ -34,14 +34,14 @@ api("patch", `clients/${clientId}`, {
 });
 const listed = api("get", "actions/actions");
 const existing = (listed.actions ?? listed).find(
-  (a) => a.name === "financial role",
+  (a) => a.name === "login claims",
 );
 const spec = {
-  name: "financial role",
+  name: "login claims",
   supported_triggers: [{ id: "post-login", version: "v3" }],
   runtime: "node22",
   code: readFileSync(
-    new URL("../../../auth0/financial-role.js", import.meta.url),
+    new URL("../../../auth0/login-claims.js", import.meta.url),
     "utf8",
   ),
 };
@@ -54,14 +54,14 @@ const action = existing
 const id = action.id ?? existing.id;
 api("post", `actions/actions/${id}/deploy`, {});
 const before = api("get", "actions/triggers/post-login/bindings");
-const bindings = (before.bindings ?? before).filter(b => b.action.name !== "tavern role").map((b) => ({
+const bindings = (before.bindings ?? before).filter(b => !["financial role", "tavern role", "zboard role"].includes(b.action.name)).map((b) => ({
   ref: { type: "action_id", value: b.action.id },
   display_name: b.display_name ?? b.action.name,
 }));
 if (!bindings.some((b) => b.ref.value === id))
   bindings.push({
     ref: { type: "action_id", value: id },
-    display_name: "financial role",
+    display_name: "login claims",
   });
 api("patch", "actions/triggers/post-login/bindings", { bindings });
 const verified = api("get", `clients/${clientId}`);
