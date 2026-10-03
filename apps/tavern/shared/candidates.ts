@@ -1,4 +1,5 @@
 const MAX_TAIL_BYTES = 2048;
+export const CANDIDATE_REMINDER = '【应用输出格式】本轮正文后必须另起一行输出 [TAVERN_NEXT]，再逐行给出三条用户可直接发送的台词或行动；不要只输出正文，不用JSON。';
 export function candidateDelimiter() { return '\n[TAVERN_NEXT]\n'; }
 export function candidateInstruction() {
  return `每一轮回复都必须完成两个部分：角色正文 + 用户续聊候选；续写和重新生成也一样。正文写完并不代表任务完成，必须继续输出分隔符和候选，不可省略。
