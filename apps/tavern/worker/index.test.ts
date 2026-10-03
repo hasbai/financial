@@ -28,6 +28,14 @@ it('records provider cache and first body observations without adding inference 
   expect(info).toHaveBeenCalledWith('tavern-generation-outcome',expect.objectContaining({promptTokens:1000,outputTokens:3,cachedTokens:800,prefillTokens:200,prefillMs:100,decodeMs:50,firstBodyMs:expect.any(Number),modelFirstBodyMs:expect.any(Number),promptBudget:expect.objectContaining({planningContextTokens:16384,omittedMessages:0})}));
  }finally{info.mockRestore();}
 });
+it('keeps inline candidate protocol out of deltas and stored story with one model call',async()=>{
+ const {s}=await seed();const wire='灯？[TAVERN_NEXT]\n我问问往事。\n我坐下喝茶。\n我看向窗外。';
+ aiRun.mockResolvedValue(new Response(wire.split('').map(content=>'data: '+JSON.stringify({choices:[{delta:{content}}]})+'\n\n').join('')+'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}}));
+ const requestId=crypto.randomUUID(),r=await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'继续'});const text=await r.text();await Promise.all(work);
+ const frames=text.split('\n').filter(line=>line.startsWith('data: ')).map(line=>JSON.parse(line.slice(6)));expect(frames.filter(e=>e.type==='delta').map(e=>e.text).join('')).toBe('灯？');
+ expect(frames.find(e=>e.type==='done').message).toMatchObject({content:'灯？',status:'completed',candidates:['我问问往事。','我坐下喝茶。','我看向窗外。']});
+ expect(db.prepare("SELECT content,candidates_json FROM messages WHERE role='assistant' AND request_id=?").get(requestId)).toEqual({content:'灯？',candidates_json:JSON.stringify(['我问问往事。','我坐下喝茶。','我看向窗外。'])});expect(aiRun).toHaveBeenCalledTimes(1);
+});
 it('keeps user messages on model failure and never auto-retries',async()=>{const {s}=await seed();aiRun.mockRejectedValue(new Error('secret upstream error'));const r=await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'留下这句'});const text=await r.text();await Promise.all(work);expect(text).toContain('生成失败，请重试');expect(text).not.toContain('secret');expect(db.prepare("SELECT content FROM messages WHERE role='user'").get()?.content).toBe('留下这句');expect(db.prepare("SELECT status FROM messages WHERE role='assistant' AND request_id IS NOT NULL").get()?.status).toBe('error');});
 it('aborts a stopped generation and refuses stale stop or concurrent send',async()=>{const {s}=await seed();let controller:ReadableStreamDefaultController<Uint8Array>;aiRun.mockResolvedValue(new ReadableStream({start(c){controller=c;}}));
  const response=await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'出发'});const reader=response.body!.getReader();await reader.read();const generationId=db.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id;

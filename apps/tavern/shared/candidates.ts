@@ -25,21 +25,28 @@ export function validateCandidates(value: unknown): string[] {
 /** A bounded delimiter parser. Potential marker prefixes are held until disambiguated. */
 export class CandidateStream {
  private buffer = ''; private tail = ''; private overflow = false; private pendingCR = false;
+ private readonly markers: string[];
  inTail = false;
- constructor(private readonly marker: string = candidateDelimiter()) {}
+ constructor(marker: string = candidateDelimiter()) {
+  this.markers = marker === candidateDelimiter() ? [marker, marker.slice(1)] : [marker];
+ }
  push(text: string): string {
   const joined = (this.pendingCR ? '\r' : '') + text;
   this.pendingCR = joined.endsWith('\r');
   text = (this.pendingCR ? joined.slice(0, -1) : joined).replace(/\r\n?/g, '\n');
   if (this.inTail) { this.appendTail(text); return ''; }
   this.buffer += text;
-  const start = this.buffer.indexOf(this.marker);
+  let start = -1, matched = '';
+  for (const marker of this.markers) {
+   const index = this.buffer.indexOf(marker);
+   if (index >= 0 && (start < 0 || index < start)) { start = index; matched = marker; }
+  }
   if (start >= 0) {
    const body = this.buffer.slice(0, start); this.inTail = true;
-   this.appendTail(this.buffer.slice(start + this.marker.length)); this.buffer = ''; return body;
+   this.appendTail(this.buffer.slice(start + matched.length)); this.buffer = ''; return body;
   }
-  let hold = Math.min(this.buffer.length, this.marker.length - 1);
-  while (hold && !this.marker.startsWith(this.buffer.slice(-hold))) hold--;
+  let hold = Math.min(this.buffer.length, Math.max(...this.markers.map(marker => marker.length)) - 1);
+  while (hold && !this.markers.some(marker => marker.startsWith(this.buffer.slice(-hold)))) hold--;
   const body = this.buffer.slice(0, this.buffer.length - hold);
   this.buffer = hold ? this.buffer.slice(-hold) : ''; return body;
  }
@@ -51,7 +58,7 @@ export class CandidateStream {
  finish(): { body: string; candidates: string[] } {
   // An incomplete delimiter is protocol, never persisted as story text.
   const flushed = this.pendingCR ? this.push('\n') : '';
-  const body = flushed + (!this.inTail && !(this.buffer.length > 1 && this.marker.startsWith(this.buffer)) ? this.buffer : '');
+  const body = flushed + (!this.inTail && !(this.buffer.length > 1 && this.markers.some(marker => marker.startsWith(this.buffer))) ? this.buffer : '');
   this.buffer = '';
   if (!this.inTail || this.overflow) return { body, candidates: [] };
   const lines = this.tail.split('\n').map(line => line.trim()).filter(Boolean);

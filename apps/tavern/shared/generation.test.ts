@@ -27,6 +27,15 @@ it('keeps story with no tail, rejects oversized or malformed tails and partial m
 it('validates Unicode length, rejects controls, deduplicates and caps candidates',()=>{
  expect(validateCandidates([null,3,' ','😀'.repeat(121),'\u0000坏数据','😀'.repeat(120),'可以走走。','可以走走。','可以问问。','第四条'])).toEqual(['😀'.repeat(120),'可以走走。','可以问问。']);
 });
+it.each(['\n','\r\n'])('isolates an inline reserved marker at every stream boundary (%j)', newline=>{
+ const wire='灯？[TAVERN_NEXT]'+newline+'我问问港口的往事。'+newline+'我坐下喝茶。'+newline+'我望向窗外。';
+ for(let split=0;split<=wire.length;split++) {const p=new CandidateStream();const body=p.push(wire.slice(0,split))+p.push(wire.slice(split));const end=p.finish();expect(body+end.body).toBe('灯？');expect(end.candidates).toEqual(['我问问港口的往事。','我坐下喝茶。','我望向窗外。']);}
+});
+it('withholds interrupted inline protocol and leaves custom marker semantics intact',()=>{
+ const marker='[TAVERN_NEXT]\n';
+ for(let n=2;n<marker.length;n++){const p=new CandidateStream();const body=p.push('正文'+marker.slice(0,n));expect(body+p.finish().body).toBe('正文');}
+ const custom=new CandidateStream('\nCUSTOM\n');expect(custom.push('正文CUSTOM\n尾部')).toBe('正文CUSTOM\n尾部');expect(custom.inTail).toBe(false);
+});
 it.each([16384,32768])('fits %i context and preserves latest complete turn before optional worldbook', window=>{
  const book=parseBook({name:'书',token_budget:window,entries:[{constant:true,content:'世'.repeat(window),enabled:true}]});
  const latest={id:'latest',role:'user' as const,content:'这轮不要丢',status:'completed' as const,ordinal:1,requestId:null,createdAt:0,candidates:['不进入prompt']};
