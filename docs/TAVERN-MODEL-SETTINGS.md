@@ -63,7 +63,7 @@
 
 候选与所属 message ID 一起在终态保存，为 `messages` 增加 nullable JSON 元数据列，旧记录保持 NULL，保留正文与 ID。刷新只读已存结果；重新生成、续写为新 message ID，分支不复制旧候选。候选不是额外消息，也不进入下一轮 Prompt。SSE 通过独立的候选事件或 done 消息元数据通知前端；只有当前会话最新正常版本且已解锁才可发送。重复原 UUID仍返回既有生成结果，不再推理，所有状态复用现有请求幂等机制。
 
-所有推理通过 AI Gateway；开启请求日志及三个归属字段，`skipCache:true`，通过 `cf-aig-collect-log-payload:false` 独立关闭正文存储，不使用 `collectLog:false`。用户名只取已验签的 Auth0 JWT 专属 claim；前端只传 Access Token，后端不逐轮查询 Auth0 Management API 或 `/userinfo`，不采用 RP persona 名称、用户 ID 或客户端 metadata。缺名称的旧 Token在占锁和模型请求前返回明确重新登录错误。Action 必须先发布，让新 Token带名称，再发布依赖该 claim 的 Worker。
+所有推理通过 AI Gateway；开启请求日志及三个归属字段，`skipCache:true`，通过 `cf-aig-collect-log-payload:true` 保存完整请求与回复，不使用 `collectLog:false`。用户名只取已验签的 北极小站共享 Auth0 JWT 公共 claim；前端只传 Access Token，后端不逐轮查询 Auth0 Management API 或 `/userinfo`，不采用 RP persona 名称、用户 ID 或客户端 metadata。缺名称的旧 Token在占锁和模型请求前返回明确重新登录错误。Action 必须先发布，让新 Token带名称，再发布依赖该 claim 的 Worker。
 
 ## 上游反馈驱动的短上下文预算
 

@@ -1,4 +1,4 @@
-/** Gateway logs retain attribution and usage while keeping private story payloads out of storage. */
+/** Gateway retains complete requests and responses with verified account attribution. */
 export function roleplayGatewayOptions(env: Pick<Env, 'AIG_GATEWAY_ID'>, username: string, requestId: string): AiOptions {
   return {
     gateway: {
@@ -10,6 +10,6 @@ export function roleplayGatewayOptions(env: Pick<Env, 'AIG_GATEWAY_ID'>, usernam
       requestTimeoutMs: 170000,
       metadata: { app: 'tavern', task: 'roleplay', username },
     },
-    extraHeaders: { 'cf-aig-collect-log-payload': 'false', 'cf-aig-event-id': requestId, 'cf-aig-max-attempts': '1', 'cf-aig-request-timeout': '170000' },
+    extraHeaders: { 'cf-aig-collect-log-payload': 'true', 'cf-aig-event-id': requestId, 'cf-aig-max-attempts': '1', 'cf-aig-request-timeout': '170000' },
   };
 }

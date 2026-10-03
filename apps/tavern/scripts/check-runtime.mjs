@@ -1,3 +1,4 @@
+import { authConfig } from "@hasbai/auth/config";
 import { createHash, randomBytes } from "node:crypto";
 import { loadEnvFile } from "node:process";
 import { CookieJar, JSDOM } from "../../financial/node_modules/jsdom/lib/api.js";
@@ -6,11 +7,11 @@ import { fileURLToPath } from "node:url";
 // Local integration testing only. Never imported by the SPA. This uses the
 // ordinary Universal Login form and Authorization Code + PKCE; it never uses
 // a password grant, Auth0 CLI, management API, or tenant configuration.
-const DOMAIN = "hasbai.eu.auth0.com";
+const DOMAIN = authConfig.domain;
 const ORIGIN = `https://${DOMAIN}`;
-const CLIENT_ID = "mdmD7xvX5yay52SRVZeuIOhGHIa0Wdl2";
-const AUDIENCE = "https://tavern.hasbai.xyz/api";
-const ORGANIZATION_ID = "org_qR4E7HTZE1Zv10go";
+const CLIENT_ID = authConfig.clientId;
+const AUDIENCE = authConfig.audience;
+const ORGANIZATION_ID = authConfig.organization;
 const ISSUER = `${ORIGIN}/`;
 const CALLBACK_URL =
   process.env.AUTH0_TEST_REDIRECT_URI || "http://localhost:5176/auth/callback";
@@ -222,7 +223,7 @@ function jwtPart(token, index) {
 function validate(token) {
   if (typeof token !== "string" || token.split(".").length !== 3)
     throw new Auth0LoginError(
-      "Auth0 returned a non-JWT access token; expected the Tavern API audience.",
+      "Auth0 returned a non-JWT access token; expected the shared Hasbai API audience.",
     );
   const header = jwtPart(token, 0);
   const claims = jwtPart(token, 1);
