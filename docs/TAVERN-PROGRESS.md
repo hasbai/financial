@@ -206,3 +206,12 @@ PR #37八项必需状态通过并squash为`fe2b7df6ce4241ca3fc5322f52a776432244d
 移除maxTokens设置/上游max_tokens、整轮175秒deadline和100000字符截断；length在同一请求ID/assistant消息/SSE/候选解析器内自动续写，不设模型请求次数上限。特别长的当前输出仅压缩模型投影中的较早片段，完整正文持续保留。用户停止、断连、无进展和上游故障仍保存部分正文。180秒占用持续续租；所有写入检查当前生成ID，checkpoint写入还检查pending状态，避免长生成被接管或停止后迟到写入。
 
 本地相关98项单元/Worker检查通过，包含64K/未知容量、摘要源失效、摘要自身超限、超过三次length续写、跨请求候选标记、stream context错误、大段新输出、取消摘要、占用接管、终态心跳竞态和超过旧正文字符上限。定向TypeScript检查及diff检查通过。完整CI、固定Linux视觉、真实JWT与生产发布证据随交付补充。DO/state/search_memory/update_state尚待下一阶段；本批不同时迁移会话存储。
+
+### 本批发布与验收证据
+
+- [PR #40](https://github.com/hasbai/financial/pull/40)：同步最新main后的提交`a2954256ee277303082d6e3fd6456a25758add2f`八项必需状态全部成功；Check `37140960323`、Blog `37140960334`、Tavern `37140960328`、Zboard `37140960329`各仅一次统一等待。Squash main为`5604464e2b4da495df7cb163283b4dec0930378a`。
+- 固定Linux11流程/68截图通过，审阅/import六张有意变化的设置截图；其余两个24/1像素噪声保留原基线。iPhone WebKit为设备模拟，不算真机验收。交互架构图64K/超限/未知案例检查通过。
+- 远程隔离D1 `68cce847-d93a-421e-b113-48c5e34e2126`先应用旧schema、插入固定ID/原文，再应用0006并验证摘要可写、原ID与原文不变；临时库已删除。生产迁移前后均2会话/21消息，新增nullable TEXT summary_json且旧摘要为NULL。原Worker兼容；先迁移再发布。
+- 自动Build `2bd0f253-ed42-4745-8be7-a6118dd04a1e`成功，commit_hash与main一致；deployment `d0e97a3e-16a8-4da7-9769-024149fc84a2`、version `7931cada-ae49-45af-a274-f81025631fc8`流量100%，版本反查Build一致，线上health200版本一致。无手动部署。
+- 真实JWT复验尚未进入模型阶段：正常Universal Login + PKCE取得令牌后，`GET /api/settings`返回403“无权访问酒馆”；未创建验收角色或会话。只读Auth0检查确认验收账号及组织仍有superadmin，共享Action已改为roles/email/username，现有应用仍读取role与命名空间用户名。用户明确选择保留新字段、另行统一迁移应用鉴权；本批未改Auth0、未放宽权限。新的真实摘要/连续length/cache验收待该迁移后补做，不将98项模拟检查或此前缓存样本冒称本批真实模型通过。
+- `/Users/yueshi/src/financial`已回到main并同步远端，稳定代码入口仍为`apps/tavern`。DO/state/工具与世界书RAG按长期方案后续实施。
