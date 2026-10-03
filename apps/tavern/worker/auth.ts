@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 export const ROLE_CLAIM = "https://tavern.hasbai.xyz/role";
+export const USERNAME_CLAIM = "https://tavern.hasbai.xyz/username";
 export const EMAIL_CLAIM = "https://tavern.hasbai.xyz/email";
 const keys = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 export async function identity(
@@ -29,6 +30,7 @@ export async function identity(
     return {
       sub: payload.sub,
       admin: payload[ROLE_CLAIM] === "superadmin",
+      username: profileName(payload[USERNAME_CLAIM], payload.sub),
       email:
         typeof payload[EMAIL_CLAIM] === "string"
           ? (payload[EMAIL_CLAIM] as string)
@@ -46,4 +48,19 @@ export class AuthError extends Error {
   ) {
     super(message);
   }
+}
+
+/** Only Auth0 profile values are eligible; RP persona names and subject IDs are not. */
+function profileName(value: unknown, sub: string): string | undefined {
+  if (typeof value !== "string") return;
+  const name = value.trim();
+  if (!name || name === sub || name.length > 256 || /[\u0000-\u001f\u007f]/u.test(name)) return;
+  return name;
+}
+
+/** Generation requires the verified JWT profile claim; no per-turn identity API calls. */
+export function authenticatedUsername(user: Awaited<ReturnType<typeof identity>>): string {
+  const username = profileName(user.username, user.sub);
+  if (!username) throw new AuthError(401, "账户名称未更新，请重新登录后重试");
+  return username;
 }

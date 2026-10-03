@@ -1,3 +1,4 @@
+import { roleplayGatewayOptions } from './gateway';
 import { parseBook } from '../shared/cards';
 import { buildPrompt } from '../shared/prompt';
 import { sseData } from '../shared/sse';
@@ -6,7 +7,7 @@ import type { FinishReason, Message } from '../shared/types';
 import { HttpError, json } from './http';
 import { currentMessages, getMessages, getSession, message, ownedBooks, type MessageRow } from './store';
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
-export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext,'waitUntil'>,owner:string,id:string,data:Record<string,unknown>) {
+export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext,'waitUntil'>,owner:string,id:string,data:Record<string,unknown>,username:string) {
  const requestId=String(data.requestId??'');if(!UUID.test(requestId))throw new HttpError(400,'请求 ID 无效');
  const initial=await getSession(env,owner,id),now=Date.now();
  const existing=await env.DB.prepare("SELECT * FROM messages WHERE session_id=? AND request_id=? AND role='assistant'").bind(id,requestId).first<MessageRow>();
@@ -37,7 +38,7 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
   statements.push(env.DB.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,request_id,created_at) VALUES(?,?,'assistant',?,'pending',?,?,?)").bind(assistantId,id,prefix,assistantOrdinal,requestId,messageTime+1));
   await env.DB.batch(statements);
  }catch(error){await env.DB.prepare('UPDATE sessions SET generation_id=NULL,generation_until=NULL WHERE id=? AND generation_id=?').bind(id,assistantId).run();if(error instanceof Error&&error.message.includes('上下文上限'))throw new HttpError(400,error.message);throw error;}
- const abort=new AbortController(); let disconnected=false;let output=prefix;let finishReason:FinishReason='interrupted';let abortReason:FinishReason='stopped';let model='';let outputTokens:number|undefined;
+ const abort=new AbortController(); let disconnected=false;let output=prefix;let finishReason:FinishReason='interrupted';let abortReason:FinishReason='stopped';let model='';let gatewayLogId:string|null=null;let outputTokens:number|undefined;
  const started=Date.now();const timer=setTimeout(()=>{abortReason='timeout';abort.abort();},175000);
  let checking=false;
  const stopWatcher=setInterval(()=>{if(checking)return;checking=true;void env.DB.prepare('SELECT status FROM messages WHERE id=?').bind(assistantId).first<{status:string}>().then(state=>{if(state?.status!=='pending'){abortReason='stopped';abort.abort();}}).catch(()=>{abortReason='upstream';abort.abort();}).finally(()=>checking=false);},1000);
@@ -49,11 +50,14 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
   try{
    await send({type:'start',messageId:assistantId,requestId});
    const opts=JSON.parse(row.settings_json);
-   finishReason='upstream';const result=await env.AI.run('dynamic/rp',{messages:prompt.messages,stream:true,temperature:opts.temperature,max_tokens:opts.maxTokens},{gateway:{id:env.AIG_GATEWAY_ID,skipCache:true,collectLog:false},signal:abort.signal});
-   if(!(result instanceof ReadableStream)){finishReason='unsupported';throw new Error('nonstream');}
+   finishReason='upstream';const result=await env.AI.run('dynamic/rp',{messages:prompt.messages,stream:true,temperature:opts.temperature,max_tokens:opts.maxTokens},{...roleplayGatewayOptions(env,username,requestId),returnRawResponse:true,signal:abort.signal});
+   if(!(result instanceof Response)){finishReason='unsupported';throw new Error('nonstream');}
+   gatewayLogId=result.headers.get('cf-aig-log-id');
+   if(!result.ok){await result.body?.cancel();throw new Error('upstream');}
+   if(!result.body||!result.headers.get('Content-Type')?.includes('text/event-stream')){finishReason='unsupported';await result.body?.cancel();throw new Error('nonstream');}
    finishReason='interrupted';
    let lastSaved=Date.now(),lastSize=prefix.length;let upstreamReason:string|undefined;
-   for await(const data of sseData(result,abort.signal)) {
+   for await(const data of sseData(result.body,abort.signal)) {
     if(data==='[DONE]')break;
     const event=JSON.parse(data);if(event.error){finishReason='upstream';throw new Error('upstream');}
     if(typeof event.model==='string')model=event.model;
@@ -76,7 +80,7 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
    try{
     await env.DB.batch([env.DB.prepare("UPDATE messages SET content=?,finish_reason=CASE WHEN status='aborted' AND finish_reason IS NOT NULL THEN finish_reason ELSE ? END,status=CASE WHEN status='aborted' THEN 'aborted' ELSE ? END WHERE id=?").bind(output,finishReason,status,assistantId),env.DB.prepare('UPDATE sessions SET generation_id=NULL,generation_until=NULL,updated_at=? WHERE id=? AND generation_id=?').bind(Date.now(),id,assistantId)]);
     const saved=await env.DB.prepare('SELECT * FROM messages WHERE id=?').bind(assistantId).first<MessageRow>();
-    console.info('tavern-generation-outcome',{messageId:assistantId,finishReason:saved?.finish_reason,status:saved?.status,model,outputTokens,chars:output.length,elapsedMs:Date.now()-started});
+    console.info('tavern-generation-outcome',{messageId:assistantId,requestId,gatewayLogId,finishReason:saved?.finish_reason,status:saved?.status,model,outputTokens,chars:output.length,elapsedMs:Date.now()-started});
     if(!disconnected){if(failure)await send({type:'error',message:failure});await send({type:'done',message:message(saved!)});}
    }finally{await writer.close().catch(()=>{});}
   }

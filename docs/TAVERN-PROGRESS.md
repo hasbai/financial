@@ -56,4 +56,12 @@ Chub/CharaVault探针403；Chub保留失败状态与适配器，未声称该源�
 
 ## 模型配置与续聊候选（待实施）
 
-2026-10-03 已完成 [方案](TAVERN-MODEL-SETTINGS.md)，尚未修改应用或生产数据库：补齐参数默认值、默认关闭思考、白名单模型选择（首个为 RP 动态路由），正文结束后自动生成最多三条用户视角候选并支持点击发送。真实 RP 参数能力、关闭思考及候选延迟仍待验收；不能把现有过滤思考输出算作已关闭思考。
+2026-10-03 已完成 [方案](TAVERN-MODEL-SETTINGS.md)，尚未修改应用或生产数据库：补齐参数默认值、默认关闭思考、白名单模型选择（首个为 RP 动态路由），同一次 roleplay 正文后顺带输出最多三条用户视角候选并支持点击发送，避免再次预填充；短上下文按上游明确能力反馈协商，HTML 架构图见方案。真实 RP 参数能力、关闭思考及候选延迟仍待验收；不能把现有过滤思考输出算作已关闭思考。
+
+## Gateway 归属日志与 JWT 名称（2026-10-03，发布验收中）
+
+原因已定位：线上 Worker 配置为 default Gateway，应用调用 `dynamic/rp`；原代码 `collectLog:false` 禁止整个 Gateway 日志，不是绕过 Gateway。修复启用日志、独立禁存 payload，服务端统一 `{app:"tavern",task:"roleplay",username:实际账户名称}`，eventId 关联 requestId。用户名由 Tavern 专属 Auth0 Action 写入签名 JWT，前端携带 Access Token，后端验签后直接读名称；没有逐轮 Management API 或 userinfo 调用。旧 Token缺名称时生成前明确重新登录，不使用角色名或 ID。
+
+Auth0 Action 已先发布并回读匹配；真实新 Token包含“时阅”及原 superadmin，其他 audience 的 Action输出不变。相关 auth/生成36项测试和轻量检查通过。参数开关、同次候选与能力预算仅更新方案；HTML 四视图、桌面/390px/深色和16K/32K/unknown预算交互已检查，无JS错误或横向溢出。
+
+待补：PR必需检查、自动部署、真实应用调用对应 Gateway 日志及 payload禁存证据。本机 Wrangler OAuth与受限Agent Token读取Gateway管理API返回403，未将该权限失败算作网关未记录。

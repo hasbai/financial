@@ -1,4 +1,4 @@
-import { identity, AuthError } from './auth';
+import { identity, authenticatedUsername, AuthError } from './auth';
 import { body, boundedBody, HttpError, json } from './http';
 import { discover, download } from './discovery';
 import { generate } from './generation';
@@ -12,7 +12,7 @@ export default {
   try {
    if(p==='/health')return json({ok:true,service:'tavern',version:env.VERSION.id});
    if(!p.startsWith('/api/'))return env.ASSETS.fetch(request);
-   const {sub:owner}=await identity(request,env);
+   const user=await identity(request,env),owner=user.sub;
    if(method!=='GET' && request.headers.has('Origin') && request.headers.get('Origin')!==url.origin)throw new HttpError(403,'请求来源无效');
    if(p==='/api/settings'){
     if(method==='GET')return json(await userSettings(env,owner));
@@ -79,7 +79,7 @@ export default {
    const chat=p.match(/^\/api\/sessions\/([^/]+)(?:\/(generate|stop|fork|export))?$/);
    if(chat){
     const row=await getSession(env,owner,chat[1]);
-    if(method==='POST'&&chat[2]==='generate')return await generate(request,env,ctx,owner,row.id,await body(request));
+    if(method==='POST'&&chat[2]==='generate'){const data=await body(request),username=authenticatedUsername(user);return await generate(request,env,ctx,owner,row.id,data,username);}
     if(method==='POST'&&chat[2]==='stop'){
      const data=await body(request);if(string(data.generationId)!==row.generation_id)throw new HttpError(409,'生成状态已改变');
      await env.DB.prepare("UPDATE messages SET status='aborted',finish_reason='stopped' WHERE session_id=? AND id=? AND status='pending'").bind(row.id,row.generation_id).run();return json({ok:true});
