@@ -95,3 +95,15 @@ Gateway Read已实证：日志`c09aa204a95e7c5cd4b525557e422d87b6a66f72e32d5d76f
 财务既有Notice提取至packages/ui，财务原入口复用、输出保持一致；Tavern登录、页面和弹层错误及设置保存通知统一引用。AGENTS已记录“禁止过度设计”“尽量复用统一UI”。当前修订相关测试67项通过、Svelte零错误/零警告、聚焦Worker类型检查通过；固定Linux28项流程82张截图通过并审阅导入（2026-10-03T11-46-36.260Z）。保留1/24像素无关渲染差异的原基线。HTML四视图、390px/桌面/深色与16K/32K/unknown交互无错误。架构复核通过；PR/自动部署和真实本地模型验收待完成。
 
 实际本地/apply-template（不执行推理）验证：关闭参数预填充空think块；单独enable_thinking=true会受服务端默认reasoning_effort=none影响报错。显式none/low配合开关后，两种模板均HTTP200，开启预填充开放think。请求指定deepseek解析格式分离思考与可见正文。真实生成仍在发布后验收。
+
+## 当前交付验收（2026-10-03）
+
+[PR #31](https://github.com/hasbai/financial/pull/31)八项必需检查全部成功，包含最新main并squash为`ed1180fb066b8f7d43b36b849374122872c87288`。自动Build`31bc671c-936f-4770-a861-b3dc570cbe97`成功且commit_hash一致；deployment`04086369-faa3-4083-b2ac-492cb5623b24`、version`340ea9f6-e895-4e1c-b802-346bb88ef980`流量100%，health200版本一致；无手动部署。
+
+真实JWT应用验收：关闭思考请求`1aeb577a-cfa7-4b85-92f5-704516313304`正常completed/stop，正文9字、3候选；开启请求`dec6ee7c-2a96-4e1e-a2d5-1568556cf81a`正常completed/stop，正文12字、3候选。两轮均0error、刷新候选一致、原UUID回放未重复生成、锁释放。候选原文发送请求`0abe609b-d0ce-4b5a-9cec-187869d3faa0`正常完成、第二条用户消息逐字一致。实际设置包含TopK20、TopP0.9、两项penalty0.1。浏览器夹具已独立验证点击发送、双击保护和草稿保留，未将API探针冒称真实浏览器点击。临时2会话/1角色已删除。
+
+Gateway同一验收时间段恰好3条Tavern日志，HTTP200、模型qwen3.8-27b，均为`{app:"tavern",task:"roleplay",username:"时阅"}`，伪客户端metadata无效，request/response未存正文。日志ID依次为`9656cf39015064612d61351b689b84cba1d2253406470edfbd76672d18a2564a`、`a0d913e828b2d16dd9a7719af1d02501e34a6b066f62fbb585087415ee5a8626`、`cb6842555202ad1377cc1dfea3dc1878f1801d4b0568e72f8e077fc8e4a239a9`，output tokens86/95/308。与实际3次生成数量一致；刷新和回放未产生额外日志。当前原生binding日志event_id为空，按时间及请求数核验，不声称eventId已在后台确认；应用仍发送该选项。
+
+单样本关闭思考首正文18.46秒、正文最后增量18.69秒、候选就绪不晚于总耗时22.68秒；开启首正文6.98秒、总耗时12.18秒。冷启动/预填充缓存状态不同，不能据此比较思考开关延迟或承诺速度。实际模板验证和请求参数、token用量与生成终态分别记录，未把过滤reasoning_content当关闭证明。
+
+上下文自动化验证16K/32K、未知模式及后台刷新/更小明确上限两种并发顺序。实际上游/props曾HTTP200、n_ctx32768且单slot；发布后的应用模型选项仍为contextTokens:null，随后上游/props、/v1/models、/health均HTTP502。因此真实运行时容量发现尚未成功，不把节点侧32K探针当作Worker已发现容量；探测失败不会阻断聊天，保留核心设定、最近完整问答和当前输入。上游服务恢复后后台自动重新探测。应用修复与模型服务当时可用性分开记录。
