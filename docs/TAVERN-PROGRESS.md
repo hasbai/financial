@@ -15,15 +15,15 @@
 
 | 层级 | 状态与证据 |
 | --- | --- |
-| 本地核心 | 27项测试通过：标准文件/安全边界、世界书、Prompt、SSE、JWT/D1消息/幂等/停止/分支/同步目录 |
+| 本地核心 | 28项测试通过：标准文件/安全边界、世界书、Prompt、SSE、JWT/D1消息/幂等/停止/分支/同步目录 |
 | 类型 | Svelte diagnostics 0 errors / 0 warnings |
 | 固定 Linux | iPhone WebKit与桌面14项流程通过，68张固定Linux截图已审阅并导入，覆盖5页面/7场景，无豁免 |
 | 本地 D1 | 两个迁移实跑，完整目录5011条，source_releases切换成功 |
 | 生产资源 | D1 `1652e81e-ce58-4b23-bb24-020928d89546`、私有 R2 `tavern`，迁移已应用；完整目录5011条、固定revision与source_releases已核验 |
 | Auth0 配置 | 独立 audience、增量回调、Action `2e74040a-2123-4721-8f4b-c4c3367eaf6c`已部署和绑定；真实专用audience JWT签发、角色搜索/安装/会话保存已验证 |
 | Workers Builds | Worker资源 `c4c8bbba63c4436fbaffc7fa2aab63be`，trigger `bbfc0e21-81db-4628-8079-ee4a1ab12a26`，main自动构建已配置，未手动部署版本 |
-| 真实模型 | 指定 `dynamic/rp` / `default`，本地远程绑定AI.run internal error、gateway compat 500；官方API已识别dynamic/rp对应模型，但重复探针出现2002执行错误，尚未证明可用内容；待自动部署后真实SSE/停止/恢复验收 |
-| PR/线上 | 尚未创建 PR，完整CI、squash合并、自动部署与线上版本待验收 |
+| 真实模型 | 指定 `dynamic/rp` / `default`，本地远程绑定AI.run internal error、gateway compat 500；官方API已识别dynamic/rp对应模型，但重复探针出现2002执行错误，尚未证明可用内容；REST实际SSE文本与多轮提示通过；应用旧compat绑定生产500，改用文档原生AI.run，真实SSE/停止/恢复待重新验收 |
+| PR/线上 | PR #26 八项必需检查全通过、squash main `340b369`；自动构建成功，线上 version `ff45eda2-6657-4b6b-8816-a1fdda96b7c6`；真实生成失败修复中 |
 
 Chub/CharaVault探针403；Chub保留来源失败状态及适配器，未声称已验证搜索安装。Risu没有公开搜索契约不接未文档化接口。Dataset Viewer搜索超时/500，改为完整固定版本目录。来源的许可、署名与转换标记随卡片保留。
 
