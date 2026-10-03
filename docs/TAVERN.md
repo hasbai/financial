@@ -4,7 +4,7 @@
 
 整体调用、单次正文与候选、动态短上下文预算见 [HTML 架构图](TAVERN-ARCHITECTURE.html)。
 
-代码入口为仓库根下 `apps/tavern`；仓库名 `financial` 不改变应用归属。当前交付状态见 [TAVERN-PROGRESS.md](TAVERN-PROGRESS.md)，模型参数、默认关闭思考、模型选择与续聊候选的待实施方案见 [TAVERN-MODEL-SETTINGS.md](TAVERN-MODEL-SETTINGS.md)。
+代码入口为仓库根下 `apps/tavern`；仓库名 `financial` 不改变应用归属。当前交付状态见 [TAVERN-PROGRESS.md](TAVERN-PROGRESS.md)，模型参数、默认关闭思考、模型选择与续聊候选的实现契约见 [TAVERN-MODEL-SETTINGS.md](TAVERN-MODEL-SETTINGS.md)。
 
 ## 产品与首版交付
 
@@ -14,7 +14,7 @@
 | 发现 | 输入关键词、选择公开来源、按热度/近期热门/发布或更新时间/评分排序、分类与自定义标签、分页、查看作者/源页面、安装角色；安装相同内容去重，不自动覆盖本地编辑 |
 | 世界书 | 独立 JSON 导入/导出、查看编辑原文、条目数量、启用/停用，给会话选择世界书；内嵌角色书自动生效 |
 | 对话 | 会话列表、角色与用户 persona、流式发送/停止、持久化历史、重试、重新生成、编辑历史并派生新会话、导出 JSONL、删除会话 |
-| 设置 | 用户名称/persona、系统提示、温度、输出上限、主题；模型路由由服务端固定，不接受客户端覆盖 |
+| 设置 | RP模型、默认关闭思考、采样参数、用户名称/persona、系统提示、输出上限、主题；模型路由由服务端固定，不接受客户端覆盖 |
 
 首版不执行外来 JS/Lua、正则替换脚本或扩展工具，不提供多人群聊、图像生成、语音或全量 SillyTavern 插件兼容。未知扩展和资源留在原始卡及导出中；兼容导入不等于执行全部扩展。不会提供伪造角色推荐、示例历史、评分或人数。只有 e2e 独立夹具有合成内容。
 
@@ -52,9 +52,9 @@ D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整
 
 ## Prompt 与世界书契约
 
-顺序：系统/用户 persona → before_char 世界书 → 角色描述、性格、场景 → after_char 世界书 → 示例对白 → 完整历史消息 → post_history_instructions。`system_prompt` 与 `post_history_instructions` 的 `{{original}}` 合并默认值；`{{char}}`/`{{user}}`/`<char>`/`<user>` 支持，V3 nickname 优先。creator_notes、标签、来源不进入 Prompt。
+顺序：系统/用户 persona → before_char 世界书 → 角色描述、性格、场景 → after_char 世界书 → 示例对白 → post_history_instructions与候选协议（合并一个前置system）→ 完整历史消息。`system_prompt` 与 `post_history_instructions` 的 `{{original}}` 合并默认值；`{{char}}`/`{{user}}`/`<char>`/`<user>` 支持，V3 nickname 优先。creator_notes、标签、来源不进入 Prompt。
 
-支持 V2/V3 book 与 SillyTavern entries 对象导入；每个条目只插入一次。禁用不触发、constant 常驻、主关键词与 selective 副关键词逻辑、scan_depth、case_sensitive、priority、insertion_order、before/after_char，递归扫描有迭代上限。公开语料的散文世界书转换为常驻条目，不推断原数据未定义的关键词。正则与复杂 ST 扩展保留但不执行，解析输出能力状态。中文按字符、英文按保守字符估算 tokens（不是模型 tokenizer 精确值），总预算 16000并预留输出。优先保留系统设定与最新完整轮次；超大的设定/单轮明确报错，不能静默切掉最新输入。
+支持 V2/V3 book 与 SillyTavern entries 对象导入；每个条目只插入一次。禁用不触发、constant 常驻、主关键词与 selective 副关键词逻辑、scan_depth、case_sensitive、priority、insertion_order、before/after_char，递归扫描有迭代上限。公开语料的散文世界书转换为常驻条目，不推断原数据未定义的关键词。正则与复杂 ST 扩展保留但不执行，解析输出能力状态。中文按字符、英文按保守字符估算 tokens（不是模型 tokenizer 精确值），容量按上游实际n_ctx及明确超限反馈更新并预留输出；后台探测不阻断对话，未知时保留核心设定和最近完整轮次。优先保留系统设定与最新完整轮次；超大的设定/单轮明确报错，不能静默切掉最新输入。
 
 ## 生成、重试与编辑契约
 
@@ -80,7 +80,7 @@ D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整
 - GET /api/discover?q=&source=&page=&sort=&tags=；POST /api/install {source,id}；固定适配器，不提供任意 URL 代理。
 - GET/POST /api/worldbooks；PATCH/DELETE /api/worldbooks/:id；GET /api/worldbooks/:id/export。
 - GET/POST /api/sessions；GET/DELETE /api/sessions/:id；PATCH /api/sessions/:id 配置；POST /api/sessions/:id/generate；POST /api/sessions/:id/stop；POST /api/sessions/:id/fork；GET /api/sessions/:id/export。
-- GET/PUT /api/settings。
+- GET/PUT /api/settings；GET /api/models。
 
 ## 实施路线与验收门槛
 

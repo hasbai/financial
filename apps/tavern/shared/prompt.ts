@@ -29,7 +29,7 @@ export function activateBook(book: Book, history: Pick<Message, 'content'>[], ex
   }).sort((a,b) => a.order-b.order);
 }
 export type PromptMessage = { role: 'system' | 'user' | 'assistant'; content: string };
-export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], settings: Settings, contextTokens: number, continuationInstruction = '', options: { protocol?: string; inputRatio?: number } = {}) {
+export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], settings: Settings, contextTokens: number | null, continuationInstruction = '', options: { protocol?: string; inputRatio?: number } = {}) {
   const card = parseCard(raw), c = card.data;
   const char = c.nickname || c.name, expand = (text: string, original = '') => macros(text, char, settings.userName, original);
   const activeHistory = history.filter(m => m.status === 'completed');
@@ -39,8 +39,7 @@ export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], 
     expand(c.description), expand(c.personality), expand(c.scenario), ...picked.filter(e => e.position === 'after_char').map(e => expand(e.content)), c.mes_example ? `示例对白：\n${expand(c.mes_example)}` : ''].filter(Boolean).join('\n\n');
   const post = expand(c.post_history_instructions, '保持角色设定与故事连续性。');
   const count = (s: string) => Math.ceil(estimateTokens(s) * (options.inputRatio ?? 1));
-  const budget = contextTokens - settings.maxTokens - 512;
-  if (!Number.isSafeInteger(contextTokens) || contextTokens <= 0) throw new Error('模型上下文上限尚未核实');
+  const budget = contextTokens === null ? Infinity : contextTokens - settings.maxTokens - 512;
   let used = count(systemText([])) + count(post) + (continuationInstruction ? count(continuationInstruction) + 8 : 0) + (options.protocol ? count(options.protocol) + 8 : 0) + 16;
   if (used > budget) throw new Error('角色与世界书设定超过上下文上限');
   const turns: Message[][] = [];
@@ -51,13 +50,11 @@ export function buildPrompt(raw: JsonObject, books: Book[], history: Message[], 
   let oldestRequired = turns.length - 1;
   if (turns.length > 1 && turns.at(-1)?.at(-1)?.role === 'user' && turns.at(-2)?.at(-1)?.role === 'assistant') { const previous = turns.at(-2)!; const cost = turnCost(previous); if (used + cost > budget) throw new Error('最新对话超过上下文上限'); used += cost; selected.unshift(previous); oldestRequired--; }
   const picked: Entry[] = [];
-  for (const entry of [...entries].sort((a,b) => b.priority-a.priority || a.order-b.order)) { const cost = count(expand(entry.content)) + 8; if (used + cost <= budget) { used += cost; picked.push(entry); } }
+  for (const entry of (contextTokens === null ? [] : [...entries]).sort((a,b) => b.priority-a.priority || a.order-b.order)) { const cost = count(expand(entry.content)) + 8; if (used + cost <= budget) { used += cost; picked.push(entry); } }
   picked.sort((a,b) => a.order-b.order);
-  for (let i = oldestRequired - 1; i >= 0; i--) { const cost = turnCost(turns[i]); if (cost + used > budget) break; used += cost; selected.unshift(turns[i]); }
-  const system = systemText(picked);
+  for (let i = contextTokens === null ? -1 : oldestRequired - 1; i >= 0; i--) { const cost = turnCost(turns[i]); if (cost + used > budget) break; used += cost; selected.unshift(turns[i]); }
+  const system = [systemText(picked), post, options.protocol].filter(Boolean).join('\n\n');
   const messages: PromptMessage[] = [{ role: 'system', content: system }, ...selected.flat().map(m => ({ role: m.role, content: expand(m.content) }))];
   if (continuationInstruction) messages.push({role:'user',content:continuationInstruction});
-  if (post) messages.push({role:'system',content:post});
-  if (options.protocol) messages.push({role:'system',content:options.protocol});
   return { messages, estimatedTokens: used, activatedEntries: picked.map(e => e.id) };
 }

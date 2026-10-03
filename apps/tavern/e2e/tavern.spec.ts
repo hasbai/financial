@@ -13,7 +13,7 @@ async function fixture(page:Page,{empty=false,fail=false,delay=false,streamDelay
   const req=route.request(),url=new URL(req.url()),p=url.pathname,method=req.method();if(delay)return;
   if(fail){await route.fulfill({status:503,json:{message:'服务暂时不可用'}});return;}
   const body=req.headers()['content-type']?.includes('application/json')?req.postDataJSON()??{}:{};let data:unknown={ok:true};
-  if(p==='/api/models')data={models:[{id:'rp',name:'RP 动态路由',available:true,contextTokens:16384,parameters:{topK:false,penalties:true,thinking:true,topKMax:0}}]};
+  if(p==='/api/models')data={models:[{id:'rp',name:'RP 动态路由',available:true,contextTokens:16384,parameters:{topK:true,penalties:true,thinking:true,topKMax:1000}}]};
   else if(p==='/api/settings'){if(method==='PUT')savedSettings=body;data=savedSettings;}
   else if(p==='/api/characters'&&method==='GET')data={characters:cards};
   else if(p==='/api/characters'&&method==='POST'){cards.push({...character,id:'c2'});data=cards.at(-1);}
@@ -118,9 +118,9 @@ test('long chat reading width and scroll position',async({page})=>{
 });
 
 test('model controls defaults persistence and reset preserve persona',async({page})=>{
- await fixture(page);await nav(page,'设置');const thinking=page.getByRole('switch',{name:'启用思考'});await expect(thinking).toHaveAttribute('aria-checked','false');await expect(page.getByLabel('对话模型')).toHaveValue('rp');await expect(page.getByLabel('Top K',{exact:false})).toBeDisabled();
+ await fixture(page);await nav(page,'设置');const thinking=page.getByRole('switch',{name:'启用思考'});await expect(thinking).toHaveAttribute('aria-checked','false');await expect(page.getByLabel('对话模型')).toHaveValue('rp');await expect(page.getByLabel('Top K',{exact:false})).toBeEnabled();await page.getByLabel('Top K',{exact:false}).fill('20');
  await page.getByLabel('你的角色设定',{exact:true}).fill('保留这份角色设定');await thinking.click();await page.getByLabel('Top P',{exact:true}).fill('0.85');await page.getByLabel('频率惩罚',{exact:false}).fill('0.2');
- const put=page.waitForRequest(r=>r.url().endsWith('/settings')&&r.method()==='PUT');await page.getByRole('button',{name:'保存设置'}).click();expect((await put).postDataJSON()).toMatchObject({thinkingEnabled:true,topP:0.85,frequencyPenalty:0.2});await expect(page.getByRole('status')).toHaveText('已保存');
+ const put=page.waitForRequest(r=>r.url().endsWith('/settings')&&r.method()==='PUT');await page.getByRole('button',{name:'保存设置'}).click();expect((await put).postDataJSON()).toMatchObject({thinkingEnabled:true,topP:0.85,topK:20,frequencyPenalty:0.2});await expect(page.getByRole('status')).toHaveText('已保存');
  await nav(page,'角色库');await nav(page,'设置');await expect(thinking).toHaveAttribute('aria-checked','true');await page.getByRole('button',{name:'恢复默认'}).click();await expect(thinking).toHaveAttribute('aria-checked','false');await expect(page.getByLabel('Top P',{exact:true})).toHaveValue('1');await expect(page.getByLabel('你的角色设定',{exact:true})).toHaveValue('保留这份角色设定');await shot(page,'settings-reset.png');
  await page.getByRole('button',{name:'保存设置'}).click();await nav(page,'对话');await page.getByRole('button',{name:/港城的雨夜/}).click();await page.getByRole('button',{name:'会话设置'}).click();await expect(page.getByRole('switch',{name:'启用思考'})).toHaveAttribute('aria-checked','false');await page.getByRole('switch',{name:'启用思考'}).click();await page.getByRole('button',{name:'保存',exact:true}).click();await page.getByRole('button',{name:'会话设置'}).click();await expect(page.getByRole('switch',{name:'启用思考'})).toHaveAttribute('aria-checked','true');
 });

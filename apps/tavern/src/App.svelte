@@ -1,4 +1,5 @@
 <script lang="ts">
+ import { Notice } from '@hasbai/ui/notice';
   import { onMount } from "svelte";
   import { createBrowserClient } from "@hasbai/auth";
   import { Button } from "@hasbai/ui/button";
@@ -64,6 +65,6 @@
     {#if loading}<p role="status">正在恢复登录…</p>{:else}<Button
         onclick={login}>登录</Button
       >{/if}
-    {#if error}<p role="alert">{error}</p>{/if}
+    {#if error}<Notice variant="error">{error}</Notice>{/if}
   </main>
 {/if}
