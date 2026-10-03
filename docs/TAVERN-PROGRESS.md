@@ -138,3 +138,11 @@ Gateway原payload=false解释了只有metadata没有完整请求；现改为true
 直接REST动态compat探针`f69b6587-3eda-4e3d-945a-310f99a5aa7f`HTTP200流式正常，日志`01M410889NVV3EGJQ0VYT4HRFV`识别custom-pc并聚合。Wrangler本地/remote代理预览均超时，取消子进程代理后健康检查仍超时，未把该环境故障当模型失败；经官方edge-preview API直达临时预览，免密钥Gateway绑定请求`75fe9f7f-03b6-483c-9a4e-fe4315ab90c2`HTTP200 SSE+[DONE]，日志`01M410S3TTK0XTPTG314V5WQC5`包含正确app/task/username、完整`choices[0].delta.content`与4个streamed_data块，证明该绑定可用。代码已切至Gateway universal绑定dynamic/rp，待自动发布，未绕过路由、无推理Secret、无第二次调用。旧Workers AI阶段的失败与上游issue617一致；本轮测试的是当前custom-pc路由。
 
 相关64项测试、Svelte零错误/零警告、聚焦Worker TypeScript检查通过；固定Linux桌面/iPhone WebKit28流程、84截图通过并审阅导入（2026-10-03T13-33-20.986Z），仅28张有意聊天/设置变化和2张新展开输入证据，3张≤50像素无关差异保留旧基线。首轮失败为新增恢复提示按钮造成旧模型重置定位歧义，已明确exact定位，未改UI行为或视觉容差。架构复核通过；PR/CI、自动发布及真实多轮验收待完成。
+
+[PR #33](https://github.com/hasbai/financial/pull/33)已通过八项必需检查并squash为`622cfd494bef51277f8d852fdd8fea09af6eeceb`。自动Build`2baf281f-6720-4fbe-939a-27faa1a753d3`成功且commit_hash一致；deployment`a9d30387-5849-45a1-bd1e-c079fec0158a`、version`dd793d65-c4f1-41e3-85f3-04d860afe0da`流量100%，health200一致；未手动部署。
+
+真实共享JWT两轮正文503/409字、均completed/stop、0error。日志`01M411MKK16P19YQVKCTKN9P8P`和`01M411N3BEJWNW8GASA0Y7ZAKB`均为custom-pc/chat/completions，保存完整聚合正文和streamed_data，metadata为`{app:"tavern",task:"roleplay",username:"时阅"}`，event_id对应各自请求UUID。第二轮完整5条messages保留最初问候与首轮输入。首轮3候选；第二轮模型未输出固定分隔符，0候选，因此继续修正候选指令，不把该轮宣称为候选验收成功。临时1会话/1角色已删除。
+
+## 每轮候选格式修正（2026-10-03）
+
+仅加强固定的System指令：每轮（包括续写、重新生成）必须完成正文和候选两部分，并给出标记加三行候选的静态格式；仍共用输出预算、只请求模型一次，不新增模型调用、伪造候选或解析协议。当前custom-pc动态路由的连续两轮edge-preview日志`01M4127MYRCDQ2B19WTMSQFQAH`与`01M412JKDPH4QTSHNEKDCGZNSJ`，正文523/448字、均3候选，430/341块分别与聚合正文完全一致；第二轮5条messages，首轮System尾部与最终指令逐字一致。日志正文可能晚于条目入库，验收读取等待payload就绪，不因此重复推理。相关56项测试及diff-check通过；该小改自动发布后的真实应用、持久化和回放验收待完成。模型指令遵循仍可能漏尾部，应用不追加第二次推理。
