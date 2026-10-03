@@ -46,9 +46,8 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
   try{
    await send({type:'start',messageId:assistantId,requestId});
    const opts=JSON.parse(row.settings_json);
-   const response=await env.AI.gateway(env.AIG_GATEWAY_ID).run({provider:'compat',endpoint:'chat/completions',headers:{},query:{model:'dynamic/rp',messages:prompt.messages,stream:true,temperature:opts.temperature,max_tokens:opts.maxTokens}},{gateway:{id:env.AIG_GATEWAY_ID,skipCache:true,collectLog:false},signal:abort.signal});
-   if(!response.ok||!response.body){console.warn('tavern-gateway-status',{status:response.status});throw new Error('模型生成失败');}
-   const result=response.body;
+   const result=await env.AI.run('dynamic/rp',{messages:prompt.messages,stream:true,temperature:opts.temperature,max_tokens:opts.maxTokens},{gateway:{id:env.AIG_GATEWAY_ID,skipCache:true,collectLog:false},signal:abort.signal});
+   if(!(result instanceof ReadableStream))throw new Error('模型未返回流式响应');
    let lastSaved=Date.now(),lastSize=0,finished=false;
    for await(const data of sseData(result,abort.signal)) {
     if(data==='[DONE]'){finished=true;break;}
