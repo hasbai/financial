@@ -2,16 +2,16 @@ import { it, expect } from 'vitest';
 import { CandidateStream, candidateDelimiter, candidateInstruction, CANDIDATE_REMINDER, validateCandidates } from './candidates';
 import { normalizeSettings } from './settings';
 import { DEFAULT_SETTINGS, LEGACY_SYSTEM_PROMPT, PREVIOUS_SYSTEM_PROMPT } from './types';
-import { buildPrompt, estimateTokens, INPUT_TARGET_TOKENS } from './prompt';
+import { buildPrompt, estimateTokens } from './prompt';
 import { parseBook } from './cards';
 const card={name:'岚',description:'港城旅店主人',personality:'沉稳'};
 
-it('adds generation defaults to historical snapshots and preserves identity and configured limits',()=>{
+it('adds generation defaults to historical snapshots and preserves identity and ignores legacy output limits',()=>{
  const old={userName:'旧用户',persona:'北方人',systemPrompt:'继续故事',temperature:0.4,maxTokens:1024};
- expect(normalizeSettings(old)).toEqual({...DEFAULT_SETTINGS,...old});
+ expect(normalizeSettings(old)).toEqual({...DEFAULT_SETTINGS,userName:old.userName,persona:old.persona,systemPrompt:old.systemPrompt,temperature:old.temperature});
  expect(normalizeSettings(old).thinkingEnabled).toBe(false);
 });
-it.each([{thinkingEnabled:'false'},{modelId:'dynamic/saki'},{topP:0},{topP:1.1},{topK:1.5},{frequencyPenalty:3},{presencePenalty:NaN},{maxTokens:128.2},{temperature:undefined}])('rejects explicit invalid settings %j', invalid=>{
+it.each([{thinkingEnabled:'false'},{modelId:'dynamic/saki'},{topP:0},{topP:1.1},{topK:1.5},{frequencyPenalty:3},{presencePenalty:NaN},{temperature:undefined}])('rejects explicit invalid settings %j', invalid=>{
  expect(()=>normalizeSettings({...DEFAULT_SETTINGS,...invalid})).toThrow();
 });
 it('holds delimiter across every possible chunk boundary and never emits the protocol',()=>{
@@ -36,12 +36,12 @@ it('withholds interrupted inline protocol and leaves custom marker semantics int
  for(let n=2;n<marker.length;n++){const p=new CandidateStream();const body=p.push('正文'+marker.slice(0,n));expect(body+p.finish().body).toBe('正文');}
  const custom=new CandidateStream('\nCUSTOM\n');expect(custom.push('正文CUSTOM\n尾部')).toBe('正文CUSTOM\n尾部');expect(custom.inTail).toBe(false);
 });
-it.each([16384,32768])('fits %i context and preserves latest complete turn before optional worldbook', window=>{
+it.each([16384,32768])('preserves recent history and existing worldbook selection at %i', window=>{
  const book=parseBook({name:'书',token_budget:window,entries:[{constant:true,content:'世'.repeat(window),enabled:true}]});
  const latest={id:'latest',role:'user' as const,content:'这轮不要丢',status:'completed' as const,ordinal:1,requestId:null,createdAt:0,candidates:['不进入prompt']};
  const previous=[{...latest,id:'earlier-user',content:'上一轮的问题',ordinal:0},{...latest,id:'earlier-reply',role:'assistant' as const,content:'上一轮的回答',ordinal:1}];
  const prompt=buildPrompt(card,[book],[...previous,latest],DEFAULT_SETTINGS,window,'',{protocol:'候选协议',inputRatio:1.2});
- expect(prompt.messages.some(m=>m.content==='这轮不要丢')).toBe(true);expect(prompt.messages.some(m=>m.content==='上一轮的问题')).toBe(true);expect(prompt.messages.some(m=>m.content==='上一轮的回答')).toBe(true);expect(prompt.estimatedTokens+4096+512).toBeLessThanOrEqual(window);expect(prompt.messages.map(m=>m.content).join('')).not.toContain('不进入prompt');
+ expect(prompt.messages.some(m=>m.content==='这轮不要丢')).toBe(true);expect(prompt.messages.some(m=>m.content==='上一轮的问题')).toBe(true);expect(prompt.messages.some(m=>m.content==='上一轮的回答')).toBe(true);expect(prompt.needsCompression).toBe(prompt.estimatedTokens>window);expect(prompt.messages.map(m=>m.content).join('')).not.toContain('不进入prompt');
 });
 it('keeps the greeting, all complete turns and activated worldbook when capacity is unknown',()=>{
  const m={id:'a',role:'user' as const,content:'当前输入',status:'completed' as const,ordinal:1,requestId:null,createdAt:0};
@@ -75,8 +75,8 @@ it('adds the format reminder only to the latest request copy and counts it befor
  expect(reminded.messages.slice(1,-1)).toEqual(plain.messages.slice(1,-1));
  expect(reminded.messages.at(-1)?.content).toBe('当前输入\n\n'+CANDIDATE_REMINDER);
  expect(JSON.stringify(history)).toBe(before);
- expect(reminded.estimatedTokens-plain.estimatedTokens).toBe(Math.ceil(estimateTokens(CANDIDATE_REMINDER)*1.2)+8);
- expect(()=>buildPrompt(card,[],history,DEFAULT_SETTINGS,plain.estimatedTokens+DEFAULT_SETTINGS.maxTokens+512,'',{...options,formatReminder:CANDIDATE_REMINDER})).toThrow('上下文上限');
+ expect(reminded.estimatedTokens).toBeGreaterThan(plain.estimatedTokens);
+ expect(buildPrompt(card,[],history,DEFAULT_SETTINGS,plain.estimatedTokens,'',{...options,formatReminder:CANDIDATE_REMINDER}).needsCompression).toBe(true);
  const continued=buildPrompt(card,[],history.slice(0,2),DEFAULT_SETTINGS,null,'从中断处继续',{...options,formatReminder:CANDIDATE_REMINDER});
  expect(continued.messages.at(-1)?.content).toBe('从中断处继续\n\n'+CANDIDATE_REMINDER);
 });

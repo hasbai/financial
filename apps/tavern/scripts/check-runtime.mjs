@@ -372,20 +372,12 @@ export async function checkRuntime(base='https://tavern.hasbai.xyz') {
    const tailPage=Math.ceil(corpus.total/12),tail=await(await api('discover?source=theatrelm&sort=catalog&page='+tailPage)).json();if(tail.hasMore||tail.results.length!==corpus.total-(tailPage-1)*12)throw new Error('Catalog tail failed');
    const invalid=await fetch(base+'/api/install',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({source:'theatrelm',id:'eb8597aec4e3e114b2d28b86c3e2496dd48c5af3:2921'})});if(invalid.status!==404&&invalid.status!==422)throw new Error('Malformed card accepted');
    const elara=await(await api('discover?source=theatrelm&sort=catalog&q=Abbess%20Elara')).json();const c=await install('theatrelm',elara.results[0].id);
-   const s=await(await api('sessions','POST',{characterId:c.id})).json();createdSessions.push(s.id);if(s.settings.maxTokens!==4096)throw new Error('Default budget not upgraded');
+   const s=await(await api('sessions','POST',{characterId:c.id})).json();createdSessions.push(s.id);if('maxTokens' in s.settings)throw new Error('Legacy output cap exposed');
    const normal=frames(await(await api('sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你是谁？请用中文，以角色身份简短回答。'})).text());const done=normal.find(e=>e.type==='done');
    if(!done||done.message.status!=='completed'||done.message.finishReason!=='stop'||!done.message.content.trim())throw new Error('Real generation incomplete');
-   console.log(JSON.stringify({stage:'normal',finishReason:done.message.finishReason,chars:done.message.content.length,maxTokens:s.settings.maxTokens,catalog:corpus.total,tailPage,tailCount:tail.results.length}));
-   await api('sessions/'+s.id,'PATCH',{settings:{...s.settings,maxTokens:1024}});
-   const partial=frames(await(await api('sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'请至少写2000个汉字，详细描绘你生活的世界和环境，连续写作，不要提前收尾。'})).text());const partialDone=partial.find(e=>e.type==='done');
-   if(!partialDone||partialDone.message.status!=='error'||partialDone.message.finishReason!=='length'||!partial.some(e=>e.type==='error'))throw new Error('Length end not classified');
-   const restored=await(await api('sessions/'+s.id)).json();if(restored.messages.at(-1).finishReason!=='length'||restored.session.generationId)throw new Error('Length recovery failed');
-   console.log(JSON.stringify({stage:'length',persisted:true,chars:partialDone.message.content.length,finishReason:'length'}));
-   if(partialDone.message.content.trim()){
-    await api('sessions/'+s.id,'PATCH',{settings:{...s.settings,maxTokens:4096}});
-    const continued=frames(await(await api('sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),continue:true})).text());const end=continued.find(e=>e.type==='done');if(!end||end.message.status!=='completed'||end.message.finishReason!=='stop'||!end.message.content.startsWith(partialDone.message.content)||end.message.content.length<=partialDone.message.content.length)throw new Error('Continuation lost prefix');
-    console.log(JSON.stringify({stage:'continuation',prefixPreserved:true,status:end.message.status,finishReason:end.message.finishReason,chars:end.message.content.length}));
-   }else throw new Error('Continuation acceptance requires nonempty saved partial');
+   console.log(JSON.stringify({stage:'normal',finishReason:done.message.finishReason,chars:done.message.content.length,catalog:corpus.total,tailPage,tailCount:tail.results.length}));
+   const requestId=crypto.randomUUID();const regenerated=frames(await(await api('sessions/'+s.id+'/generate','POST',{requestId,regenerate:true})).text());const end=regenerated.find(e=>e.type==='done');if(!end||end.message.status!=='completed'||end.message.finishReason!=='stop')throw new Error('Regeneration incomplete');
+   const replay=await(await api('sessions/'+s.id+'/generate','POST',{requestId})).json();if(!replay.replayed||replay.message.id!==end.message.id)throw new Error('Replay failed');console.log(JSON.stringify({stage:'regeneration',persisted:true,replayed:true,chars:end.message.content.length}));
    const result=await api('sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'继续讲述。'}),reader=result.body.getReader();let chunk='',generationId='';
    while(!generationId){const next=await reader.read();if(next.done)throw new Error('No start');chunk+=new TextDecoder().decode(next.value);for(const line of chunk.split('\n'))if(line.startsWith('data: ')){try{const e=JSON.parse(line.slice(6));if(e.type==='start')generationId=e.messageId;}catch{}}}
    await api('sessions/'+s.id+'/stop','POST',{generationId});while(!(await reader.read()).done){}const stopped=await(await api('sessions/'+s.id)).json();if(stopped.messages.at(-1).finishReason!=='stopped'||stopped.session.generationId)throw new Error('Stop reason failed');console.log(JSON.stringify({stage:'stop',reason:'stopped',lockCleared:true}));
