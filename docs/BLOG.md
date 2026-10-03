@@ -10,9 +10,9 @@ pnpm monorepo：`apps/financial` 保留 Svelte 5 SPA、原业务/PWA；`apps/blo
 
 `0002_content_inheritance.sql` 将 `public.content` 作为 PostgreSQL 继承父表，`public.article` 与 `public.note` 为子表。父表保存 UUID、类型、Markdown、摘要、封面、发布状态和时间；文章另有标题、全站唯一 slug 与独立数字序列，手记没有标题或标签，使用自己的数字序列。`public.article_tag` 直接关联文章与 `public.tag`。旧文章、图片及标签 UUID 不变，旧分类 URL 存入文章 `legacy_path` 供永久重定向。跨分类重名 slug 追加文章 UUID 前缀消歧。`0002` 先保留旧分类列和 `tag_ids` 以兼容旧 Worker，部署新 Worker 并核验后由 `0004_remove_category.sql` 移除 `public.category`、`article.category_id` 与 `article.tag_ids`。父表查询用于 `/contents/:id`，写入始终指向具体子表；PostgreSQL 继承不自动将父表写入路由到子表，也不跨子表继承主键唯一性。
 
-公开路径为 `/articles/:title`（参数取文章 slug）、`/notes/:sequence` 与 `/contents/:id`（按 `kind` 重定向到规范路径）。首页混排最近的文章和手记，时间线按发布时间聚合，关于页为静态内容。正文唯一存储为 Markdown，服务端和客户端使用同一安全 Markdown 渲染器。
+公开路径为 `/articles/:title`（参数取文章 slug）、`/notes/:sequence` 与 `/contents/:id`（按 `kind` 重定向到规范路径）。首页混排最近的文章和手记，时间线按发布时间聚合，独立页面 `public.page` 继承 `content`，类型为 `page`、有标题与唯一根路径 slug（例如 `/about`、`/privacy`、`/terms`），没有文章序号或标签。后台“独立页面”可创建、编辑、发布、撤回和删除，沿用 `updated_at` 冲突检测。根路径只接受小写字母、数字、连字符，禁止占用 articles、notes、timeline、tags、contents、studio、auth、api、images、assets。页面不进入首页、文章、手记或时间线；主导航固定只展示“关于”，页脚只有政策入口和版权。`/contents/:id` 同样支持 page 重定向。正文唯一存储为 Markdown，服务端和客户端使用同一安全 Markdown 渲染器。
 
-文章保存使用 `save_article` Data API RPC，在一个数据库事务内写文章与标签关系，并用 id/updated_at 判断冲突；手记和删除仍使用标准 PostgREST 写入。文章和手记创建时客户端生成 UUID。UI 失败保留输入。发布要求正文和发布时间；匿名 RLS 仅放行已发布且发布时间已到的内容。`content`、`article`、`note` 与 `article_tag` 分别设置 RLS 与 GRANT；superadmin 写具体子表和关联表，anonymous 无写权限、无 financial schema 访问权。
+文章保存使用 `save_article` Data API RPC，在一个数据库事务内写文章与标签关系，并用 id/updated_at 判断冲突；手记、独立页面和删除仍使用标准 PostgREST 写入。文章和手记创建时客户端生成 UUID。UI 失败保留输入。发布要求正文和发布时间；匿名 RLS 仅放行已发布且发布时间已到的内容。`content`、`article`、`note`、`page` 与 `article_tag` 分别设置 RLS 与 GRANT；superadmin 写具体子表和关联表，anonymous 无写权限、无 financial schema 访问权。
 
 Neon 网关要求 JWT，包括匿名访问。访客直接调用 Neon Auth `/token/anonymous` 获取短期 `role=anonymous` JWT，再直接读取 Data API；不登录、不经博客 API 代理、不使用数据库密钥。SSR 同样调用这两个公开端点。公开页使用 SvelteKit 通用 `+page.ts` load，水合后的页间跳转直接从浏览器请求匿名令牌与 Data API，不再获取 `__data.json`；导航期间立即显示骨架，关闭 hover 预取。首页和列表只读摘要列，不序列化整篇 Markdown；浏览器短时复用匿名令牌。Auth0 管理员登录继续用同一 SPA PKCE、内存 token。Neon managed auth 仅提供匿名令牌；不增加另一套用户登录入口。新增 managed `neon_auth` 属平台系统 schema，博客业务表仍全部在 public。
 
@@ -28,8 +28,14 @@ Tiptap 3 WYSIWYG，Markdown 官方扩展；支持标题、粗斜体、列表、�
 
 ## CI 与发布
 
-Financial `Check`、Blog `Blog` 独立 workflow，均有廉价 changes job。业务应用目录修改只启动该应用检查；shared packages、workspace/lockfile 修改启动两边。PR 为普通检查，main push 不重复验收。Luma 有意视觉变更必须先 dispatch 两个候选 workflow、审阅并导入截图，再由普通 PR 严格比较。
+Financial `Check`、Blog `Blog` 独立 workflow，均有廉价 changes job。业务应用目录修改只启动该应用检查；shared packages、workspace/lockfile 修改启动两边。PR 为普通检查，main push 不重复验收。有意视觉变更先使用固定 Linux 镜像 `pnpm visual:blog --all` 生成截图，审阅并导入，再由普通 PR 严格比较；全站外壳变化生成全部博客场景。
 
 财务从 `apps/financial` cwd 执行原校验脚本和 visual manifest。根脚本继续代理 `pnpm build` 等财务命令，根 wrangler 配置兼容现有自动构建入口；博客 `pnpm build:blog`。两个 Worker 的 Cloudflare 自动构建连接同一仓库 `hasbai/financial`、生产分支 `main`，财务根目录为 `apps/financial`、博客根目录为 `apps/blog`；各自仅监视本应用、`packages/*`、根 `package.json`、`pnpm-lock.yaml` 和 `pnpm-workspace.yaml`。博客 Worker 使用 `apps/blog/wrangler.jsonc` 中的 R2 `image` 绑定及两个自定义域名。GitHub Actions 不执行部署。
 
-本地不运行 typecheck、单测、build 或 Playwright 验收，统一 GitHub Actions。设备测试是 WebKit/Chromium 模拟，不能称作 iOS 真机验收。截图、真实 JWT/API、R2 上传与线上 SSR 属独立验收层。
+本地不单独运行 typecheck、单测、build 或 Playwright 验收；固定 Linux 镜像中的视觉候选流程可执行所需构建与截图。完整验收由 GitHub Actions 执行。设备测试是 WebKit/Chromium 模拟，不能称作 iOS 真机验收。截图、真实 JWT/API、R2 上传与线上 SSR 属独立验收层。
+
+## 独立页面迁移（2026-10-04）
+
+`database/blog/0005_pages.sql` 添加 page 的显式主键、唯一路径、正文与发布约束、RLS 和 GRANT。旧 About 文字落库，隐私政策与服务条款使用 jsclndnz@gmail.com 作为联系邮箱，描述北极小站统一登录的实际身份范围与相关应用的数据处理；不更改 Auth0 登录连接或 Google OAuth 配置。已在隔离生产分支 `blog-pages-20261004` / `br-cold-cloud-b3cldjol` 验证，再应用生产并通过 NOTIFY 刷新 Data API schema cache。真实匿名 JWT 读取三份已发布页面返回 200；迁移前后原文章记录 fingerprint 一致。政策页不经登录也可 SSR 读取。验证 SQL 位于 `database/blog/test_pages.sql`，全部测试记录和变更在事务结束时回滚。
+
+本地固定 Linux 候选 `2026-10-03T17-06-10.926Z` 已审阅并导入 38 张手机/桌面基线，7 项流程通过、1 项按设备跳过。覆盖 page SSR、canonical、UUID 跳转、顶部导航、流隔离、自定义路径发布/改名/删除、重复/保留路径、失败保留输入及拒绝放弃未保存编辑。隐私页同时验证浅深色；设备为 WebKit/Chromium 模拟，不是 iOS 真机。普通 PR 验收与自动部署结论随发布另行核验。

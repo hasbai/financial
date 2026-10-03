@@ -33,6 +33,6 @@
     </div>{/if}
   <div class="reader-end">
     <a href="/articles">← 返回文章</a>
-    <a href={"/studio/" + article.id}>编辑文章 ↗</a>
+    <a href={"/studio/" + article.id}>编辑文章</a>
   </div>
 </article>

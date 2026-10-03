@@ -4,22 +4,27 @@
   import type { BlogAuth } from "$lib/auth.svelte";
   import { repository } from "$lib/api";
   import {
+    pageSlugSchema,
+    pagePath,
     articlePath,
     imagePath,
     type Article,
+    type Page,
     type Tag,
   } from "$lib/content";
   import MarkdownEditor from "./MarkdownEditor.svelte";
   import { Button } from "@hasbai/ui/button";
   import { Input } from "@hasbai/ui/input";
   import { Textarea } from "@hasbai/ui/textarea";
-  import { ArrowLeft, ArrowUpRight, ImagePlus, X } from "@lucide/svelte";
-  let { id }: { id?: string } = $props();
+  import { ArrowLeft, ImagePlus, X } from "@lucide/svelte";
+  let { id, kind = "article" }: { id?: string; kind?: "article" | "page" } = $props();
+  const label = $derived(kind === "page" ? "页面" : "文章");
   const auth = getContext<BlogAuth>("blog-auth");
   const api = repository(auth.token);
-  let original = $state<Article>();
+  let original = $state<Article | Page>();
   let title = $state("");
   let slug = $state("");
+  let slugError = $state("");
   let excerpt = $state("");
   let markdown = $state("");
   let tagIds = $state<string[]>([]);
@@ -63,16 +68,16 @@
     loading = true;
     error = "";
     try {
-      tags = await api.tags();
+      if (kind === "article") tags = await api.tags();
       if (id) {
-        const article = await api.article(id);
-        if (!article) throw new Error("文章不存在或无操作权限");
+        const article = await (kind === "page" ? api.page(id) : api.article(id));
+        if (!article) throw new Error(`${label}不存在或无操作权限`);
         original = article;
         title = article.title;
         slug = article.slug;
         excerpt = article.excerpt;
         markdown = article.markdown;
-        tagIds = (await api.tagsForArticle(article.id)).map((tag) => tag.id);
+        if (kind === "article") tagIds = (await api.tagsForArticle(article.id)).map((tag) => tag.id);
         coverId = article.cover_id;
         status = article.status;
         publishedAt = article.published_at;
@@ -89,6 +94,15 @@
   });
   async function save(nextStatus: "draft" | "published") {
     if (saving || uploading) return;
+    slugError = "";
+    if (kind === "page") {
+      const checked = pageSlugSchema.safeParse(slug);
+      if (!checked.success) {
+        slugError = checked.error.issues[0].message;
+        document.getElementById("slug")?.focus();
+        return;
+      }
+    }
     saving = true;
     error = "";
     notice = "";
@@ -98,7 +112,7 @@
     if (status === "published" && !publishedAt)
       publishedAt = new Date().toISOString();
     try {
-      const article = await api.saveArticle(
+      const article = await (kind === "page" ? api.savePage : api.saveArticle)(
         payload(),
         original?.id,
         original?.updated_at,
@@ -107,7 +121,7 @@
       baseline = JSON.stringify(payload());
       notice = status === "published" ? "已发布" : "草稿已保存";
       saving = false;
-      if (!id) await goto("/studio/" + article.id, { replaceState: true });
+      if (!id) await goto((kind === "page" ? "/studio/pages/" : "/studio/") + article.id, { replaceState: true });
     } catch (e) {
       status = previousStatus;
       publishedAt = previousPublished;
@@ -166,7 +180,7 @@
     saving = true;
     error = "";
     try {
-      await api.remove("article", original.id, original.updated_at);
+      await api.remove(kind, original.id, original.updated_at);
       baseline = JSON.stringify(payload());
       saving = false;
       await goto("/studio");
@@ -178,7 +192,7 @@
 </script>
 
 <svelte:window onbeforeunload={beforeUnload} /><svelte:head
-  ><title>{title || "新文章"} · 编辑室</title></svelte:head
+  ><title>{title || `新${label}`} · 编辑室</title></svelte:head
 >
 <section class="wrap py-8">
   <div class="flex flex-wrap items-center justify-between gap-4 pb-6">
@@ -193,8 +207,8 @@
             : notice || (status === "published" ? "已发布" : "草稿")}</span
       >{#if original?.status === "published"}<Button
           variant="ghost"
-          href={articlePath(original)}
-          target="_blank">查看<ArrowUpRight size={16} /></Button
+          href={original.kind === "page" ? pagePath(original) : articlePath(original)}
+          target="_blank">查看</Button
         >{/if}<Button
         variant="outline"
         disabled={loading || saving || uploading}
@@ -203,12 +217,12 @@
       ><Button
         disabled={loading || saving || uploading}
         onclick={() => save("published")}
-        >{status === "published" ? "更新文章" : "发布文章"}</Button
+        >{status === "published" ? `更新${label}` : `发布${label}`}</Button
       >
     </div>
   </div>
   {#if loading}<div class="empty" role="status">
-      正在打开文章…
+      正在打开{label}…
     </div>{:else if error && !baseline}<div class="empty">
       <p class="error" role="alert">{error}</p>
       <Button onclick={load}>重试</Button>
@@ -225,7 +239,7 @@
           bind:value={title}
           disabled={saving}
           maxlength="240"
-        />
+        ></textarea>
         <div class="mt-6">
           <MarkdownEditor
             bind:value={markdown}
@@ -238,12 +252,18 @@
       <aside class="space-y-6 lg:sticky lg:top-8">
         <h2 class="serif pb-4 text-xl">出版信息</h2>
         <div class="field">
-          <label for="slug">文章网址</label><Input
+          <label for="slug">{kind === "page" ? "页面路径" : "文章网址"}</label>
+          <div class="flex items-center gap-2">{#if kind === "page"}<span aria-hidden="true">/</span>{/if}<Input
             id="slug"
             bind:value={slug}
-            placeholder="hello-world"
+            placeholder={kind === "page" ? "about" : "hello-world"}
+            aria-invalid={!!slugError}
+            aria-describedby={slugError ? "slug-error" : undefined}
+            oninput={() => (slugError = "")}
             disabled={saving}
           />
+          </div>
+          {#if slugError}<p id="slug-error" class="error text-sm" role="alert">{slugError}</p>{/if}
         </div>
         <div class="field">
           <label for="excerpt">摘要</label><Textarea
@@ -254,7 +274,7 @@
             disabled={saving}
           />
         </div>
-        <fieldset class="space-y-3">
+        {#if kind === "article"}<fieldset class="space-y-3">
           <legend class="text-sm font-medium">标签</legend>
           <div class="flex flex-wrap gap-2">
             {#each tags as tag}<label
@@ -297,12 +317,12 @@
                 onclick={() => (creatingTag = false)}>取消</Button
               >
             </div>
-          </div>{/if}
+          </div>{/if}{/if}
         <div class="field">
           <span class="text-sm font-medium">封面</span>{#if coverId}<img
               class="cover"
               src={imagePath(coverId)}
-              alt="文章封面"
+              alt={`${label}封面`}
             /><Button
               variant="ghost"
               disabled={saving}
@@ -324,7 +344,7 @@
           >
         </div>
         {#if original}<div class="pt-6">
-            {#if deleting}<p class="mb-3 text-sm">删除这篇文章？</p>
+            {#if deleting}<p class="mb-3 text-sm">删除这个{label}？</p>
               <div class="flex gap-2">
                 <Button variant="destructive" disabled={saving} onclick={remove}
                   >确认删除</Button
@@ -337,7 +357,7 @@
                 variant="ghost"
                 class="text-destructive"
                 disabled={saving}
-                onclick={() => (deleting = true)}>删除文章</Button
+                onclick={() => (deleting = true)}>删除{label}</Button
               >{/if}
           </div>{/if}
       </aside>
