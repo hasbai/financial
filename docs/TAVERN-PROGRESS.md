@@ -174,3 +174,5 @@ Gateway原payload=false解释了只有metadata没有完整请求；现改为true
 显式请求cache_prompt:true、保留Gateway skipCache:true；二者分别为上游KV复用和回复缓存，不将字段存在当缓存成功。日志增加实际prompt/output/cached tokens、prefill/decode时序、生成处理阶段/模型调用阶段首正文耗时，以及分项预算、发现值/规划值和未包含消息数。上游缺指标为null，不编命中率。
 
 83项相关轻量测试、聚焦Worker TypeScript与diff-check通过。架构复核提出的容量来源标记、固定块边界/大轮次覆盖已修正；首次固定Linux截图11流程/68图通过，默认文案2图有意变化。恢复已安装Docker Desktop后使用同一固定镜像，未放宽容差。最终截图导入、PR/CI、自动发布与真实JWT/模型/cache验收仍待完成，后续以最终交付记录为准。
+
+PR #36八项必需状态通过并squash为`cf1dfeb459570a23b0f4999bfa1efb4e649cba18`，自动Build `2d9cfb37-7ce7-4715-9cf7-eaed6c7af715`成功且SHA一致，version `f5ddd817-a7de-40b2-afc9-2cd10e32e7e2`线上health一致。首次真实JWT正文正常stop但0候选，临时2会话/1角色全部删除；因此未作为最终候选验收。后续修正恢复此前验证过的完整固定候选协议，仅保留写作规则精简、分块预算和观测，候选/缓存需在修正自动发布后复验。
