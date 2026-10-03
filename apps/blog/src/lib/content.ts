@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const site = { name: "北极手记", origin: "https://hasbai.xyz" };
+export const site = { name: "北极小站", origin: "https://hasbai.xyz" };
 export type Tag = { id: string; name: string; slug: string };
 export type ImageRecord = {
   id: string;

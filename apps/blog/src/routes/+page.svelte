@@ -8,7 +8,7 @@
 
 <svelte:head>
   <title>{site.name} — 写下此刻，留给以后。</title>
-  <meta name="description" content="北极手记，记录思考与日常。" />
+  <meta name="description" content={site.name + "，记录思考与日常。"} />
   <link rel="canonical" href={site.origin} />
 </svelte:head>
 
@@ -16,12 +16,12 @@
   <div class="hero-glow hero-exit-bg" aria-hidden="true"></div>
   <div class="hero-center">
     <span class="hero-seal hero-rise" aria-hidden="true"><SnowflakeMark size={55} /></span>
-    <h1 class="hero-exit-text"><span class="hero-greeting">Hi, 这里是 <em>北极手记</em><span class="hero-wave" aria-hidden="true"><SnowflakeMark size={20} strokeWidth={2.2} /></span></span><span class="hero-statement">把 <em>想法</em> 写成文字，留下日常。</span></h1>
+    <h1 class="hero-exit-text"><span class="hero-greeting">Hi, 这里是 <em>{site.name}</em><span class="hero-wave" aria-hidden="true"><SnowflakeMark size={20} strokeWidth={2.2} /></span></span><span class="hero-statement">把 <em>想法</em> 写成文字，留下日常。</span></h1>
     <p class="hero-description hero-rise hero-exit-meta">写一点思考，记一些日常，让值得留下的文字慢慢生长。</p>
   </div>
   <div class="hero-whisper hero-rise hero-exit-meta">
     <p>「写下此刻，留给以后。」</p>
-    <nav class="hero-links" aria-label="探索北极手记">
+    <nav class="hero-links" aria-label={"探索" + site.name}>
       <a href="/articles" aria-label="浏览文章"><BookOpen size={19} /></a>
       <a href="/notes" aria-label="浏览手记"><NotebookPen size={19} /></a>
       <a href="/timeline" aria-label="浏览时间线"><Clock3 size={19} /></a>

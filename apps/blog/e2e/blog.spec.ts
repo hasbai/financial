@@ -38,7 +38,10 @@ test('SSR, direct Data API navigation, skeleton, canonical URLs and reading stat
     if (request.url().includes('__data.json')) dataRequests.push(request.url());
   });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /北极手记/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /北极小站/ })).toBeVisible();
+  await expect(page).toHaveTitle('北极小站 — 写下此刻，留给以后。');
+  await expect(page.getByRole('link', { name: '北极小站首页', exact: true, includeHidden: true })).toHaveAttribute('href', '/');
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', '北极小站，记录思考与日常。');
   await expect(page).toHaveScreenshot('home.png', { fullPage: true });
 
   await page.route(/\/rest\/v1\/article\?/, async (route) => {
@@ -49,6 +52,7 @@ test('SSR, direct Data API navigation, skeleton, canonical URLs and reading stat
   await expect(page.getByLabel('正在打开页面')).toBeVisible();
   await navigate;
   await expect(page.getByRole('heading', { name: '文章', exact: true })).toBeVisible();
+  await expect(page).toHaveTitle('文章 · 北极小站');
   expect(dataRequests).toEqual([]);
   await page.unroute(/\/rest\/v1\/article\?/);
   await expect(page).toHaveScreenshot('articles.png', { fullPage: true });
@@ -80,6 +84,7 @@ test('SSR, direct Data API navigation, skeleton, canonical URLs and reading stat
   await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '时间线' }).click();
   await expect(page).toHaveScreenshot('timeline.png', { fullPage: true });
   await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '关于' }).click();
+  await expect(page).toHaveTitle('关于北极小站 · 北极小站');
   await expect(page).toHaveScreenshot('about.png', { fullPage: true });
   await page.goto('/tags/writing');
   await expect(page).toHaveScreenshot('tag.png', { fullPage: true });
@@ -114,6 +119,7 @@ test('editor writes articles and titleless notes through Data API', async ({ pag
   await expect(page.getByRole('link', { name: '查看' })).toBeVisible();
 
   await page.goto('/studio/notes/new');
+  await expect(page).toHaveTitle('新手记 · 编辑室 · 北极小站');
   await page.getByRole('textbox', { name: '正文' }).fill('今天的一则手记。');
   await expect(page).toHaveScreenshot('note-editor.png', { fullPage: true });
   const noteSave = page.waitForRequest((request) => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/note'));
@@ -134,6 +140,7 @@ test('standalone pages stay out of feeds and support editable paths', async ({ p
   expect(uuid.status()).toBe(308);
   expect(uuid.headers().location).toBe('/privacy');
   await page.goto('/privacy');
+  await expect(page).toHaveTitle('隐私政策 · 北极小站');
   await expect(page.getByRole('heading', { name: '隐私政策', exact: true })).toBeVisible();
   await expect(page.locator('link[rel=canonical]')).toHaveAttribute('href', 'https://hasbai.xyz/privacy');
   const nav = page.getByRole('navigation', { name: '主导航' });
@@ -157,8 +164,9 @@ test('standalone pages stay out of feeds and support editable paths', async ({ p
 
   await page.goto('/auth/callback?code=fixture&state=fixture');
   await expect(page).toHaveURL(/\/studio$/);
+  await expect(page).toHaveTitle('编辑室 · 北极小站');
   await page.getByRole('button', { name: '独立页面', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '关于北极手记', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '关于北极小站', exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot('pages-studio.png', { fullPage: true });
   await page.getByRole('link', { name: '新页面', exact: true }).click();
   await page.getByLabel('标题', { exact: true }).fill('自定义页面');
