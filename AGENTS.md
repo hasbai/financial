@@ -15,6 +15,11 @@
 
 目标目录缺失时，先核对 `git status --short --branch`、`git worktree list` 与最新 `origin/main` 的目录树；可能是当前分支早于应用合并，或应用位于另一个工作区。核对后复用包含目标应用的干净工作区，不因当前分支缺目录要求用户重新提供已存在的项目地址；不为定位强行切换、重置或覆盖其他任务。机器专属工作区路径不作为永久代码入口。以下 Financial 专属业务限制仅适用于财务，其他应用按各自章节和文档执行。
 
+## 项目实现原则
+
+- 禁止过度设计：围绕已确认需求选择直接、可维护的实现，不增加不必要的抽象、校验门槛或服务依赖。
+- 尽量复用统一 UI：优先使用 `packages/ui` 的共享组件；可复用的现有组件先共享，再由应用引用，避免各页面重复实现通知、表单和弹层。
+
 # Financial 应用指南
 
 个人财务管理，Svelte 5 SPA / TypeScript / Bits UI / shadcn-svelte（Luma，共享 packages/ui）/ Tailwind CSS / Lucide / pnpm。Cloudflare Worker `financial`，域名 `financial.hasbai.xyz`；Neon hasbai / neondb / financial；Auth0 北极小站。

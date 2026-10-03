@@ -34,3 +34,9 @@ it.each([16384,32768])('fits %i context and preserves latest complete turn befor
  const prompt=buildPrompt(card,[book],[...previous,latest],DEFAULT_SETTINGS,window,'',{protocol:'候选协议',inputRatio:1.2});
  expect(prompt.messages.some(m=>m.content==='这轮不要丢')).toBe(true);expect(prompt.messages.some(m=>m.content==='上一轮的问题')).toBe(true);expect(prompt.messages.some(m=>m.content==='上一轮的回答')).toBe(true);expect(prompt.estimatedTokens+4096+512).toBeLessThanOrEqual(window);expect(prompt.messages.map(m=>m.content).join('')).not.toContain('不进入prompt');
 });
+it('keeps one leading system message and the latest complete turn when capacity is unknown',()=>{
+ const m={id:'a',role:'user' as const,content:'当前输入',status:'completed' as const,ordinal:1,requestId:null,createdAt:0};
+ const history=[{...m,content:'更早的问题'},{...m,role:'assistant' as const,content:'更早的回复'},{...m,content:'上一轮问题'},{...m,role:'assistant' as const,content:'上一轮回答'},m];
+ const prompt=buildPrompt({...card,post_history_instructions:'后续规则'},[],history,DEFAULT_SETTINGS,null,'',{protocol:'候选协议'});
+ expect(prompt.messages.filter(m=>m.role==='system')).toHaveLength(1);expect(prompt.messages[0].content).toContain('后续规则');expect(prompt.messages[0].content).toContain('候选协议');expect(prompt.messages.slice(1).map(m=>m.content)).toEqual(['上一轮问题','上一轮回答','当前输入']);
+});

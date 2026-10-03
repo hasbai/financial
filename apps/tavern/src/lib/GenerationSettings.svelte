@@ -3,22 +3,21 @@
  import { Button } from '@hasbai/ui/button';
  import { GENERATION_DEFAULTS, type Settings, type ModelOption } from '../../shared/types';
  let { settings = $bindable(), models = [], disabled = false, scope = '新会话默认', id = 'generation' }: { settings: Settings; models?: ModelOption[]; disabled?: boolean; scope?: string; id?: string } = $props();
- const selected = $derived(models.find(m => m.id === settings.modelId));
- const unavailable = $derived(disabled || !selected?.available);
+ const unavailable = $derived(disabled);
 </script>
 <section class="settings-section model-section" aria-labelledby={`${id}-model-heading`}>
  <div class="section-heading"><div><Cpu size={18} aria-hidden="true"/><h2 id={`${id}-model-heading`}>模型</h2></div><span class="scope-badge">{scope}</span></div>
  <div class="field"><label for={`${id}-model`}>对话模型</label><select id={`${id}-model`} bind:value={settings.modelId} {disabled}><option value="rp">RP 动态路由</option></select></div>
- <div class="thinking-row"><div class="thinking-label"><Brain size={19} aria-hidden="true"/><label id={`${id}-thinking-label`} for={`${id}-thinking`}>启用思考</label><span class="scope-badge">{!selected?.available?'待核实':settings.thinkingEnabled?'已开启':'已关闭'}</span></div><button type="button" class="thinking-switch" id={`${id}-thinking`} role="switch" aria-checked={settings.thinkingEnabled} aria-labelledby={`${id}-thinking-label`} disabled={unavailable||!selected?.parameters.thinking} onclick={()=>settings.thinkingEnabled=!settings.thinkingEnabled}><span></span></button></div>
+ <div class="thinking-row"><div class="thinking-label"><Brain size={19} aria-hidden="true"/><label id={`${id}-thinking-label`} for={`${id}-thinking`}>启用思考</label><span class="scope-badge">{settings.thinkingEnabled?'已开启':'已关闭'}</span></div><button type="button" class="thinking-switch" id={`${id}-thinking`} role="switch" aria-checked={settings.thinkingEnabled} aria-labelledby={`${id}-thinking-label`} disabled={unavailable} onclick={()=>settings.thinkingEnabled=!settings.thinkingEnabled}><span></span></button></div>
 </section>
 <section class="settings-section" aria-labelledby={`${id}-params-heading`}>
  <div class="section-heading"><div><SlidersHorizontal size={18} aria-hidden="true"/><h2 id={`${id}-params-heading`}>生成参数</h2></div><Button type="button" variant="ghost" disabled={disabled} onclick={()=>Object.assign(settings,GENERATION_DEFAULTS)}><RotateCcw size={14} aria-hidden="true"/>恢复默认</Button></div>
  <div class="parameter-grid">
   <div class="field parameter-field"><label for={`${id}-temperature`}>温度</label><div class="range-field"><input type="range" min="0" max="2" step="0.05" bind:value={settings.temperature} aria-label="温度滑杆" disabled={unavailable}/><input id={`${id}-temperature`} type="number" min="0" max="2" step="0.05" bind:value={settings.temperature} required disabled={unavailable}/></div></div>
   <div class="field parameter-field"><label for={`${id}-top-p`}>Top P</label><div class="range-field"><input type="range" min="0.01" max="1" step="0.01" bind:value={settings.topP} aria-label="Top P 滑杆" disabled={unavailable}/><input id={`${id}-top-p`} type="number" min="0.01" max="1" step="0.01" bind:value={settings.topP} required disabled={unavailable}/></div></div>
-  <div class="field parameter-field"><label for={`${id}-top-k`}>Top K <span class="scope-badge">{selected?.parameters.topK?(settings.topK===0?'模型默认':'已设定'):'不可用'}</span></label><input id={`${id}-top-k`} type="number" min="0" max={selected?.parameters.topKMax??0} step="1" bind:value={settings.topK} required disabled={unavailable||!selected?.parameters.topK}/></div>
+  <div class="field parameter-field"><label for={`${id}-top-k`}>Top K <span class="scope-badge">{settings.topK===0?'模型默认':'已设定'}</span></label><input id={`${id}-top-k`} type="number" min="0" max="1000" step="1" bind:value={settings.topK} required disabled={unavailable}/></div>
   <div class="field parameter-field"><label for={`${id}-max-tokens`}>回复长度上限</label><input id={`${id}-max-tokens`} type="number" min="128" max="8192" step="1" bind:value={settings.maxTokens} required disabled={unavailable}/></div>
-  <div class="field parameter-field"><label for={`${id}-frequency`}>频率惩罚 {#if !selected?.parameters.penalties}<span class="scope-badge">不可用</span>{/if}</label><input id={`${id}-frequency`} type="number" min="-2" max="2" step="0.1" bind:value={settings.frequencyPenalty} required disabled={unavailable||!selected?.parameters.penalties}/></div>
-  <div class="field parameter-field"><label for={`${id}-presence`}>存在惩罚 {#if !selected?.parameters.penalties}<span class="scope-badge">不可用</span>{/if}</label><input id={`${id}-presence`} type="number" min="-2" max="2" step="0.1" bind:value={settings.presencePenalty} required disabled={unavailable||!selected?.parameters.penalties}/></div>
+  <div class="field parameter-field"><label for={`${id}-frequency`}>频率惩罚 </label><input id={`${id}-frequency`} type="number" min="-2" max="2" step="0.1" bind:value={settings.frequencyPenalty} required disabled={unavailable}/></div>
+  <div class="field parameter-field"><label for={`${id}-presence`}>存在惩罚 </label><input id={`${id}-presence`} type="number" min="-2" max="2" step="0.1" bind:value={settings.presencePenalty} required disabled={unavailable}/></div>
  </div>
 </section>

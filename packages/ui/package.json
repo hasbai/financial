@@ -29,7 +29,9 @@
     "./select/index.js": "./src/components/select/index.ts",
     "./badge": "./src/components/badge/index.ts",
     "./badge/index.js": "./src/components/badge/index.ts",
-    "./theme.css": "./src/theme.css"
+    "./theme.css": "./src/theme.css",
+    "./notice": "./src/components/notice/index.ts",
+    "./notice/index.js": "./src/components/notice/index.ts"
   },
   "dependencies": {
     "bits-ui": "^2.19.2",

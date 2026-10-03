@@ -14,7 +14,7 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
  const initial=await getSession(env,owner,id);
  const existing=await env.DB.prepare("SELECT * FROM messages WHERE session_id=? AND request_id=? AND role='assistant'").bind(id,requestId).first<MessageRow>();
  if(existing)return json({message:message(existing),replayed:true});
- const capability=await capabilities(env);const now=Date.now();
+ const capability=await capabilities(env,ctx);const now=Date.now();
  const regenerate=data.regenerate===true,continuing=data.continue===true;
  if(regenerate&&continuing)throw new HttpError(400,'生成模式无效');const text=typeof data.content==='string'?data.content.trim():'';
  if(!regenerate && !continuing && (!text || text.length>24000))throw new HttpError(400,'消息需为 1–24000 字符');
@@ -36,7 +36,7 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
   const assistantOrdinal=regenerate||continuing?ordinal:ordinal+1;
   const books=await ownedBooks(env,owner,JSON.parse(row.book_ids_json));
   prompt=buildPrompt(JSON.parse(row.character_json),books.filter(b=>b.enabled).map(b=>parseBook(JSON.parse(b.book_json),b.name)),[...base,...(regenerate||continuing?[]:[userMessage])],settings(JSON.parse(row.settings_json)),capability.contextTokens,continuing?'继续上一条回复，从中断处接着写，不要重复已有内容。':'',{protocol:candidateInstruction(requestId),inputRatio:capability.inputRatio});
-  modelInput(settings(JSON.parse(row.settings_json)),capability);
+  modelInput(settings(JSON.parse(row.settings_json)));
   const statements=[];
   if(!regenerate&&!continuing)statements.push(env.DB.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,request_id,created_at) VALUES(?,?,'user',?,'completed',?,?,?)").bind(userMessage.id,id,text,ordinal,requestId,messageTime));
   statements.push(env.DB.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,request_id,created_at) VALUES(?,?,'assistant',?,'pending',?,?,?)").bind(assistantId,id,prefix,assistantOrdinal,requestId,messageTime+1));
@@ -54,7 +54,7 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
   try{
    await send({type:'start',messageId:assistantId,requestId});
    const opts=settings(JSON.parse(row.settings_json));
-   finishReason='upstream';const result=await env.AI.run('dynamic/rp',{messages:prompt.messages,stream:true,...modelInput(opts,capability)},{...roleplayGatewayOptions(env,username,requestId),returnRawResponse:true,signal:abort.signal});
+   finishReason='upstream';const result=await env.AI.run('dynamic/rp',{messages:prompt.messages,stream:true,...modelInput(opts)},{...roleplayGatewayOptions(env,username,requestId),returnRawResponse:true,signal:abort.signal});
    if(!(result instanceof Response)){finishReason='unsupported';throw new Error('nonstream');}
    gatewayLogId=result.headers.get('cf-aig-log-id');
    if(!result.ok){await inspectLimit(result,env,capability);throw new Error('upstream');}
@@ -81,7 +81,6 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
    if(finishReason!=='stop')throw new Error('incomplete');
    if(!output.slice(prefix.length).trim()){finishReason='empty';throw new Error('empty');}
    candidates=parsed.candidates;
-   await recordFeedback(env,capability,{model,promptTokens,estimatedTokens:prompt.estimatedTokens/capability.inputRatio}).catch(()=>{});
   }catch{if(abort.signal.aborted)finishReason=abortReason;else if(finishReason==='stop')finishReason='upstream';status=['stopped','disconnected','timeout'].includes(finishReason)?'aborted':'error';failure=generationNotice(finishReason);}
   finally{
    if(!parserFinished)output+=parser.finish().body;
@@ -89,7 +88,7 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
    try{
     await env.DB.batch([env.DB.prepare("UPDATE messages SET content=?,candidates_json=CASE WHEN status='aborted' OR ?<>'completed' THEN NULL ELSE ? END,finish_reason=CASE WHEN status='aborted' AND finish_reason IS NOT NULL THEN finish_reason ELSE ? END,status=CASE WHEN status='aborted' THEN 'aborted' ELSE ? END WHERE id=?").bind(output,status,candidates.length?JSON.stringify(candidates):null,finishReason,status,assistantId),env.DB.prepare('UPDATE sessions SET generation_id=NULL,generation_until=NULL,updated_at=? WHERE id=? AND generation_id=?').bind(Date.now(),id,assistantId)]);
     const saved=await env.DB.prepare('SELECT * FROM messages WHERE id=?').bind(assistantId).first<MessageRow>();
-    console.info('tavern-generation-outcome',{messageId:assistantId,requestId,gatewayLogId,finishReason:saved?.finish_reason,status:saved?.status,model,outputTokens,chars:output.length,candidateCount:saved?.candidates_json?JSON.parse(saved.candidates_json).length:0,routeVersion:capability.version,elapsedMs:Date.now()-started});
+    console.info('tavern-generation-outcome',{messageId:assistantId,requestId,gatewayLogId,finishReason:saved?.finish_reason,status:saved?.status,model,outputTokens,chars:output.length,candidateCount:saved?.candidates_json?JSON.parse(saved.candidates_json).length:0,elapsedMs:Date.now()-started});
     if(!disconnected){if(failure)await send({type:'error',message:failure});await send({type:'done',message:message(saved!)});}
    }finally{await writer.close().catch(()=>{});}
   }
@@ -113,5 +112,5 @@ export async function errorFeedback(env:Env,capability:Capability,value:unknown)
  if(!value||typeof value!=='object')return;const v=value as {model?:unknown;error?:{model?:unknown;message?:unknown};message?:unknown};
  const actualModel=typeof v.model==='string'?v.model:typeof v.error?.model==='string'?v.error.model:undefined;
  const text=typeof v.error?.message==='string'?v.error.message:typeof v.message==='string'?v.message:'';
- const limit=explicitContextLimit(text);if(actualModel&&limit)await recordFeedback(env,capability,{model:actualModel,contextLimit:limit});
+ const limit=explicitContextLimit(text);if(limit)await recordFeedback(env,capability,{model:actualModel,contextLimit:limit});
 }
