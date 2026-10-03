@@ -59,7 +59,7 @@ GitHub Actions只在PR创建/更新时进行完整验收（手动dispatch保留�
 
 按用户要求，本地 `.env` 保存 AUTH0_TEST_EMAIL / AUTH0_TEST_PASSWORD，权限600且被Git忽略，不进入构建。`scripts/auth0-token.mjs` 只供本机检查：通过 Auth0 Universal Login 正常账号页/密码页、Cookie 会话、Authorization Code + PKCE 获取本人 Access Token。无需 Auth0 CLI 管理登录、client secret 或临时修改 grant；不改写 `.env`。授权回调严格校验 state，凭据仅提交同一 Auth0 origin，遇 MFA/CAPTCHA 等额外验证时明确停止。生产 SPA 继续使用官方 SDK，测试脚本不进入浏览器。
 
-角色配置见 auth0/financial-role.js：仅 financial API audience 且 Auth0 角色包含 superadmin 时设置顶层 role。2026-09-15 隔离实测命名空间 claim 虽被注入 JWT，Neon 未切换角色；顶层 role 配合 `.role` 已通过真实 API。错误签名、错误 audience 与无 token 均由 Data API 拒绝；业务函数不再重复检查 JWT。
+北极小站共享配置位于 packages/auth/src/config.ts。Tavern复用相同audience与顶层role，不再使用专属audience。auth0/financial-role.js保留原superadmin角色映射，并对各audience统一签发 https://hasbai.xyz/username 实际名称与已验证email；不查询逐轮用户资料。2026-09-15 隔离实测命名空间 claim 虽被注入 JWT，Neon 未切换角色；顶层 role 配合 `.role` 已通过真实 API。错误签名、错误 audience 与无 token 均由 Data API 拒绝；业务函数不再重复检查 JWT。
 
 ## 首页请求复用
 

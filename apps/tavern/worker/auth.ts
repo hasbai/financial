@@ -1,7 +1,8 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
-export const ROLE_CLAIM = "https://tavern.hasbai.xyz/role";
-export const USERNAME_CLAIM = "https://tavern.hasbai.xyz/username";
-export const EMAIL_CLAIM = "https://tavern.hasbai.xyz/email";
+import { authClaims } from "@hasbai/auth/config";
+export const ROLE_CLAIM = authClaims.role;
+export const USERNAME_CLAIM = authClaims.username;
+export const EMAIL_CLAIM = authClaims.email;
 const keys = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 export async function identity(
   request: Request,

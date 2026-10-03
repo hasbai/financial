@@ -76,4 +76,6 @@ CI 等待统一使用 `node scripts/wait-ci.mjs <owner/repo> <run-id> <full-sha>
 
 ## Tavern 应用
 
-`apps/tavern`：私人角色扮演对话，Svelte 5 SPA / 共享 Luma / Auth0 独立 audience / Worker / D1 / 私有 R2。财务三表限制不适用。当前模型由服务端固定 AI Gateway `dynamic/rp`；模型选择按 [模型与续聊方案](docs/TAVERN-MODEL-SETTINGS.md) 演进，只接受服务端白名单逻辑 ID，不接受任意上游模型、路由、URL 或密钥；全部会话由服务端持久化，角色扩展脚本不执行。方案见 `docs/TAVERN.md`。Tavern workflow 的 `tavern-check`/`tavern-visual` 必须通过；`pnpm visual:tavern --all` 在同一固定 Linux 镜像生成审阅基线，交付沿用主代理修改提交、新子代理 PR/CI/squash、Workers Builds 自动部署与线上核验。公开角色目录同步采用固定 revision/完整校验/原子切换，不将失败的上游结果伪装成搜索成功。
+`apps/tavern`：私人角色扮演对话，Svelte 5 SPA / 共享 Luma / 北极小站统一 Auth0 配置 / Worker / D1 / 私有 R2。财务三表限制不适用。当前模型由服务端固定 AI Gateway `dynamic/rp`；模型选择按 [模型与续聊方案](docs/TAVERN-MODEL-SETTINGS.md) 演进，只接受服务端白名单逻辑 ID，不接受任意上游模型、路由、URL 或密钥；全部会话由服务端持久化，角色扩展脚本不执行。方案见 `docs/TAVERN.md`。Tavern workflow 的 `tavern-check`/`tavern-visual` 必须通过；`pnpm visual:tavern --all` 在同一固定 Linux 镜像生成审阅基线，交付沿用主代理修改提交、新子代理 PR/CI/squash、Workers Builds 自动部署与线上核验。公开角色目录同步采用固定 revision/完整校验/原子切换，不将失败的上游结果伪装成搜索成功。
+
+Tavern 复用 `packages/auth` 的北极小站配置及公共 JWT claims，禁止增加 Tavern audience 限定或专属用户名签发条件。仍验证共享 audience、签名、有效期与 superadmin。Gateway 保存完整请求和回复，统一三项 metadata。

@@ -1,4 +1,5 @@
 // Authorized setup only. Preserves existing application origins and trigger bindings.
+import { authConfig } from "@hasbai/auth/config";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 function api(method, path, data) {
@@ -11,17 +12,7 @@ function api(method, path, data) {
   } catch { throw new Error(`Auth0 API ${method} ${path} failed or timed out`); }
   return out.trim() ? JSON.parse(out) : {};
 }
-const audience = "https://tavern.hasbai.xyz/api",
-  clientId = "mdmD7xvX5yay52SRVZeuIOhGHIa0Wdl2";
-const resources = api("get", "resource-servers");
-if (!resources.some((r) => r.identifier === audience))
-  api("post", "resource-servers", {
-    name: "Tavern API",
-    identifier: audience,
-    signing_alg: "RS256",
-    token_lifetime: 3600,
-    allow_offline_access: false,
-  });
+const { audience, clientId } = authConfig;
 const client = api("get", `clients/${clientId}`);
 const origins = [
   "https://tavern.hasbai.xyz",
@@ -43,14 +34,14 @@ api("patch", `clients/${clientId}`, {
 });
 const listed = api("get", "actions/actions");
 const existing = (listed.actions ?? listed).find(
-  (a) => a.name === "tavern role",
+  (a) => a.name === "financial role",
 );
 const spec = {
-  name: "tavern role",
+  name: "financial role",
   supported_triggers: [{ id: "post-login", version: "v3" }],
   runtime: "node22",
   code: readFileSync(
-    new URL("../../../auth0/tavern-role.js", import.meta.url),
+    new URL("../../../auth0/financial-role.js", import.meta.url),
     "utf8",
   ),
 };
@@ -63,14 +54,14 @@ const action = existing
 const id = action.id ?? existing.id;
 api("post", `actions/actions/${id}/deploy`, {});
 const before = api("get", "actions/triggers/post-login/bindings");
-const bindings = (before.bindings ?? before).map((b) => ({
+const bindings = (before.bindings ?? before).filter(b => b.action.name !== "tavern role").map((b) => ({
   ref: { type: "action_id", value: b.action.id },
-  display_name: b.display_name,
+  display_name: b.display_name ?? b.action.name,
 }));
 if (!bindings.some((b) => b.ref.value === id))
   bindings.push({
     ref: { type: "action_id", value: id },
-    display_name: "tavern role",
+    display_name: "financial role",
   });
 api("patch", "actions/triggers/post-login/bindings", { bindings });
 const verified = api("get", `clients/${clientId}`);
@@ -82,7 +73,8 @@ if (
       verified.allowed_logout_urls.includes(origin) &&
       verified.web_origins.includes(origin),
   ) ||
-  !(after.bindings ?? after).some((b) => b.action.id === id)
+  JSON.stringify((after.bindings ?? after).map(b => b.action.id)) !==
+    JSON.stringify(bindings.map(b => b.ref.value))
 )
   throw new Error("Auth0 configuration verification failed");
 console.log(

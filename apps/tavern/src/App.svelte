@@ -17,9 +17,7 @@
   });
   async function init() {
     try {
-      client = createBrowserClient(location.origin, {
-        audience: "https://tavern.hasbai.xyz/api",
-      });
+      client = createBrowserClient(location.origin);
       if (location.pathname === "/auth/callback") {
         await client.handleRedirectCallback();
         history.replaceState({}, "", "/");

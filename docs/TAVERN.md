@@ -23,7 +23,7 @@
 1. [CCv2 规范](https://github.com/malfoyslastname/character-card-spec-v2/blob/main/spec_v2.md)：核心字段、内嵌 character_book、`{{original}}`、未知扩展保留；creator_notes 不加入模型提示。
 2. [CCv3 规范](https://github.com/kwaroran/character-card-spec-v3/blob/main/SPEC_V3.md)：`ccv3` PNG 元数据优先、CHARX card.json、nickname、资源引用、独立 lorebook_v3。
 3. [SillyTavern World Info](https://docs.sillytavern.app/usage/core-concepts/worldinfo/)：关键词、扫描深度、常驻、选择性副关键词、排序、递归与预算；界面不复制全套复杂控制面板。
-4. [AI Gateway 动态路由](https://developers.cloudflare.com/ai-gateway/features/dynamic-routing/usage/) 与 [Workers binding](https://developers.cloudflare.com/ai-gateway/usage/worker-binding-methods/)：2026-10-02 文档已支持 `AI.run('dynamic/rp', OpenAI chat completions, { gateway: { id } })`。实现采用文档规定的 `AI.run('dynamic/rp', input, { gateway: { id: 'default' } })`，跳过缓存；Gateway 归属日志按 [模型方案](TAVERN-MODEL-SETTINGS.md) 保留，正文存储单独关闭。旧兼容 universal binding 在生产返回500，已改用原生动态路由调用；本地旧版 workerd 远程绑定 internal error 不能代表生产结果。默认 BYOK alias 与计费须真实验证，不能据 mock 宣称线上推理可用。
+4. [AI Gateway 动态路由](https://developers.cloudflare.com/ai-gateway/features/dynamic-routing/usage/) 与 [Workers binding](https://developers.cloudflare.com/ai-gateway/usage/worker-binding-methods/)：2026-10-02 文档已支持 `AI.run('dynamic/rp', OpenAI chat completions, { gateway: { id } })`。实现采用文档规定的 `AI.run('dynamic/rp', input, { gateway: { id: 'default' } })`，跳过缓存；Gateway 归属日志按 [模型方案](TAVERN-MODEL-SETTINGS.md) 保留，完整请求与回复存储开启。旧兼容 universal binding 在生产返回500，已改用原生动态路由调用；本地旧版 workerd 远程绑定 internal error 不能代表生产结果。默认 BYOK alias 与计费须真实验证，不能据 mock 宣称线上推理可用。
 5. [Hugging Face Dataset Viewer 搜索](https://huggingface.co/docs/dataset-viewer/search)、[公开角色集](https://huggingface.co/datasets/G-reen/TheatreLM-v2.1-Characters)：下载固定 revision `eb8597aec4e3e114b2d28b86c3e2496dd48c5af3` 的完整 worlds.json，SHA256校验后校验5011条原始记录，隔离9条名称损坏记录后同步5002条可用角色至D1；原数据不改写。远端 /search 实测超时/500，故按服务端目录分页检索。安装时从同步内容读取，不相信客户端传回的角色定义；保留 CC-BY-2.0 署名、来源版本与转换标记。
 6. [Chub](https://www.characterhub.org/about)、[SillyTavern 官方导入实现](https://github.com/SillyTavern/SillyTavern/blob/release/src/endpoints/content-manager.js)：标准角色 PNG 下载及 metadata 映射。首次探测403；本轮普通请求和生产Worker均恢复200，实测官方搜索排序、topics标签及PNG下载。以Chub为默认来源，不绕过访问保护；失败仍明确显示。
 7. [RisuRealm API](https://realm.risuai.net/help/api)：仅允许文档化接口且推荐客户端使用。公开文档只有下载，没有搜索契约；首版不使用其未文档化搜索端点。
@@ -32,7 +32,7 @@
 
 ## 架构与边界
 
-`apps/tavern`：Svelte 5/Vite SPA，复用 `@hasbai/ui` Luma、Lucide 与 `@hasbai/auth` 的 audience override。Worker `tavern` 负责 JWT、D1/R2、搜索适配器、Prompt 和推理。域名 `tavern.hasbai.xyz`。
+`apps/tavern`：Svelte 5/Vite SPA，复用 `@hasbai/ui` Luma、Lucide 与 `@hasbai/auth` 统一配置。Worker `tavern` 负责 JWT、D1/R2、搜索适配器、Prompt 和推理。域名 `tavern.hasbai.xyz`。
 
 ```mermaid
 flowchart LR
@@ -44,7 +44,7 @@ flowchart LR
   Gateway --> Model[路由配置中的模型]
 ```
 
-Auth0：独立 `https://tavern.hasbai.xyz/api` audience；现有 SPA client 增量加入回调/logout/origin。JWT 验签/exp/issuer/audience 在 Worker 完成，专属 role claim 要求 superadmin。数据按 sub 归属，所有查询含 owner。客户端只含公开配置与内存 Access Token。财务 PostgreSQL 权限封装限制不适用于独立 Tavern Worker。
+Auth0：复用北极小站共享配置（现有API标识为 `https://financial.hasbai.xyz/api`），禁止Tavern audience限定；现有 SPA client 增量加入回调/logout/origin。JWT 验签/exp/issuer/audience 在 Worker 完成，共享顶层 role 要求 superadmin，实际用户名使用公共 `https://hasbai.xyz/username` claim。数据按 sub 归属，所有查询含 owner。客户端只含公开配置与内存 Access Token。财务 PostgreSQL 权限封装限制不适用于独立 Tavern Worker。
 
 D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整同步后原子切换，不包含私人数据。私人 D1 表：characters（完整卡 JSON、摘要、来源、原文件与头像 key、内容 hash）、worldbooks（原始书 JSON 与启用）、sessions（角色快照、persona/参数、generation lock）、messages（角色/content/status/request ID/顺序）、settings（用户 persona 和生成参数）。已安装角色删除不删除既有会话快照。R2 原文件私有，头像由 Bearer API 转 Blob URL；不创建公共桶，不自动加载角色扩展资源；发现页只显示经过HTTPS/固定头像域校验的公开Chub缩略图。
 

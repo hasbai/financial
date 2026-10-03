@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts"
   },
   "dependencies": {
     "@auth0/auth0-spa-js": "^2.25.0"

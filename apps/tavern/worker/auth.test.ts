@@ -12,7 +12,7 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
   );
   const env = {
     AUTH0_DOMAIN: "hasbai.eu.auth0.com",
-    AUTH0_AUDIENCE: "https://tavern.hasbai.xyz/api",
+    AUTH0_AUDIENCE: "https://financial.hasbai.xyz/api",
   } as const;
   const sign = (
     aud = env.AUTH0_AUDIENCE as string,
@@ -35,7 +35,7 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
   expect(verified.admin).toBe(true);expect(verified.username).toBe("月石");
   expect(authenticatedUsername(verified)).toBe("月石");
   for (const token of [
-    await sign("https://financial.hasbai.xyz/api"),
+    await sign("https://tavern.hasbai.xyz/api"),
     await sign(env.AUTH0_AUDIENCE, "-1h"),
     await sign(env.AUTH0_AUDIENCE, "1h", "https://wrong.test/"),
     "invalid",

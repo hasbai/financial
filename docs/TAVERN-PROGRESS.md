@@ -107,3 +107,11 @@ Gateway同一验收时间段恰好3条Tavern日志，HTTP200、模型qwen3.8-27b
 单样本关闭思考首正文18.46秒、正文最后增量18.69秒、候选就绪不晚于总耗时22.68秒；开启首正文6.98秒、总耗时12.18秒。冷启动/预填充缓存状态不同，不能据此比较思考开关延迟或承诺速度。实际模板验证和请求参数、token用量与生成终态分别记录，未把过滤reasoning_content当关闭证明。
 
 上下文自动化验证16K/32K、未知模式及后台刷新/更小明确上限两种并发顺序。实际上游/props曾HTTP200、n_ctx32768且单slot；发布后的应用模型选项仍为contextTokens:null，随后上游/props、/v1/models、/health均HTTP502。因此真实运行时容量发现尚未成功，不把节点侧32K探针当作Worker已发现容量；探测失败不会阻断聊天，保留核心设定、最近完整问答和当前输入，省略世界书及更早历史。上游GET异常原因未定位，接口恢复后后台自动重新探测。应用修复与模型服务当时可用性分开记录。
+
+## 统一Auth0与完整Gateway日志修订（2026-10-03）
+
+用户明确要求北极小站Auth0配置统一，禁止Tavern audience限定，并要求查看完整模型请求。当前修订移除Tavern前端audience覆盖与专属claims，复用packages/auth公共配置、顶层role和公共username；原财务role映射保留，公共名称签发不限制Tavern audience。旧Tavern Action在兼容发布后解绑，setup脚本不再创建独立API或恢复旧Action。
+
+Gateway原payload=false解释了只有metadata没有完整请求；现改为true，保留三项metadata、动态Workers binding与单次调用。以下旧记录中的payload禁存及Tavern专属鉴权均为历史行为；新版本真实JWT及完整请求/回复日志验收进行中。
+
+发布前已先更新既有financial role Action并回读源码一致，原5个绑定顺序保持，旧Tavern Action暂保以兼容当前Worker。普通Universal Login+PKCE签发共享audience JWT、顶层role=superadmin、公共username=时阅，无Tavernclaims；该JWT只读财务Data API HTTP200，原财务映射有效。auth/生成40项及Svelte/聚焦Worker类型检查通过；Linux28流程82截图通过，80张逐像素一致、2张在既有50像素容差内，无有意UI变化、不替换原基线。架构复核通过。
