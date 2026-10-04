@@ -37,6 +37,8 @@ export function patchState(state:StoryState,value:unknown):StoryState {
 export function storyMessages(messages:Message[]):Message[]{const chosen=new Map<number,Message>();for(const m of messages)if(m.status==='completed')chosen.set(m.ordinal,m);return [...chosen.values()].sort((a,b)=>a.ordinal-b.ordinal);}
 export type MemoryHit={id:string;text:string;source:{messageId?:string;ordinal?:number;role?:Message['role'];bookId?:string;revision?:string;entryId?:string}};
 const memoryIdentity=(hit:MemoryHit)=>stableJson({id:hit.id,source:hit.source});
+// One source can yield different excerpts across queries; only repeated excerpts lack new evidence.
+const memoryEvidence=(hit:MemoryHit)=>stableJson({id:hit.id,source:hit.source,text:hit.text});
 /** Keep both sources without comparing lexical scores with vector similarity. */
 export function mergeMemory(history:MemoryHit[],lore:MemoryHit[]):MemoryHit[]{
  const unique=(hits:MemoryHit[])=>[...new Map(hits.map(hit=>[memoryIdentity(hit),hit])).values()];
@@ -93,7 +95,7 @@ export class AgentTurn {
    const args=JSON.parse(call.function.arguments);if(!object(args))throw Error('工具参数无效');
    const key=call.function.name+':'+stableJson(args);if(this.seen.has(key))throw Error('工具调用没有进展');this.seen.add(key);
    let value:unknown;
-   if(call.function.name==='search_memory'){if(Object.keys(args).length!==1||typeof args.query!=='string')throw Error('记忆检索参数无效');const hits=mergeMemory(searchMemory(this.history,args.query),lore.get(args.query)??[]);value=hits;const added=hits.filter(hit=>!this.evidence.has(memoryIdentity(hit)));for(const hit of hits)this.evidence.add(memoryIdentity(hit));progress ||= added.length>0||!this.emptySearch&&!hits.length;this.emptySearch ||= !hits.length;}
+   if(call.function.name==='search_memory'){if(Object.keys(args).length!==1||typeof args.query!=='string')throw Error('记忆检索参数无效');const hits=mergeMemory(searchMemory(this.history,args.query),lore.get(args.query)??[]);value=hits;const added=hits.filter(hit=>!this.evidence.has(memoryEvidence(hit)));for(const hit of hits)this.evidence.add(memoryEvidence(hit));progress ||= added.length>0||!this.emptySearch&&!hits.length;this.emptySearch ||= !hits.length;}
    else if(call.function.name==='update_state'){if(Object.keys(args).length!==1||!('patch'in args))throw Error('状态更新参数无效');const next=patchState(this.state,args.patch);progress ||= stableJson(next)!==stableJson(this.state);this.state=next;value={ok:true};}
    else throw Error('工具不存在');
    const result=stableJson(value);this.steps.push({call,result});results.push({role:'tool',tool_call_id:call.id,content:result});

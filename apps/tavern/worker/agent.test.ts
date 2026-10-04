@@ -55,6 +55,15 @@ it('counts a new source or book revision as evidence while stopping repeated evi
  expect(turn.execute([call('银钥匙')],new Map([['银钥匙',[{...lore,source:{...lore.source,revision:'v2'}}]]]))[0].content).toContain('"revision":"v2"');
  expect(()=>turn.execute([call('北门')],new Map([['北门',[{...lore,source:{...lore.source,revision:'v2'}}]]]))).toThrow('没有进展');
 });
+it('accepts a new fragment from the same successful version but stops queries returning already seen text',()=>{
+ const history=[m('obsolete',0,'银怀表藏在北塔。'),m('current',0,'铜钥匙在北门。'+'风'.repeat(1000)+'银怀表藏在南塔。'),m('failed',0,'银怀表已丢失。','error')];
+ const turn=new AgentTurn(emptyState(),history),call=(query:string)=>({id:query,type:'function' as const,function:{name:'search_memory',arguments:JSON.stringify({query})}});
+ const first=JSON.parse(turn.execute([call('铜钥匙')])[0].content),second=JSON.parse(turn.execute([call('银怀表')])[0].content);
+ expect(first[0].source.messageId).toBe('current');expect(first[0].text).not.toContain('银怀表');
+ expect(second[0].source).toEqual(first[0].source);expect(second[0].text).toContain('银怀表藏在南塔');
+ expect(()=>turn.validate([call('银怀表')])).toThrow('没有进展');
+ expect(()=>turn.execute([call('银怀表 南塔')])).toThrow('没有进展');
+});
 it('preflights a whole batch without consuming calls or partially staging state',()=>{
  const turn=new AgentTurn(emptyState(),[]),update={id:'update',type:'function' as const,function:{name:'update_state',arguments:'{"patch":{"scene":"港口"}}'}},search={id:'search',type:'function' as const,function:{name:'search_memory',arguments:'{"query":"钥匙"}'}};
  expect(()=>turn.validate([search,{...search,id:'duplicate'}])).toThrow('没有进展');

@@ -228,6 +228,25 @@ it('passes mixed history and worldbook sources into the native model continuatio
  expect(hits).toHaveLength(3);expect(hits).toContainEqual(evidence);expect(hits.some((h:{id:string})=>h.id==='history-2')).toBe(true);expect(recall).toHaveBeenCalledTimes(1);
  }finally{recall.mockRestore();}
 });
+it('continues native retrieval for distinct fragments of one long message, persists both steps and replays without inference',async()=>{
+ const {s}=await seed();sessionDb.prepare('UPDATE messages SET content=? WHERE session_id=?').run('铜钥匙在北门。'+'风'.repeat(1000)+'银怀表藏在南塔。',s.id);
+ aiRun.mockResolvedValueOnce(tool('search_memory',{query:'铜钥匙'},'keys')).mockResolvedValueOnce(tool('search_memory',{query:'银怀表'},'watch')).mockResolvedValueOnce(completion('钥匙在北门，怀表在南塔。'));
+ const requestId=crypto.randomUUID(),wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'核对旧事'})).text();await Promise.all(work);
+ expect(wire).not.toContain('"type":"error"');expect(wire).not.toContain('tool_calls');expect(aiRun).toHaveBeenCalledTimes(4);
+ const query=aiRun.mock.calls[2][0].query as {messages:{role:string;tool_call_id?:string;content:string}[]},results=query.messages.filter(m=>m.role==='tool');
+ expect(results.map(m=>m.tool_call_id)).toEqual(['keys','watch']);const hits=results.map(m=>JSON.parse(m.content)[0]);
+ expect(hits[0].source).toEqual(hits[1].source);expect(hits[0].text).not.toContain('银怀表');expect(hits[1].text).toContain('银怀表藏在南塔');
+ const restored=await(await call('/api/sessions/'+s.id)).json() as {messages:Message[];session:{generationId:string|null}};
+ expect(restored.messages.at(-1)).toMatchObject({content:'钥匙在北门，怀表在南塔。',status:'completed',finishReason:'stop',candidates:expect.any(Array)});expect(restored.messages.at(-1)?.candidates).toHaveLength(3);expect(restored.session.generationId).toBeNull();
+ const steps=JSON.parse(sessionDb.prepare('SELECT steps_json FROM turn_snapshots').get()!.steps_json as string);expect(steps.map((step:{call:{id:string}})=>step.call.id)).toEqual(['keys','watch']);
+ expect((await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId})).json() as {replayed:boolean}).replayed).toBe(true);expect(aiRun).toHaveBeenCalledTimes(4);
+});
+it('stops different native queries that return the same excerpt instead of allowing a retrieval loop',async()=>{
+ const {s}=await seed();sessionDb.prepare('UPDATE messages SET content=? WHERE session_id=?').run('铜钥匙在北门。',s.id);
+ aiRun.mockResolvedValueOnce(tool('search_memory',{query:'铜钥匙'},'keys')).mockResolvedValueOnce(tool('search_memory',{query:'铜钥匙 北门'},'again'));
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'核对旧事'})).text();await Promise.all(work);
+ expect(wire).toContain('"type":"error"');expect(aiRun).toHaveBeenCalledTimes(2);expect(sessionDb.prepare('SELECT after_json FROM turn_snapshots').get()?.after_json).toBeNull();expect(sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id).toBeNull();
+});
 it('runs two native tool steps, commits the snapshot atomically and isolates Director input from tool protocol and sees staged state',async()=>{
  const {s}=await seed();aiRun.mockResolvedValueOnce(tool('search_memory',{query:'你好'})).mockResolvedValueOnce(tool('update_state',{patch:{scene:'北港',facts:{钥匙:'旅人持有'}}},'call-2')).mockResolvedValueOnce(completion('北港灯亮了。'));
  const requestId=crypto.randomUUID(),wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'我们已经到达北港，钥匙在我手里。'})).text();await Promise.all(work);expect(wire).not.toContain('tool_calls');expect(aiRun).toHaveBeenCalledTimes(4);
