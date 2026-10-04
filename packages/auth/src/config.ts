@@ -14,7 +14,8 @@ export const permissions = {
 } as const;
 
 /** Use only after the API has verified the JWT. */
-export function hasPermission(claims: { permissions?: unknown }, permission: string): boolean {
+export function hasPermission(claims: unknown, permission: string): boolean {
+  if (typeof claims !== "object" || claims === null || !("permissions" in claims)) return false;
   return Array.isArray(claims.permissions) && claims.permissions.includes(permission);
 }
 
@@ -25,7 +26,7 @@ export function tokenHasPermission(token: string | undefined, permission: string
     const parts = token.split(".");
     if (parts.length !== 3) return false;
     const claims: unknown = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-    return typeof claims === "object" && claims !== null && hasPermission(claims, permission);
+    return hasPermission(claims, permission);
   } catch {
     return false;
   }
