@@ -64,7 +64,7 @@ Financial `Check`、Blog `Blog` 独立 workflow，均有廉价 changes job。业
 
 博客、财务、Tavern 和 Zboard 共用 `packages/auth` 的 Auth0 Universal Login。共享工厂不再强制 `connection=eastmoney-email`，由同一北极小站组织显示邮箱、Google、Microsoft Account 和 GitHub；Zboard 继续使用独立 API audience。通用能力后续继续在共享 packages 实现，不增加各应用专属登录选择或重复认证配置。
 
-Google、Microsoft 和 GitHub 均已启用到北极小站应用及组织，Microsoft 组织连接已补齐；全部连接保留 `assign_membership_on_login=false`，不修改成员、角色或 Action。提供商已有 `https://auth.hasbai.xyz/login/callback` 回调保留，Google/Microsoft 补登记当前共用的 `https://hasbai.eu.auth0.com/login/callback` Web 回调。自定义域名与原域名签发的 issuer 不同，本次保留现有统一 domain 及服务端验证约定。
+Google、Microsoft 和 GitHub 均已启用到北极小站应用及组织，Microsoft 组织连接已补齐。用户确认允许新 OAuth 账号登录、各应用权限另行分配：三个社交连接统一启用 `assign_membership_on_login=true`，邮箱连接准入与 signup 设置保留；不关联已有身份、不复制角色、不修改 Action。无角色账号仍签发 `role=authenticated`、`_roles=[]`，Tavern 要求 superadmin，Zboard 首次账号默认禁用。提供商已有 `https://auth.hasbai.xyz/login/callback` 回调保留，Google/Microsoft 补登记当前共用的 `https://hasbai.eu.auth0.com/login/callback` Web 回调。自定义域名与原域名签发的 issuer 不同，本次保留现有统一 domain 及服务端验证约定。
 
 共享 SDK 配置及 Zboard audience 的 9 项相关单测通过。本地固定 Linux 镜像验证博客写作、财务总览、Zboard 页面与 Tavern 角色库，36 张候选已审阅；既有视觉基线保持，桌面博客编辑器仅 20 个像素差异，其他 35 张像素一致。此夹具不执行真实 OAuth，提供商跳转、完整账号登录、PR CI 和线上部署须分别核验。
 
