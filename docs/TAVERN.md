@@ -2,7 +2,7 @@
 
 日期：2026-10-03。目标：在 Hasbai monorepo 提供私人角色扮演对话应用，完成网络搜卡、安装、本地角色卡/世界书导入、持久会话与 `dynamic/rp` 推理闭环。财务三表边界不适用于 Tavern；不改动财务、博客或 Zboard 数据。
 
-整体调用、单次正文与候选、动态短上下文预算见 [HTML 架构图](TAVERN-ARCHITECTURE.html)。
+整体调用、正文与按需候选补齐、动态短上下文预算见 [HTML 架构图](TAVERN-ARCHITECTURE.html)。
 
 后续32K本地模型优化、会话Agent与状态/记忆/工具见[长期方案与优先级](TAVERN-AGENT-PLAN.md)。
 
@@ -71,7 +71,7 @@ D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整
 - 标识：登录、导航与favicon使用博客已有北极小站雪花SVG；无新生成品牌图形。
 - 默认来源Chub：`popular → star_count`（官方前端Popularity，返回下载热度）、`trending → trending`、`newest → created_at`、`updated → last_activity_at`、`rating → rating`，由上游全量排序再分页；`topics`接收逗号分隔标签，常用分类映射到真实标签，并保留任意标签输入。普通本机请求与生产Worker已返回200。契约依据为[Chub官方标签说明](https://docs.chub.ai/docs/the-basics/character-creation)、[官方前端](https://chub.ai)的实际参数及公开API实测。TheatreLM原始字段没有每角色热度/日期/分类，故仅开放关键词及原目录顺序，不伪造这些指标。
 - 目录质量：原始5011条中9条名称超过160字符，包括截图第2921条459字符乱码；公共发现与直接安装均拒绝，已有私人安装与历史保留。同步manifest记录拒收行号/理由，固定文件hash与完整校验保留；目录标题限制两行。
-- 输入：默认Enter发送、Shift+Enter换行，中文IME组合中及keyCode229不发送。用户翻看历史时停止追随滚动。
+- 输入：默认Enter发送、Shift+Enter换行，中文IME组合中及keyCode229不发送。生成增量、候选展开、输入伸缩与同会话刷新均保持当前阅读位置；用户自行滚动阅读，切换会话才初始化到最新。
 - 中断诊断：用户Abbess Elara回复在生产存为completed、正文16字、maxTokens1024；原请求未保留finish_reason，因此无法恢复其精确终态。以相同角色、历史、输入和dynamic/rp复现：1024预算返回length、completion_tokens=1024，含大量reasoning；4096返回stop。原实现把任何非空finish_reason（除content_filter）当成功，这是静默截断的确定缺陷。新增nullable finish_reason，历史无可靠终态不猜测改写；仅stop和非空新增正文可完成，length/filter/未知类型/无终态EOF、超时、用户停止、断连、过期分别持久化。结构日志仅记录状态/字符数/token数/耗时，不记录正文、推理或凭据。
 - 2026-10-04修订：取消maxTokens、固定32K/12K输入阈值、应用运行时长和正文长度上限。按发现的模型窗口保留全部历史，超限才自动摘要；length在同一UUID/消息/流中自动续写。
 - 显式继续用于旧记录、用户停止或故障后的部分正文。保留原前缀与用户消息，必要时压缩模型投影；原文与JSONL版本不删除。

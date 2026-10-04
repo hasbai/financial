@@ -9,7 +9,7 @@ export function candidateInstruction() {
 <一条用户可直接发送的台词或行动>
 <另一条方向不同的用户台词或行动>
 <第三条方向不同的用户台词或行动>
-实际输出候选时不要写“候选一”等标签或序号，每条只占一行；只用换行分隔，不加JSON、代码围栏或额外说明。候选承接本轮故事，通常三条，最多三条；每条15–60字且不超过120字。以用户视角写，不替用户作决定，不把尚未发生的事写成事实，不写角色的回答或抽象标签。候选尾部约384 tokens，与正文共用本轮输出上限；正文留出尾部空间。`;
+实际输出候选时不要写“候选一”等标签或序号，每条只占一行；只用换行分隔，不加JSON、代码围栏或额外说明。候选承接本轮故事，必须三条且互不重复；每条15–60字且不超过120字。以用户视角写，不替用户作决定，不把尚未发生的事写成事实，不写角色的回答或抽象标签。正文结束后继续完成三条候选。`;
 }
 export function validateCandidates(value: unknown): string[] {
  if (!Array.isArray(value)) return [];
@@ -65,4 +65,12 @@ export class CandidateStream {
   if (lines.some(line => /^(?:```|[{}\[\]])/.test(line))) return { body, candidates: [] };
   return { body, candidates: validateCandidates(lines.map(line => line.replace(/^(?:[-*•]\s+|\d+[.)、]\s*)/u, ''))) };
  }
+}
+
+/** Used only for the explicit candidate-only model task, never ordinary story text. */
+export function recoveryCandidates(text: string): string[] {
+ const parser = new CandidateStream();
+ const trimmed = text.trim();
+ parser.push(trimmed.includes('[TAVERN_NEXT]') ? trimmed : candidateDelimiter() + trimmed);
+ return parser.finish().candidates;
 }

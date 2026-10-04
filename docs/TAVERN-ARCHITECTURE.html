@@ -23,12 +23,12 @@
 <div class="below"><div class="mini"><h3>设置入口</h3><div class="flow"><span>模型 · RP</span><b>→</b><span>思考 · 关闭</span><b>→</b><span>采样 / 自动续写</span></div></div><div class="mini"><h3>输入入口</h3><div class="flow"><span>最新回复</span><b>→</b><span>最多三条完整文本</span><b>→</b><span>点击直接发送</span></div></div></div>
 </section>
 <section id="stream" role="tabpanel" aria-labelledby="tab-stream" hidden>
-<div class="panel"><div class="panel-head"><div><div class="number">02 / ONE PREFILL, TWO OUTPUTS</div><h2>正文与候选共用一次推理</h2></div><span class="badge pending">同次生成 · 已实证</span></div>
+<div class="panel"><div class="panel-head"><div><div class="number">02 / STORY AND CANDIDATES</div><h2>候选优先随正文生成，缺失才补齐</h2></div><span class="badge pending">同次生成 · 已实证</span></div>
 <div class="timeline"><div class="stage">本地模型<small>一个请求</small></div><div class="track"><div class="block prefill">预填充<br>角色 + 历史 + 任务</div><span class="arrow">→</span><div class="block body">正文逐 token 解码</div><span class="arrow">→</span><div class="block tail">候选尾部</div></div></div>
 <div class="timeline"><div class="stage">Worker<small>一个状态机</small></div><div class="track"><div class="dashed">JWT / 占用 / 上下文</div><span class="arrow">→</span><div class="block body">正文 delta → SSE</div><span class="arrow">→</span><div class="block tail">暂存尾部</div><span class="arrow">→</span><div class="block save">终态落库</div></div></div>
 <div class="timeline"><div class="stage">用户看到<small>不中断阅读</small></div><div class="track"><div class="dashed">等待首字</div><span class="arrow">→</span><div class="block body">正文持续出现</div><span class="arrow">→</span><div class="block tail">候选就绪</div><span class="arrow">→</span><div class="block save">下一轮</div></div></div>
 <div class="protocol"><div class="node"><span class="kicker">BODY</span><strong>可见正文</strong><small>只保存故事内容<br>继续 / 停止沿用当前机制</small></div><span class="arrow">→</span><div class="node pending"><span class="kicker">FRAME</span><strong>固定 [TAVERN_NEXT]</strong><small>跨 chunk 保留前缀<br>标记不进入正文</small></div><span class="arrow">→</span><div class="node pending"><span class="kicker">CANDIDATES</span><strong>逐行候选文本</strong><small>2KB / 去空去重 / ≤ 3 条<br>stop 后验证 → 独立元数据</small></div></div>
-<div class="results"><div><strong>正常完成 + 候选有效</strong><p>正文保存 · 显示候选 · 解锁发送</p></div><div><strong>正常正文 + 尾部无效</strong><p>正文保存 · 候选省略 · 不补发请求</p></div><div><strong>停止 / 故障 / 断网</strong><p>保留部分正文 · 显示原因 · 丢弃候选</p></div></div>
+<div class="results"><div><strong>正常完成 + 候选有效</strong><p>正文保存 · 显示候选 · 解锁发送</p></div><div><strong>正常正文 + 候选不足三条</strong><p>正文先保存 · 同回合按需补齐 · 无进展退出</p></div><div><strong>停止 / 故障 / 断网</strong><p>保留部分正文 · 显示原因 · 丢弃候选</p></div></div>
 <div class="below"><div class="mini"><h3>持久化</h3><div class="flow"><span>message ID</span><b>→</b><span>正文 + 状态</span><b>＋</b><span>候选元数据</span></div></div><div class="mini"><h3>一致性</h3><div class="flow"><span>最新回复版本</span><b>→</b><span>点击原文发送</span><b>＋</b><span>保留草稿</span></div></div></div>
 </div>
 </section>

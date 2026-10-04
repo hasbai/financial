@@ -4,14 +4,22 @@
 
 代码入口为主分支`apps/tavern`。保留现有数据和ID、角色卡、共享认证、候选、流式正文、停止、续写、重新生成、编辑分支和导出。
 
+## 本轮优先修复：阅读位置与三条候选（2026-10-04，实施前修订）
+
+先处理用户反馈，再接state/工具闭环。当前main已与origin/main核对一致，保留用户修改的参考项目描述。
+
+- 阅读位置由用户控制：流式增量、候选展开、输入框伸缩和同会话完成刷新不滚到底。切换会话只做一次初始化定位，用户通过滚动阅读新内容；本轮不增加自动跟随状态或新设置。
+- 已用真实JWT读取两会话12条已完成模型回复，其中4条无候选；关联四条Gateway完整流均stop且完全没有保留分隔符，确认为模型漏写。先实施按需补齐，不为该样本增加猜测性正文解析；只在已识别的保留分隔符之后解析候选。
+- 三条有效且互不重复的候选才算完整。正常已有三条保持一次推理；不足三条则在同一回合按需补齐，只补用户台词/行动，不改写正文。该决定更新此前“任何情况下都不补发候选推理”的约束，代价仅由缺失回合承担。
+- 补齐沿用占用、请求ID、用户停止和断连信号；上下文仍按发现窗口自动压缩。不加硬轮数、输出预算或整轮超时，按候选增加判断进展，无进展/错误/取消时退出，保留正文和实际完整性，不填模板凑数。
+- 本轮复核补充：补齐使用专门的候选输出协议，不附加正文提醒，进入补齐前先落盘正文。键盘滚动验证等待回到顶部后再固定中段阅读位置，避免把浏览器PageDown平滑运动误判成流式自动滚动。
+- 候选补齐失败保留正文completed/stop；用户主动停止仍为aborted/stopped。测试夹具的正常回复补全三条尾部，以免把新的按需补齐行为混入原有停止/缓存竞态断言。日志记录缺失类型与补齐结局，不记录私人正文。
+- 后续复核：补齐流在半行输出后发生context超限时，与length一样从中断处续写，保留缺额/已有候选信息；补充压缩无进展退出覆盖。三张移动截图因取消自动滚动产生预期阅读位置变化，审阅后更新；两张桌面1/24像素噪声保留旧基线。
+- 验收：跨chunk协议与真实格式回归、0/1/2候选补齐及已有3条不追加调用、失败/取消正文保留、刷新和UUID回放；固定Linux桌面/iPhone WebKit连续流验证滚动位置，完整CI后自动发布，再真实模型核验正常/重生成/续写。
+
 ## 参考结论
 
-口述Tarven暂按SillyTavern研究，尚未确认是否另一个项目。
-
-- [DeepSeek Harness架构](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md)：session、prompt assembly、tools、model adapter、agent loop分工，一个turn可包含多个模型/工具step。采用这些职责划分和可重建请求记录；不引入Cordis插件系统、代码执行或子Agent。
-- [SillyTavern提示词](https://docs.sillytavern.app/usage/prompts/)与[角色卡](https://docs.sillytavern.app/usage/core-concepts/characterdesign/)：固定角色定义和可变会话上下文分离。沿用标准卡片，不把标签、作者备注、扩展脚本放进prompt，不复制其全套预设。
-- [SillyTavern摘要](https://docs.sillytavern.app/extensions/summarize/)：摘要绑定消息位置，编辑后回到有效版本；摘要有误差，保留原文与来源，避免每轮额外总结。
-- [SillyTavern缓存配置](https://docs.sillytavern.app/administration/config-yaml/)与[llama.cpp server](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)：变化前缀会限制缓存复用；`cache_prompt`及实际缓存计数/时序需在部署版本核实。
+- 参考项目是：Deepseek Harness Tarven
 - [Cloudflare Durable Objects存储](https://developers.cloudflare.com/durable-objects/best-practices/access-durable-objects-storage/)：每对象私有事务存储，新namespace采用SQLite；[并发控制](https://developers.cloudflare.com/durable-objects/api/state/)不能包住长模型请求。
 
 以上为一手文档研究与本项目设计，未安装或逐行复刻参考项目。用户所说的会话对象对应 **Durable Objects**，它不保存本地GPU的KV cache。

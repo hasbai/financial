@@ -10,7 +10,7 @@ const ctx={waitUntil:(promise:Promise<unknown>)=>{work.push(promise);}};
 async function call(path:string,method='GET',data?:unknown){return worker.fetch(new Request('https://tavern.test'+path,{method,headers:data?{'Content-Type':'application/json'}:{},body:data===undefined?undefined:JSON.stringify(data)}),env,ctx);}
 beforeEach(()=>{
  beforeRun=undefined;db=new DatabaseSync(':memory:');for(const name of ['0001_schema.sql','0002_source_catalog.sql','0003_generation_outcomes.sql','0004_source_quality.sql','0005_candidates_capabilities.sql','0006_session_summary.sql','0007_session_objects.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));sessionDb=new DatabaseSync(':memory:');sessionDb.exec(SESSION_SCHEMA);files=new Map();work=[];
- aiRun=vi.fn<AiRun>(async()=>new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"reasoning_content":"private"}}]}\n\ndata: {"choices":[{"delta":{"content":"欢迎来到港城。"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));c.close();}}));
+ aiRun=vi.fn<AiRun>(async()=>new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"reasoning_content":"private"}}]}\n\ndata: {"choices":[{"delta":{"content":"欢迎来到港城。\\n[TAVERN_NEXT]\\n去港口。\\n问问来路。\\n坐下喝茶。"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));c.close();}}));
  env=Object.assign({} as Env,{DB:{prepare:statement,batch:async(stmts:D1PreparedStatement[])=>{const result=[];db.exec('BEGIN');try{for(const s of stmts)result.push(await s.run());db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');throw e;}}},FILES:{put:async(key:string,bytes:Uint8Array)=>files.set(key,bytes),get:async(key:string)=>files.has(key)?{body:new Response(Uint8Array.from(files.get(key)!)).body}:null,delete:async(keys:string|string[])=>{for(const key of Array.isArray(keys)?keys:[keys])files.delete(key);}},AI:{gateway:(id:string)=>{expect(id).toBe('default');return {run:async(data:AIGatewayUniversalRequest,options?:{gateway?:UniversalGatewayOptions;signal?:AbortSignal})=>{const result=await aiRun(data,options);return result instanceof ReadableStream?new Response(result,{headers:{'Content-Type':'text/event-stream','cf-aig-log-id':'test-log'}}):result;}};}},AUTH0_DOMAIN:'hasbai.eu.auth0.com',AUTH0_AUDIENCE:'https://financial.hasbai.xyz/api',AIG_GATEWAY_ID:'default',CONTEXT_TOKENS:'16000',VERSION:{id:'test'},ASSETS:{fetch:async()=>new Response('assets')}});
  const objects=new Map<string,TavernSession>();
  const storage={sql:{exec:(sql:string,...values:unknown[])=>{beforeRun?.(sql,values);const stmt=sessionDb.prepare(sql);const rows=stmt.all(...values as never[]);return {toArray:()=>rows};}},transactionSync:<T>(fn:()=>T)=>{sessionDb.exec('BEGIN');try{const result=fn();sessionDb.exec('COMMIT');return result;}catch(e){sessionDb.exec('ROLLBACK');throw e;}},setAlarm:async()=>{}};
@@ -26,7 +26,7 @@ it('snapshots role definitions and creates selected alternate greeting',async()=
 it('persists streamed output, fixed dynamic route, no reasoning leak and idempotent replay',async()=>{const {s}=await seed(),requestId=crypto.randomUUID();const r=await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'你好',model:'override'});expect(r.headers.get('Content-Type')).toContain('event-stream');const text=await r.text();await Promise.all(work);expect(text).toContain('欢迎来到港城。');expect(text).not.toContain('private');expect(aiRun).toHaveBeenCalledWith(expect.objectContaining({provider:'compat',endpoint:'chat/completions',query:expect.objectContaining({model:'dynamic/rp',stream:true}),headers:expect.objectContaining({'cf-aig-collect-log-payload':'true'})}),expect.objectContaining({gateway:{id:'default',skipCache:true,collectLog:true,eventId:requestId,retries:{maxAttempts:1},metadata:{app:'tavern',task:'roleplay',username:'月石'}}}));const duplicate=await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'你好'});expect((await duplicate.json() as {replayed:boolean}).replayed).toBe(true);expect(aiRun).toHaveBeenCalledTimes(1);expect(sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id).toBeNull();});
 it('records provider cache and first body observations without adding inference or changing stream events',async()=>{
  const {s}=await seed();const info=vi.spyOn(console,'info').mockImplementation(()=>{});
- aiRun.mockResolvedValue(new Response('data: '+JSON.stringify({choices:[{delta:{content:'故事。'},finish_reason:'stop'}],usage:{prompt_tokens:1000,completion_tokens:3,prompt_tokens_details:{cached_tokens:800}},timings:{cache_n:800,prompt_n:200,prompt_ms:100,predicted_ms:50}})+'\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}}));
+ aiRun.mockResolvedValue(new Response('data: '+JSON.stringify({choices:[{delta:{content:'故事。\n[TAVERN_NEXT]\n去港口。\n问问来路。\n坐下喝茶。'},finish_reason:'stop'}],usage:{prompt_tokens:1000,completion_tokens:3,prompt_tokens_details:{cached_tokens:800}},timings:{cache_n:800,prompt_n:200,prompt_ms:100,predicted_ms:50}})+'\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}}));
  try{const response=await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'});await response.text();await Promise.all(work);
   expect(aiRun).toHaveBeenCalledTimes(1);expect(aiRun.mock.calls[0][0].query).toHaveProperty('cache_prompt',true);
   expect(info).toHaveBeenCalledWith('tavern-generation-outcome',expect.objectContaining({promptTokens:1000,outputTokens:3,cachedTokens:800,prefillTokens:200,prefillMs:100,decodeMs:50,firstBodyMs:expect.any(Number),modelFirstBodyMs:expect.any(Number),promptBudget:expect.objectContaining({detectedContextTokens:16384,includedMessages:2})}));
@@ -187,7 +187,7 @@ it.each(['normal','regenerate','continue'])('reminds the %s request once without
 });
 it.each(['stop'])('keeps clean prose with invalid candidates on %s',async finish=>{
  const {s}=await seed(),requestId=crypto.randomUUID();aiRun.mockResolvedValueOnce(new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{content:'正文。\n[TAVERN_NEXT]\n{"candidates":'},finish_reason:finish}]})+'\n\ndata: [DONE]\n\n'));c.close();}}));
- await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'你好'})).text();await Promise.all(work);const saved=sessionDb.prepare('SELECT * FROM messages WHERE request_id=? AND role=?').get(requestId,'assistant');expect(saved).toMatchObject({content:'正文。',candidates_json:null,status:finish==='stop'?'completed':'error'});expect(aiRun).toHaveBeenCalledTimes(1);
+ aiRun.mockRejectedValueOnce(new Error('repair upstream'));await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'你好'})).text();await Promise.all(work);const saved=sessionDb.prepare('SELECT * FROM messages WHERE request_id=? AND role=?').get(requestId,'assistant');expect(saved).toMatchObject({content:'正文。',candidates_json:null,status:'completed'});expect(aiRun).toHaveBeenCalledTimes(2);
 });
 
 function completion(content:string,finish='stop') {return new ReadableStream<Uint8Array>({start(c){c.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{content},finish_reason:finish}]})+'\n\ndata: [DONE]\n\n'));c.close();}});}
@@ -225,7 +225,7 @@ it('delivers one done event when an in-flight heartbeat returns after final pers
  vi.useFakeTimers();try{
  const {s}=await seed();let controller:ReadableStreamDefaultController<Uint8Array>;aiRun.mockImplementation(async()=>new ReadableStream({start(c){controller=c;}}));
  const response=await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'出发'}),reader=response.body!.getReader();await reader.read();const tail=(async()=>{let value='';for(;;){const next=await reader.read();if(next.done)return value;value+=new TextDecoder().decode(next.value);}})();
- await vi.advanceTimersByTimeAsync(1000);controller!.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"出发了。"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));controller!.close();
+ await vi.advanceTimersByTimeAsync(1000);controller!.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"出发了。\\n[TAVERN_NEXT]\\n去港口。\\n问问来路。\\n坐下喝茶。"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));controller!.close();
  await vi.waitFor(()=>expect(sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id).toBeNull());await Promise.resolve();expect((await tail).split('"type":"done"')).toHaveLength(2);await Promise.all(work);
  }finally{vi.useRealTimers();}
 });
@@ -248,4 +248,52 @@ it('does not call the model if cancellation wins during capability preparation',
 it('sends done and permits another generation while the directory is stalled',async()=>{
  const {s}=await seed();const original=env.DB.prepare.bind(env.DB);let release!:()=>void;const blocked=new Promise<void>(r=>release=r);env.DB.prepare=(sql:string)=>{const stmt=original(sql);if(sql.startsWith('UPDATE sessions SET title')){const run=stmt.run.bind(stmt);stmt.run=(async(...args:Parameters<typeof run>)=>{await blocked;return run(...args);}) as typeof stmt.run;const bind=stmt.bind.bind(stmt);stmt.bind=(...values:unknown[])=>{const bound=bind(...values),boundRun=bound.run.bind(bound);bound.run=async()=>{await blocked;return boundRun();};return bound;};}return stmt;};
  try{const first=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();expect(first).toContain('"type":"done"');const second=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'继续'})).text();expect(second).toContain('"type":"done"');expect(aiRun).toHaveBeenCalledTimes(2);}finally{release();await Promise.all(work);}
+});
+
+it.each([0,1,2])('repairs %i inline candidates without changing prose and replays persisted results',async count=>{
+ const {s}=await seed(),requestId=crypto.randomUUID(),all=['我去港口。','我坐下喝茶。','我问问来路。'];
+ aiRun.mockResolvedValueOnce(completion('正文。'+(count?'\n[TAVERN_NEXT]\n'+all.slice(0,count).join('\n'):'')));
+ aiRun.mockResolvedValueOnce(completion(all.slice(count).join('\n')));
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'下一步'})).text();await Promise.all(work);
+ const events=wire.split('\n').filter(l=>l.startsWith('data: ')).map(l=>JSON.parse(l.slice(6)));
+ expect(events.filter(e=>e.type==='delta').map(e=>e.text).join('')).toBe('正文。');expect(events.at(-1).message).toMatchObject({content:'正文。',candidates:all,status:'completed',finishReason:'stop'});
+ const replay=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId})).json() as {message:Message};expect(replay.message.candidates).toEqual(all);expect(aiRun).toHaveBeenCalledTimes(2);
+ expect((aiRun.mock.calls[1][0].query as {messages:{content:string}[]}).messages.at(-1)?.content).toContain('正文已完成');
+});
+it('does not impose a three-call cap while candidates make progress',async()=>{
+ const {s}=await seed();aiRun.mockResolvedValueOnce(completion('正文。'));
+ for(const candidate of ['我去港口。','我坐下喝茶。','我问问来路。'])aiRun.mockResolvedValueOnce(completion(candidate));
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();await Promise.all(work);expect(aiRun).toHaveBeenCalledTimes(4);expect(JSON.parse(wire.trim().split('data: ').at(-1)!).message.candidates).toHaveLength(3);
+});
+it('stops candidate recovery on duplicate-only output and retains completed prose',async()=>{
+ const {s}=await seed();aiRun.mockResolvedValueOnce(completion('正文。\n[TAVERN_NEXT]\n我去港口。'));aiRun.mockResolvedValueOnce(completion('我去港口。'));
+ await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();await Promise.all(work);expect(aiRun).toHaveBeenCalledTimes(2);expect(sessionDb.prepare("SELECT content,status,candidates_json FROM messages WHERE request_id IS NOT NULL AND role='assistant'").get()).toMatchObject({content:'正文。',status:'completed',candidates_json:'["我去港口。"]'});
+});
+it('continues a length-truncated candidate repair while isolating every byte from story',async()=>{
+ const {s}=await seed();aiRun.mockResolvedValueOnce(completion('正文。'));aiRun.mockResolvedValueOnce(completion('我去港口。\n我坐','length'));aiRun.mockResolvedValueOnce(completion('下喝茶。\n我问问来路。'));
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();await Promise.all(work);const done=JSON.parse(wire.trim().split('data: ').at(-1)!).message;expect(done).toMatchObject({content:'正文。',candidates:['我去港口。','我坐下喝茶。','我问问来路。']});expect(aiRun).toHaveBeenCalledTimes(3);
+});
+it('immediately cancels candidate recovery and retains the generated body',async()=>{
+ const {s}=await seed();const cancelled=vi.fn();aiRun.mockResolvedValueOnce(completion('正文。'));aiRun.mockResolvedValueOnce(new ReadableStream({cancel:cancelled}));
+ const reader=(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).body!.getReader();await reader.read();let wire='';const drain=(async()=>{for(;;){const next=await reader.read();if(next.done)return;wire+=new TextDecoder().decode(next.value);}})();await vi.waitFor(()=>expect(aiRun).toHaveBeenCalledTimes(2));const id=sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id;await call('/api/sessions/'+s.id+'/stop','POST',{generationId:id});await drain;await Promise.all(work);expect(cancelled).toHaveBeenCalled();expect(sessionDb.prepare('SELECT content,status,finish_reason FROM messages WHERE id=?').get(id as string)).toMatchObject({content:'正文。',status:'aborted',finish_reason:'stopped'});expect(wire).not.toContain('我去港口');
+});
+it.each(['http','stream'])('compresses discovered context overflow during %s candidate repair without altering saved prose',async mode=>{
+ const {s}=await seed();for(const [ordinal,role]of [[1,'user'],[2,'assistant']] as const)sessionDb.prepare('INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) VALUES(?,?,?,?,?,?,?)').run(crypto.randomUUID(),s.id,role,'旧会话'.repeat(1000),'completed',ordinal,Date.now()+ordinal);
+ let repairs=0;aiRun.mockImplementation(async request=>{const messages=(request.query as {messages:{content:string}[]}).messages;
+ if(messages[0].content.startsWith('压缩会话记忆'))return completion('旧事已记。');
+ if(!messages[0].content.includes('当前任务仅输出用户续聊候选'))return completion('已完成正文。');
+ expect(sessionDb.prepare("SELECT content FROM messages WHERE role='assistant' AND status='pending'").get()?.content).toBe('已完成正文。');
+ expect(messages.at(-1)?.content).not.toContain(CANDIDATE_REMINDER);expect(messages[0].content).not.toContain('角色正文 + 用户续聊候选');
+ if(++repairs===1)return mode==='http'?Response.json({error:{n_ctx:4096}},{status:400}):new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{content:'我去'}}]})+'\n\ndata: {"error":{"n_ctx":4096}}\n\n'));c.close();}});
+ if(mode==='stream')expect(messages.at(-1)?.content).toContain('仅从上次中断处');
+ return completion(mode==='stream'?'港口。\n我坐下喝茶。\n我问问来路。':'我去港口。\n我坐下喝茶。\n我问问来路。');});
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'接下来呢'})).text();await Promise.all(work);const done=JSON.parse(wire.trim().split('data: ').at(-1)!).message;expect(done).toMatchObject({content:'已完成正文。',status:'completed',candidates:['我去港口。','我坐下喝茶。','我问问来路。']});expect(repairs).toBe(2);
+});
+
+it('ends recovery when compression makes no progress while preserving completed prose and releasing the turn',async()=>{
+ const {ConversationContext}=await import('./context');const compress=vi.spyOn(ConversationContext.prototype,'compress').mockResolvedValue();
+ try{const {s}=await seed();for(const [ordinal,role]of [[1,'user'],[2,'assistant']] as const)sessionDb.prepare('INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) VALUES(?,?,?,?,?,?,?)').run(crypto.randomUUID(),s.id,role,'旧会话'.repeat(1000),'completed',ordinal,Date.now()+ordinal);
+ aiRun.mockResolvedValueOnce(completion('已完成正文。'));aiRun.mockResolvedValueOnce(Response.json({error:{n_ctx:4096}},{status:400}));
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'接下来呢'})).text();await Promise.all(work);const done=JSON.parse(wire.trim().split('data: ').at(-1)!).message;expect(done).toMatchObject({content:'已完成正文。',status:'completed',finishReason:'stop',candidates:[]});expect(sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id).toBeNull();expect(aiRun).toHaveBeenCalledTimes(2);
+ }finally{compress.mockRestore();}
 });
