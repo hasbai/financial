@@ -15,7 +15,6 @@ export function createBrowserClient(
       redirect_uri: `${origin}/auth/callback`,
       audience: options.audience ?? authConfig.audience,
       scope: "openid profile email",
-      connection: "eastmoney-email",
       organization: authConfig.organization,
     },
   });
