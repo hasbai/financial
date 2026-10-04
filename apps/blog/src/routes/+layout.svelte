@@ -75,9 +75,11 @@
   {/if}
 </main>
 <footer class="wrap footer">
-  <nav aria-label="页脚导航"><a href="/privacy">隐私政策</a><a href="/terms">服务条款</a></nav>
+  <div class="footer-links">
+    <nav aria-label="页脚导航"><a href="/privacy">隐私政策</a><a href="/terms">服务条款</a></nav>
+    {#if page.url.pathname === "/"}
+      <p class="footer-note">本站公开阅读，编辑发布需登录后使用。</p>
+    {/if}
+  </div>
   <span class="footer-mark">© {new Date().getFullYear()} HASBAI</span>
-  {#if page.url.pathname === "/"}
-    <p class="footer-note">本站公开阅读，编辑发布需登录后使用。</p>
-  {/if}
 </footer>
