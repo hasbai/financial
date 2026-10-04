@@ -7,12 +7,14 @@ import {DEFAULT_SETTINGS} from '../shared/types';
 vi.mock('cloudflare:workers',()=>({DurableObject:class{constructor(public ctx:DurableObjectState,public env:Env){}}}));
 let db:DatabaseSync,env:Env,sqlDbs:Map<string,DatabaseSync>,objects:Map<string,TavernSession>,work:Promise<unknown>[],alarms:Map<string,number>;
 let intercept:((sql:string)=>Promise<void>|void)|undefined;
-function statement(query:string,values:unknown[]=[]):D1PreparedStatement{return {bind:(...v:unknown[])=>statement(query,v),first:async()=>db.prepare(query).get(...values as never[])??null,all:async()=>({results:db.prepare(query).all(...values as never[])}),run:async()=>{await intercept?.(query);return {meta:{changes:Number(db.prepare(query).run(...values as never[]).changes)}};}} as D1PreparedStatement;}
-function storage(name:string){let sql=sqlDbs.get(name);if(!sql){sql=new DatabaseSync(':memory:');sql.exec(SESSION_SCHEMA);sqlDbs.set(name,sql);}const sqlite=sql;return {sql:{exec:(query:string,...values:unknown[])=>{if(query.includes(';')){sqlite.exec(query);return {toArray:()=>[]};}return {toArray:()=>sqlite.prepare(query).all(...values as never[])};}},transactionSync:<T>(fn:()=>T)=>{sqlite.exec('BEGIN');try{const result=fn();sqlite.exec('COMMIT');return result;}catch(error){sqlite.exec('ROLLBACK');throw error;}},setAlarm:async(time:number)=>{alarms.set(name,time);}} as unknown as DurableObjectStorage;}
+let deleteStorage:((name:string)=>Promise<void>)|undefined;
+let readIntercept:((sql:string)=>Promise<void>|void)|undefined;
+function statement(query:string,values:unknown[]=[]):D1PreparedStatement{return {bind:(...v:unknown[])=>statement(query,v),first:async()=>{await readIntercept?.(query);return db.prepare(query).get(...values as never[])??null;},all:async()=>({results:db.prepare(query).all(...values as never[])}),run:async()=>{await intercept?.(query);return {meta:{changes:Number(db.prepare(query).run(...values as never[]).changes)}};}} as D1PreparedStatement;}
+function storage(name:string){let sql=sqlDbs.get(name);if(!sql){sql=new DatabaseSync(':memory:');sqlDbs.set(name,sql);}const sqlite=sql;return {sql:{exec:(query:string,...values:unknown[])=>{if(query.includes(';')){sqlite.exec(query);return {toArray:()=>[]};}return {toArray:()=>sqlite.prepare(query).all(...values as never[])};}},transactionSync:<T>(fn:()=>T)=>{sqlite.exec('BEGIN');try{const result=fn();sqlite.exec('COMMIT');return result;}catch(error){sqlite.exec('ROLLBACK');throw error;}},setAlarm:async(time:number)=>{alarms.set(name,time);},deleteAll:async()=>{await deleteStorage?.(name);for(const row of sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all())sqlite.exec('DROP TABLE "'+row.name+'"');alarms.delete(name);}} as unknown as DurableObjectStorage;}
 function target(owner='owner',id='s'){const name=sessionName(owner,id);let object=objects.get(name);if(!object){object=new TavernSession({storage:storage(name),waitUntil:(p:Promise<unknown>)=>work.push(p)} as unknown as DurableObjectState,env);objects.set(name,object);}return object;}
 async function invoke(method:Parameters<TavernSession['invoke']>[2],data:Record<string,unknown>={},owner='owner',id='s'){return JSON.parse(await target(owner,id).invoke(owner,id,method,data));}
 function seed(id='s',owner='owner'){db.prepare('INSERT INTO sessions(id,owner,title,character_json,character_name,settings_json,created_at,updated_at,summary_json) VALUES(?,?,?,?,?,?,?,?,?)').run(id,owner,'旅店',JSON.stringify({name:'岚',first_mes:'你好'}),'岚',JSON.stringify(DEFAULT_SETTINGS),1,2,'historical-checkpoint');db.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at,finish_reason,candidates_json) VALUES(?,?,'assistant','旧正文','completed',0,3,'stop',?)").run('m-'+id,id,'["问问往事。"]');}
-beforeEach(()=>{db=new DatabaseSync(':memory:');for(const name of readdirSync(new URL('../migrations/',import.meta.url)).filter(n=>n.endsWith('.sql')).sort())db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));sqlDbs=new Map();objects=new Map();work=[];alarms=new Map();intercept=undefined;env={DB:{prepare:statement,batch:async(stmts:D1PreparedStatement[])=>{db.exec('BEGIN');try{const result=[];for(const stmt of stmts)result.push(await stmt.run());db.exec('COMMIT');return result;}catch(error){db.exec('ROLLBACK');throw error;}}},SESSIONS:{getByName:(name:string)=>{const [owner,id]=JSON.parse(name);return target(owner,id);}}} as unknown as Env;});
+beforeEach(()=>{db=new DatabaseSync(':memory:');for(const name of readdirSync(new URL('../migrations/',import.meta.url)).filter(n=>n.endsWith('.sql')).sort())db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));sqlDbs=new Map();objects=new Map();work=[];alarms=new Map();intercept=undefined;deleteStorage=undefined;env={DB:{prepare:statement,batch:async(stmts:D1PreparedStatement[])=>{db.exec('BEGIN');try{const result=[];for(const stmt of stmts)result.push(await stmt.run());db.exec('COMMIT');return result;}catch(error){db.exec('ROLLBACK');throw error;}}},SESSIONS:{getByName:(name:string)=>{const [owner,id]=JSON.parse(name);return target(owner,id);}}} as unknown as Env;});
 afterEach(async()=>{await Promise.allSettled(work);db.close();for(const sqlite of sqlDbs.values())sqlite.close();});
 it('imports once, fences every legacy write, retains source IDs and all version metadata',async()=>{
  seed();const old=db.prepare('SELECT * FROM messages').all();const first=await invoke('read');expect(first.ok).toBe(true);expect(first.value.messages[0]).toMatchObject({id:'m-s',content:'旧正文',finishReason:'stop',candidates:['问问往事。']});
@@ -33,9 +35,44 @@ it('isolates both owners and sessions in independent SQLite storage',async()=>{
  seed();seed('other');expect((await invoke('read',{},'stranger')).status).toBe(404);await invoke('read');await invoke('read',{},'owner','other');await invoke('update',{title:'改变'});
  expect((await invoke('read',{},'owner','other')).value.session.title).toBe('旅店');expect(sqlDbs.get(sessionName('owner','other'))!.prepare('SELECT id FROM messages').all()).toEqual([{id:'m-other'}]);
 });
-it('retains a deletion tombstone across restart and hides the directory without deleting original messages',async()=>{
- seed();await invoke('remove');objects.delete(sessionName('owner','s'));expect((await invoke('read')).status).toBe(404);expect(db.prepare('SELECT deleted_at FROM sessions').get()?.deleted_at).toBeTruthy();expect(db.prepare('SELECT id FROM messages').get()?.id).toBe('m-s');
+it('deallocates all private tables and alarm, and never recreates a deleted object on stale calls',async()=>{
+ seed();seed('other');await invoke('read',{},'owner','other');await invoke('remove');const name=sessionName('owner','s'),sqlite=sqlDbs.get(name)!;
+ expect(sqlite.prepare("SELECT count(*) n FROM sqlite_master WHERE type='table'").get()?.n).toBe(0);expect(alarms.has(name)).toBe(false);
+ expect((await invoke('read')).status).toBe(404);await expect(target().cancel('owner','s','old-uuid')).rejects.toMatchObject({status:404});await target().alarm();
+ objects.delete(name);expect((await invoke('read')).status).toBe(404);expect((await invoke('remove')).ok).toBe(true);await target().alarm();
+ expect(sqlite.prepare("SELECT count(*) n FROM sqlite_master WHERE type='table'").get()?.n).toBe(0);expect(alarms.has(name)).toBe(false);
+ expect(db.prepare("SELECT deleted_at,book_ids_json FROM sessions WHERE id='s'").get()).toMatchObject({book_ids_json:'[]'});expect(db.prepare("SELECT deleted_at FROM sessions WHERE id='s'").get()?.deleted_at).toBeTruthy();expect(db.prepare("SELECT id FROM messages WHERE session_id='s'").get()?.id).toBe('m-s');
+ expect((await invoke('read',{},'owner','other')).value.messages[0].id).toBe('m-other');
 });
+it('keeps cleanup intent and alarm when D1 fails, and resumes deletion after restart',async()=>{
+ seed();intercept=sql=>{if(sql.startsWith('UPDATE sessions SET deleted_at'))throw Error('D1 unavailable');};await expect(invoke('remove')).rejects.toThrow('D1 unavailable');
+ const name=sessionName('owner','s'),sqlite=sqlDbs.get(name)!;expect(sqlite.prepare('SELECT deleted FROM session_meta').get()?.deleted).toBe(1);expect(alarms.has(name)).toBe(true);expect(db.prepare('SELECT deleted_at FROM sessions').get()?.deleted_at).toBeNull();
+ intercept=undefined;objects.delete(name);await target().alarm();expect(db.prepare('SELECT deleted_at FROM sessions').get()?.deleted_at).toBeTruthy();expect(sqlite.prepare("SELECT count(*) n FROM sqlite_master WHERE type='table'").get()?.n).toBe(0);expect(alarms.has(name)).toBe(false);
+});
+it('retries physical deletion after D1 commits without allowing the old source to revive',async()=>{
+ seed();deleteStorage=async()=>{throw Error('storage unavailable');};await expect(invoke('remove')).rejects.toThrow('storage unavailable');
+ const name=sessionName('owner','s'),sqlite=sqlDbs.get(name)!;expect(db.prepare('SELECT deleted_at FROM sessions').get()?.deleted_at).toBeTruthy();expect(alarms.has(name)).toBe(true);expect((await invoke('read')).status).toBe(404);
+ objects.delete(name);expect((await invoke('read')).status).toBe(404);deleteStorage=undefined;await target().alarm();expect(sqlite.prepare("SELECT count(*) n FROM sqlite_master WHERE type='table'").get()?.n).toBe(0);expect(alarms.has(name)).toBe(false);
+});
+it('prevents concurrent stale mutations and alarm from creating storage after cleanup',async()=>{
+ seed();await invoke('read');let release!:()=>void,entered!:()=>void;const started=new Promise<void>(r=>entered=r);deleteStorage=async()=>{entered();await new Promise<void>(r=>release=r);};
+ const removal=invoke('remove');await started;expect((await invoke('update',{title:'late'})).status).toBe(404);expect((await invoke('remove')).status).toBe(409);await target().alarm();release();expect((await removal).ok).toBe(true);
+ const name=sessionName('owner','s');await target().alarm();expect(alarms.has(name)).toBe(false);expect(sqlDbs.get(name)!.prepare("SELECT count(*) n FROM sqlite_master WHERE type='table'").get()?.n).toBe(0);
+});
+it.each(['body','capacity'])('rejects a prepared generation released after deletion: %s',async stage=>{
+ seed();await invoke('read');let release!:()=>void,entered!:()=>void;const paused=new Promise<void>(r=>release=r),started=new Promise<void>(r=>entered=r),infer=vi.fn();Object.assign(env,{AI:{gateway:()=>({run:infer})}});
+ const data=JSON.stringify({requestId:crypto.randomUUID(),content:'准备中'});
+ const input=stage==='body'?new ReadableStream<Uint8Array>({async pull(controller){entered();await paused;controller.enqueue(new TextEncoder().encode(data));controller.close();}}):data;
+ if(stage==='capacity')readIntercept=async sql=>{if(sql.includes('FROM model_capabilities')){entered();await paused;}};
+ try{const pending=target().fetch(new Request('https://session/generate',{method:'POST',headers:{'X-Tavern-Owner':'owner','X-Tavern-Session':'s','Content-Type':'application/json'},body:input,duplex:'half'} as RequestInit));await started;expect((await invoke('remove')).ok).toBe(true);release();expect((await pending).status).toBe(404);
+ const name=sessionName('owner','s');expect(infer).not.toHaveBeenCalled();expect(alarms.has(name)).toBe(false);expect(sqlDbs.get(name)!.prepare("SELECT count(*) n FROM sqlite_master WHERE type='table'").get()?.n).toBe(0);
+ }finally{release();readIntercept=undefined;}
+});
+it('refuses deletion during active generation even after its SQLite occupancy is released',async()=>{
+ seed();await invoke('read');Object.assign(target(),{active:{requestId:'r',id:'a',abort:new AbortController()}});
+ expect((await invoke('remove')).status).toBe(409);expect(db.prepare('SELECT deleted_at FROM sessions').get()?.deleted_at).toBeNull();expect(sqlDbs.get(sessionName('owner','s'))!.prepare('SELECT deleted FROM session_meta').get()?.deleted).toBe(0);
+});
+
 it('retries failed directory synchronization from its durable revision after restart',async()=>{
  seed();await invoke('read');intercept=sql=>{if(sql.startsWith('UPDATE sessions SET title'))throw new Error('D1 unavailable');};expect((await invoke('update',{title:'新标题'})).value.title).toBe('新标题');expect(db.prepare('SELECT title FROM sessions').get()?.title).toBe('旅店');
  objects.delete(sessionName('owner','s'));intercept=undefined;await target().alarm();expect(db.prepare('SELECT title FROM sessions').get()?.title).toBe('新标题');

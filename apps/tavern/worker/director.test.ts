@@ -42,6 +42,12 @@ it('builds overall synopsis without a body checkpoint and incrementally reuses v
 it('does not summarize a short conversation or include future recent content in synopsis',async()=>{
  const infer=vi.fn(async()=> '旧梗概');expect(await prepareSynopsis([story(0,'开始'),story(1,'继续')],null,null,{contextTokens:null,inputRatio:1.2,infer})).toEqual({summary:null,source:'recent-only'});expect(infer).not.toHaveBeenCalled();
 });
+it('builds a longer valid synopsis from a short old source without leaking permissive validation into compression',async()=>{
+ const history=[story(0,'雨'),...Array.from({length:4},(_,i)=>story(i+1,'当前剧情'+i))],infer=vi.fn(async()=> '岚与旅人在雨夜相遇。'),options={contextTokens:null as number|null,inputRatio:1.2,infer};
+ const prepared=await prepareSynopsis(history,null,null,options);expect(prepared.summary?.text).toBe('岚与旅人在雨夜相遇。');expect(options).not.toHaveProperty('requireReduction');
+ const agent=new DirectorAgent({name:'岚'},DEFAULT_SETTINGS,emptyState(),history,null,1.2,prepared.summary?.text);expect(await agent.run(async()=>reply(['{"choices":["一","二","三"]}']),new AbortController().signal,async()=>{},options)).toHaveLength(3);
+ infer.mockClear();expect((await prepareSynopsis(history,JSON.stringify(prepared.summary),null,options)).source).toBe('cache');expect(infer).not.toHaveBeenCalled();
+});
 it('preserves long recent facts via local synopsis compression instead of slicing away the opening',async()=>{
  const agent=new DirectorAgent({name:'岚'},{...DEFAULT_SETTINGS,systemPrompt:'保持剧情'},emptyState(),[story(0,'开头的重要约定。'+ '情节'.repeat(2000))],2048);const summarize=vi.fn(async()=> '开头的重要约定。简洁记忆。');expect(await agent.run(async()=>reply(['{"choices":["一","二","三"]}']),new AbortController().signal,async()=>{},{contextTokens:2048,inputRatio:1.2,infer:summarize})).toHaveLength(3);expect(agent.prompt().condensed).toBe(true);expect(JSON.stringify(agent.prompt())).toContain('开头的重要约定');expect(summarize).toHaveBeenCalled();
 });

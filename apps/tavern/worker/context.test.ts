@@ -1,10 +1,21 @@
 import { expect, it, vi } from 'vitest';
-import { ConversationContext, SummaryRetry, validSummary, summarizeWithModel } from './context';
+import { ConversationContext, SummaryRetry, validSummary, summarizeWithModel, summarizeStory } from './context';
 import { DEFAULT_SETTINGS, type Message } from '../shared/types';
 import type {PromptMessage} from '../shared/prompt';
 const card={name:'岚',description:'旅店主人'};
 const message=(id:string,role:Message['role'],content:string):Message=>({id,role,content,status:'completed',ordinal:0,requestId:null,createdAt:0});
 const options={protocol:'',formatReminder:'',inputRatio:1.2};
+it('requires reduction for compression but accepts a nonempty expanded overview of short sources',async()=>{
+ const history=[message('short','assistant','雨')],infer=vi.fn(async()=> '岚与旅人在雨夜相遇。');
+ await expect(summarizeStory('',history,{contextTokens:null,inputRatio:1.2,infer})).rejects.toThrow('有效摘要');
+ expect(await summarizeStory('',history,{contextTokens:null,inputRatio:1.2,infer,requireReduction:false})).toBe('岚与旅人在雨夜相遇。');
+ await expect(summarizeStory('',history,{contextTokens:null,inputRatio:1.2,infer:async()=>'',requireReduction:false})).rejects.toThrow('有效摘要');
+});
+it('still requires progress when reducing an oversized previous overview',async()=>{
+ const infer=vi.fn(async()=> '旧'.repeat(2000)),overview={contextTokens:1024 as number|null,inputRatio:1.2,infer,requireReduction:false};
+ await expect(summarizeStory('旧'.repeat(2000),[message('new','user','新')],overview)).rejects.toThrow('有效摘要');
+ expect(infer).toHaveBeenCalledTimes(1);expect(overview.requireReduction).toBe(false);
+});
 it('compresses explicitly marked story fragments without ever summarizing long candidate actions',async()=>{
  const infer=vi.fn(async()=> '已确认抵达港口。');const c=new ConversationContext([message('u','user','出发')],card,[],DEFAULT_SETTINGS,2048,options,infer);c.appendOutput(message('out','assistant',''),'正文'.repeat(3000),false);
  const story=c.storyFragment('正文'.repeat(3000)),candidate='未来候选行动'.repeat(2000),suffix:PromptMessage[]=[{role:'tool',tool_call_id:'call',content:'{"ok":true}'},story,{role:'assistant',content:candidate}];

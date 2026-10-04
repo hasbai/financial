@@ -64,6 +64,8 @@ Director system 只包含候选任务协议；会话 systemPrompt、角色卡 sy
 
 独立梗概覆盖近期窗口以外的已发生剧情，来源绑定有序消息 ID、role、content 指纹和格式 version。短会话完全位于近期窗口时，不增加摘要调用。长会话优先复用有效 Director 缓存或未超出较早前缀的正文 checkpoint，覆盖最长者优先；只增量总结缺失的前缀。梗概失败时本轮不生成候选，不暗中退化成只看最近情节。缓存存于每会话 DO SQLite 的 `director_synopsis` 派生表，幂等创建，无 D1 迁移；成功摘要在当前 pending/owns 下保存。新分支不复制缓存，来源改变自动失效，原历史与正文 checkpoint 不改写。
 
+整体梗概是语义构建，不是每次都需要缩容：可靠stop后的非空有效梗概允许比很短的来源略长，避免一条短开场导致整轮候选跳过；原来源、版本与缓存校验不变。正文超限压缩、Director局部压缩、摘要递归中为释放容量压缩旧梗概时，仍强制显著缩短并检查进展。宽松条件只在独立梗概构建的局部选项生效，不泄漏到后续压缩；摘要发现的新容量仍传回Director。空结果、length和故障不算成功，不为此自动重试。
+
 不设置固定 6000 字截尾。只有整体输入超过已发现容量或遇到明确 context 超限时，才压缩 Director 自己的近期剧情；被移出窗口的原文合并到局部梗概，单条长正文可完整摘要并标注 condensed。此临时结果不写入持久梗概缓存或正文 summary/projection。核心角色、系统故事约束和状态不截断；无法容纳则保留正常正文、返回空候选。
 
 通过同一 Gateway `dynamic/rp` 发送 `response_format: {type:"json_schema",json_schema:{name:"director_choices",strict:true,schema:...}}`。Schema 限制唯一对象字段 `choices`，数组 `minItems=maxItems=3`，字符串非空且最多120个Unicode字符；不是 Chat Completions 的 `n=3`。Director 请求完全省略 tools/tool_choice，固定关闭思考。

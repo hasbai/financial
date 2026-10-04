@@ -114,7 +114,7 @@ D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整
 
 D1增量迁移0007只新增storage_backend和deleted_at，旧数据与ID保留。首次会话访问确认旧生成已结束/到期，在D1写永久do:<sessionId>占用哨兵冻结旧Worker，导入所有消息版本并逐字段校验。失败保留冻结来源供下次重试；DO提交后只写DO，D1仅同步列表和世界书引用。不可直接回退至会继续写旧D1的版本；回滚先停写并导出DO新消息。
 
-世界书更新先标记DO待同步，再原子预留旧+新引用并集，DO成功后才释放旧绑定；崩溃/同步失败由alarm按已提交状态收窄。删除会话保留DO tombstone与旧D1原文，隐藏目录、释放引用，不能清空对象后再次导入。
+世界书更新先标记DO待同步，再原子预留旧+新引用并集，DO成功后才释放旧绑定；崩溃/同步失败由alarm按已提交状态收窄。删除会话先持久化清理意图，确认D1删除标记与引用释放，再await deleteAll一并清空DO全部私有存储与alarm，清理成功后才返回。失败可重复DELETE或由alarm重试；D1迁移来源保留但删除标记永久阻止再导入，DO不永久保留tombstone。构造函数及已删除对象的旧请求不重建表；空对象在运行时关闭后释放，详见[删除一致性契约](TAVERN-AGENT-PLAN.md#do与迁移一致性)。
 
 本地`pnpm --filter tavern test:session-runtime`在Wrangler所带真实workerd/SQLite隔离资源验证导入、隔离、流、幂等、停止、分支和跨实例重启。该固定runtime最高支持2026-09-18，验收harness使用该日期，生产compatibility_date仍为2026-10-03；harness不打包进生产。Node SQLite测试单独覆盖目录故障与竞争。
 

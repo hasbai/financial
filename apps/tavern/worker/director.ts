@@ -23,7 +23,7 @@ export function directorChoices(text:string):string[] {
 }
 export class DirectorContextError extends Error { constructor(readonly limit:number){super('Director上下文超限');} }
 type RecentStory={role:Message['role'];content:string;condensed?:true};
-export const SYNOPSIS_RULE='总结已发生剧情的整体梗概，保留人物关系、因果、关键转折、约定、否定更正和未决线索。区分确认事件、用户意图和假设。只总结来源内容，不续写、不推测、不输出候选或工具协议。用简洁中文合并旧梗概和新增情节，显著短于来源。';
+export const SYNOPSIS_RULE='总结已发生剧情的整体梗概，保留人物关系、因果、关键转折、约定、否定更正和未决线索。区分确认事件、用户意图和假设。只总结来源内容，不续写、不推测、不输出候选或工具协议。用简洁中文合并旧梗概和新增情节。';
 export type SynopsisOptions=Parameters<typeof summarizeStory>[2];
 export type DirectorSynopsis=Summary&{version:1};
 const synopsisFingerprint=(history:Message[])=>contentHash(history.map(m=>[m.id,m.role,m.content]));
@@ -36,7 +36,7 @@ export async function prepareSynopsis(history:Message[],cache:string|null,bodyCh
  const seed=fromBody&&(!fromCache||fromBody.covered.length>fromCache.covered.length)?fromBody:fromCache;
  const missing=older.slice(seed?.covered.length??0);let summary:DirectorSynopsis|null=seed?{...seed,version:1,fingerprint:await synopsisFingerprint(older.slice(0,seed.covered.length))}:null;
  let source=seed===fromBody&&seed?'body-checkpoint':seed?'cache':'recent-only';
- if(missing.length){options.rule=SYNOPSIS_RULE;const text=await summarizeStory(seed?.text??'',missing,options);summary={version:1,text,covered:older.map(m=>m.id),fingerprint:await synopsisFingerprint(older)};source='generated';}
+ if(missing.length){const overview={...options,rule:SYNOPSIS_RULE,requireReduction:false};let text:string;try{text=await summarizeStory(seed?.text??'',missing,overview);}finally{options.contextTokens=overview.contextTokens;}summary={version:1,text,covered:older.map(m=>m.id),fingerprint:await synopsisFingerprint(older)};source='generated';}
  return {summary,source};
 }
 
@@ -61,7 +61,7 @@ export class DirectorAgent {
  /** Context recovery only reduces this disposable recent-story projection. */
  private async compact(options:SynopsisOptions|undefined){
   if(!options)return false;
-  options.contextTokens=this.contextTokens;options.rule=SYNOPSIS_RULE;
+  options.contextTokens=this.contextTokens;options.rule=SYNOPSIS_RULE+'这是上下文压缩，必须显著短于来源。';options.requireReduction=true;
   const previous=String(this.context.synopsis??''),before=this.prompt().estimatedTokens;
   const recentCost=this.recent.reduce((n,m)=>n+estimateTokens(m.content),0);
   if(previous&&estimateTokens(previous)>=recentCost){
