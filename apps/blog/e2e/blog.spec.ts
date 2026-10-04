@@ -154,6 +154,7 @@ test('standalone pages stay out of feeds and support editable paths', async ({ p
   await expect(page).toHaveTitle('隐私政策 · 北极小站');
   await expect(page.getByRole('heading', { name: '隐私政策', exact: true })).toBeVisible();
   await expect(page.locator('link[rel=canonical]')).toHaveAttribute('href', 'https://hasbai.xyz/privacy');
+  await expect(page.locator('.prose').getByRole('link', { name: 'hasbai.xyz', exact: true })).toHaveAttribute('href', 'https://hasbai.xyz');
   const nav = page.getByRole('navigation', { name: '主导航' });
   await expect(nav.getByRole('link', { name: '关于' })).toBeVisible();
   await expect(nav.getByRole('link', { name: '隐私政策' })).toHaveCount(0);

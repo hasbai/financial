@@ -8,6 +8,8 @@
 
 隔离生产分支 `blog-oauth-disclosures-20261004` / `br-wild-scene-b3kuusvz` 通过迁移、重复执行和并发冲突拒绝，文章、手记、图片、标签及页面其他元数据 fingerprint 一致。既有数据库脚本 62 项检查与 `database/blog/test_pages.sql` 的公开读取、草稿隔离、CRUD、匿名写入拒绝均通过，测试写入全部回滚。已应用生产，真实匿名 JWT API 与公开政策 SSR 均返回 200，两页正文 MD5 与隔离验证结果一致。
 
+`0008_policy_site_link.sql` 将隐私页站点裸 URL 改为显式 Markdown 链接，避免自动链接吞入后续中文；仅精确替换命中的短语，保留其他正文和元数据。已先在上述隔离分支验证，再应用生产；未登录浏览器确认链接文字与目标均正确，夹具增加实际链接断言。独立页面 2 项流程与 10 张 Linux 候选重新通过并审阅导入。`0007` 的幂等验证针对其完成时的正文；后续人工编辑或 `0008` 会使其版本保护拒绝重跑，正常顺序迁移不重放旧政策快照。
+
 Auth0 Google 连接实际配置为 `email`、`profile`；不修改现有登录连接。已核对 Google 项目 `hasbai` 的品牌名称“北极小站”、首页 `https://hasbai.xyz`、隐私 `https://hasbai.xyz/privacy`、条款 `https://hasbai.xyz/terms` 及授权域名 `hasbai.xyz`；控制台数据访问列表为空，尚未修改声明范围或重新提交审核，也未取得 Google 通过结论。登记授权域名不等同于再次验证 Search Console 所有权。
 
 固定 Linux 镜像运行首页与独立页面场景，iPhone/WebKit、桌面/Chromium 共 4 项流程通过，34 张候选已审阅；导入首页、空首页及两份政策的有意变化，新增首页深色截图，其他页面保留原基线。博客 10 项单元测试通过；完整验收仍以 PR 最新提交 CI 为准，设备模拟不是 iOS 真机验收。
