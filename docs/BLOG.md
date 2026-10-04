@@ -1,5 +1,17 @@
 # 北极小站
 
+## Google OAuth 公开说明（2026-10-04）
+
+首页以匿名 SSR 展示“北极小站”名称、公开文章/手记与经授权的写作、个人记账、节点管理、AI 文字对话用途，说明 Google 基本身份资料的用途并直接链接隐私政策。AI 功能只提供文字对话，首页与服务条款明确禁止 AI NCII，不宣称已实现自动内容审查。
+
+`database/blog/0007_oauth_disclosures.sql` 以当前生产人工编辑版本为基线，补充 Google 身份资料的访问、使用、Auth0 存储、Cloudflare/Neon 处理、AI 模型传输、Gateway 完整请求/回复和账号名称记录，以及保留和删除方式；删除“不保存个人敏感信息”的错误概括。迁移只适用于本次生产两页 UUID 和已审阅正文，不能用于全新数据库的顺序初始化。行锁及正文 MD5 拒绝并发编辑，任一冲突整体回滚；重复执行不改变时间戳，原页面 ID、标题、摘要、发布状态和发布时间保留。
+
+隔离生产分支 `blog-oauth-disclosures-20261004` / `br-wild-scene-b3kuusvz` 通过迁移、重复执行和并发冲突拒绝，文章、手记、图片、标签及页面其他元数据 fingerprint 一致。既有数据库脚本 62 项检查与 `database/blog/test_pages.sql` 的公开读取、草稿隔离、CRUD、匿名写入拒绝均通过，测试写入全部回滚。已应用生产，真实匿名 JWT API 与公开政策 SSR 均返回 200，两页正文 MD5 与隔离验证结果一致。
+
+Auth0 Google 连接实际配置为 `email`、`profile`；不修改现有登录连接。已核对 Google 项目 `hasbai` 的品牌名称“北极小站”、首页 `https://hasbai.xyz`、隐私 `https://hasbai.xyz/privacy`、条款 `https://hasbai.xyz/terms` 及授权域名 `hasbai.xyz`；控制台数据访问列表为空，尚未修改声明范围或重新提交审核，也未取得 Google 通过结论。登记授权域名不等同于再次验证 Search Console 所有权。
+
+固定 Linux 镜像运行首页与独立页面场景，iPhone/WebKit、桌面/Chromium 共 4 项流程通过，34 张候选已审阅；导入首页、空首页及两份政策的有意变化，新增首页深色截图，其他页面保留原基线。博客 10 项单元测试通过；完整验收仍以 PR 最新提交 CI 为准，设备模拟不是 iOS 真机验收。
+
 站点名统一为“北极小站”，所有页面标题、首页文案和无障碍名称引用 `site.name`；“手记”仅作为内容类型名称。编辑室及文章、手记、独立页面编辑器标题均保留站点后缀。
 
 `database/blog/0006_site_name.sql` 仅纠正关于页旧标题及政策中精确命中的旧名称短语，并更新发生变化行的 `updated_at`。已在生产隔离分支 `blog-site-name-20261004` / `br-curly-lab-b3tquqyq` 验证并应用生产；页面 ID、其他元数据和既有文章、手记、图片 fingerprint 不变，重复执行无变化。生产仅关于页命中更新，政策正文保留用户编辑版本。生产匿名 JWT API 的三页读取均返回 200，标题和正文已无旧站点名。

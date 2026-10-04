@@ -41,8 +41,16 @@ test('SSR, direct Data API navigation, skeleton, canonical URLs and reading stat
   await expect(page.getByRole('heading', { name: /北极小站/ })).toBeVisible();
   await expect(page).toHaveTitle('北极小站 — 写下此刻，留给以后。');
   await expect(page.getByRole('link', { name: '北极小站首页', exact: true, includeHidden: true })).toHaveAttribute('href', '/');
-  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', '北极小站，记录思考与日常。');
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', '北极小站，公开阅读文章与手记，统一登录后使用经授权的个人工具。');
+  const home = await request.get('/', { maxRedirects: 0 });
+  expect(home.status()).toBe(200);
+  expect(await home.text()).toContain('Google 登录使用账号标识');
+  await expect(page.locator('.hero-description')).toContainText('个人博客与工具站');
+  await expect(page.locator('.hero-description a')).toHaveAttribute('href', '/privacy');
   await expect(page).toHaveScreenshot('home.png', { fullPage: true });
+  await page.getByRole('button', { name: '切换深色' }).click();
+  await expect(page).toHaveScreenshot('home-dark.png', { fullPage: true });
+  await page.getByRole('button', { name: '切换浅色' }).click();
 
   await page.route(/\/rest\/v1\/article\?/, async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 450));
@@ -136,6 +144,9 @@ test('standalone pages stay out of feeds and support editable paths', async ({ p
   const policy = await request.get('/privacy');
   expect(policy.status()).toBe(200);
   expect(await policy.text()).toContain('jsclndnz@gmail.com');
+  expect(await policy.text()).toContain('Google 身份信息的存储与共享');
+  expect(await policy.text()).toContain('AI 文字对话与日志');
+  expect(await policy.text()).toContain('完整请求与回复');
   const uuid = await request.get('/contents/40000000-0000-4000-8000-000000000002', { maxRedirects: 0 });
   expect(uuid.status()).toBe(308);
   expect(uuid.headers().location).toBe('/privacy');
@@ -156,9 +167,10 @@ test('standalone pages stay out of feeds and support editable paths', async ({ p
   await page.getByRole('button', { name: '切换浅色' }).click();
   await page.getByRole('navigation', { name: '页脚导航' }).getByRole('link', { name: '服务条款' }).click();
   await expect(page.getByRole('heading', { name: '服务条款', exact: true })).toBeVisible();
+  await expect(page.locator('.prose')).toContainText('AI NCII');
   await expect(page).toHaveScreenshot('terms.png', { fullPage: true });
   await page.goto('/');
-  await expect(page.locator('main')).not.toContainText('隐私政策');
+  await expect(page.locator('.recent-list')).not.toContainText('隐私政策');
   await page.goto('/timeline');
   await expect(page.locator('main')).not.toContainText('隐私政策');
 
