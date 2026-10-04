@@ -11,13 +11,13 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
     vi.fn(async () => Response.json({ keys: [jwk] })),
   );
   const env = {
-    AUTH0_DOMAIN: "hasbai.eu.auth0.com",
+    AUTH0_DOMAIN: "auth.hasbai.xyz",
     AUTH0_AUDIENCE: "https://financial.hasbai.xyz/api",
   } as const;
   const sign = (
     aud = env.AUTH0_AUDIENCE as string,
     exp = "1h",
-    issuer = "https://hasbai.eu.auth0.com/",
+    issuer = "https://auth.hasbai.xyz/",
     role: unknown = ["member", "superadmin"],
   ) =>
     new SignJWT({ [ROLE_CLAIM]: role, [EMAIL_CLAIM]: "owner@example.test", [USERNAME_CLAIM]: "月石" })
@@ -41,15 +41,16 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
     await sign("https://tavern.hasbai.xyz/api"),
     await sign(env.AUTH0_AUDIENCE, "-1h"),
     await sign(env.AUTH0_AUDIENCE, "1h", "https://wrong.test/"),
+    await sign(env.AUTH0_AUDIENCE, "1h", "https://hasbai.eu.auth0.com/"),
     "invalid",
   ])
     await expect(identity(req(token), env)).rejects.toMatchObject({
       status: 401,
     });
-  const noRole = await new SignJWT({}).setProtectedHeader({alg:'RS256',kid:'test'}).setSubject('auth0|ordinary').setIssuer('https://hasbai.eu.auth0.com/').setAudience(env.AUTH0_AUDIENCE).setIssuedAt().setExpirationTime('1h').sign(keys.privateKey);
+  const noRole = await new SignJWT({}).setProtectedHeader({alg:'RS256',kid:'test'}).setSubject('auth0|ordinary').setIssuer('https://auth.hasbai.xyz/').setAudience(env.AUTH0_AUDIENCE).setIssuedAt().setExpirationTime('1h').sign(keys.privateKey);
   await expect(identity(req(noRole),env)).rejects.toMatchObject({status:403});
   for (const role of [[], ["member"], "superadmin", null, {superadmin: true}]) {
-    const request = req(await sign(env.AUTH0_AUDIENCE, "1h", "https://hasbai.eu.auth0.com/", role));
+    const request = req(await sign(env.AUTH0_AUDIENCE, "1h", "https://auth.hasbai.xyz/", role));
     await expect(identity(request, env)).rejects.toMatchObject({status: 403});
   }
   await expect(

@@ -37,7 +37,7 @@ it("offers organization login methods with the shared audience and memory-only c
   expect(sdk.constructor).toHaveBeenCalledWith(
     expect.objectContaining({
       cacheLocation: "memory",
-      domain: config.domain,
+      domain: "auth.hasbai.xyz",
       clientId: config.clientId,
       authorizationParams: {
         redirect_uri: `${window.location.origin}/auth/callback`,
@@ -54,6 +54,7 @@ it("offers the same login methods while preserving the separate Zboard audience"
   createBrowserClient("https://zboard.hasbai.xyz", {
     audience: "https://zboard.hasbai.xyz/api",
   });
+  expect(sdk.constructor.mock.lastCall![0].domain).toBe("auth.hasbai.xyz");
   expect(sdk.constructor.mock.lastCall![0].authorizationParams).toEqual({
     redirect_uri: "https://zboard.hasbai.xyz/auth/callback",
     audience: "https://zboard.hasbai.xyz/api",

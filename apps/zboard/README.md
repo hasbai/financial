@@ -31,7 +31,7 @@ Cloudflare Workers Builds 使用 `hasbai/financial` / main，根目录 `/`，bui
 
 ### 认证、节点与配置边界
 
-Auth0 tenant `hasbai.eu.auth0.com`，audience `https://zboard.hasbai.xyz/api`，顶层 `_roles` 角色数组包含 superadmin 才授予管理员；`email` 使用同名顶层字段。Worker 用 jose/JWKS 验证签名、issuer、audience、有效期；普通用户只用 sub 查本人。email 只显示，不作为授权关联。第一次登录产生一条禁用用户记录，其后读取不重复写入。管理员不能在面板授予自身管理员角色。
+Auth0 tenant `hasbai.eu.auth0.com`，统一登录域名/issuer `auth.hasbai.xyz`（共享 `packages/auth`），audience `https://zboard.hasbai.xyz/api`，顶层 `_roles` 角色数组包含 superadmin 才授予管理员；`email` 使用同名顶层字段。Worker 用 jose/JWKS 验证签名、issuer、audience、有效期；普通用户只用 sub 查本人。email 只显示，不作为授权关联。第一次登录产生一条禁用用户记录，其后读取不重复写入。管理员不能在面板授予自身管理员角色。
 
 节点服务端 JSON 和订阅公开参数分别存储，订阅序列化仅使用白名单；REALITY 私钥仅存在管理员配置，不出现在订阅。节点地址、端口、SNI、公钥等由管理员据真实节点填写；面板不生成虚假的可用节点。VMess/VLESS/Trojan/Shadowsocks 支持常规 TCP/WS/gRPC 参数，Shadowsocks 仅标准 AEAD TCP。Clash 格式为 YAML；模板与覆盖项存于独立 `clash_settings` 表，与节点协议 JSON 模板分开。配额以字节存储，GB 输入换算 1024³；额度 0 为不限。到期编辑明确使用 UTC。设备上限仅按原节点协议提供字段，官方 NewV2board 可能使用本机 override。
 

@@ -11,13 +11,13 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
     vi.fn(async () => Response.json({ keys: [jwk] })),
   );
   const env = {
-    AUTH0_DOMAIN: "hasbai.eu.auth0.com",
+    AUTH0_DOMAIN: "auth.hasbai.xyz",
     AUTH0_AUDIENCE: "https://zboard.hasbai.xyz/api",
   } as const;
   const sign = (
     aud = env.AUTH0_AUDIENCE as string,
     exp = "1h",
-    issuer = "https://hasbai.eu.auth0.com/",
+    issuer = "https://auth.hasbai.xyz/",
     role: unknown = ["member", "superadmin"],
   ) =>
     new SignJWT({ [ROLE_CLAIM]: role, [EMAIL_CLAIM]: "owner@example.test" })
@@ -40,13 +40,14 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
     await sign("https://financial.hasbai.xyz/api"),
     await sign(env.AUTH0_AUDIENCE, "-1h"),
     await sign(env.AUTH0_AUDIENCE, "1h", "https://wrong.test/"),
+    await sign(env.AUTH0_AUDIENCE, "1h", "https://hasbai.eu.auth0.com/"),
     "invalid",
   ])
     await expect(identity(req(token), env)).rejects.toMatchObject({
       status: 401,
     });
   for (const role of [[], ["member"], "superadmin", null, {superadmin: true}]) {
-    const request = req(await sign(env.AUTH0_AUDIENCE, "1h", "https://hasbai.eu.auth0.com/", role));
+    const request = req(await sign(env.AUTH0_AUDIENCE, "1h", "https://auth.hasbai.xyz/", role));
     expect((await identity(request, env)).admin).toBe(false);
   }
   await expect(

@@ -72,7 +72,7 @@ beforeEach(() => {
         }
       },
     },
-    AUTH0_DOMAIN: "hasbai.eu.auth0.com",
+    AUTH0_DOMAIN: "auth.hasbai.xyz",
     AUTH0_AUDIENCE: "https://zboard.hasbai.xyz/api",
   } as Env;
   vi.mocked(identity).mockResolvedValue({

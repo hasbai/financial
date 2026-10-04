@@ -64,9 +64,15 @@ Financial `Check`、Blog `Blog` 独立 workflow，均有廉价 changes job。业
 
 博客、财务、Tavern 和 Zboard 共用 `packages/auth` 的 Auth0 Universal Login。共享工厂不再强制 `connection=eastmoney-email`，由同一北极小站组织显示邮箱、Google、Microsoft Account 和 GitHub；Zboard 继续使用独立 API audience。通用能力后续继续在共享 packages 实现，不增加各应用专属登录选择或重复认证配置。
 
-Google、Microsoft 和 GitHub 均已启用到北极小站应用及组织，Microsoft 组织连接已补齐。用户确认允许新 OAuth 账号登录、各应用权限另行分配：三个社交连接统一启用 `assign_membership_on_login=true`，邮箱连接准入与 signup 设置保留；不关联已有身份、不复制角色、不修改 Action。无角色账号仍签发 `role=authenticated`、`_roles=[]`，Tavern 要求 superadmin，Zboard 首次账号默认禁用。提供商已有 `https://auth.hasbai.xyz/login/callback` 回调保留，Google/Microsoft 补登记当前共用的 `https://hasbai.eu.auth0.com/login/callback` Web 回调。自定义域名与原域名签发的 issuer 不同，本次保留现有统一 domain 及服务端验证约定。
+Google、Microsoft 和 GitHub 均已启用到北极小站应用及组织，Microsoft 组织连接已补齐。用户确认允许新 OAuth 账号登录、各应用权限另行分配：三个社交连接统一启用 `assign_membership_on_login=true`，邮箱连接准入与 signup 设置保留；不关联已有身份、不复制角色、不修改 Action。无角色账号仍签发 `role=authenticated`、`_roles=[]`，Tavern 要求 superadmin，Zboard 首次账号默认禁用。提供商回调统一使用 `https://auth.hasbai.xyz/login/callback`。共享 SDK 的 domain、Tavern/Zboard Worker 的 issuer/JWKS 和两应用 CSP 均使用 `auth.hasbai.xyz`；各应用自身 `/auth/callback`、组织与 API audience 保留。原租户 `hasbai.eu.auth0.com` 仍是 Auth0 管理入口，不用于应用登录。旧域会话在切换后需重新登录。
 
-共享 SDK 配置及 Zboard audience 的 9 项相关单测通过。本地固定 Linux 镜像验证博客写作、财务总览、Zboard 页面与 Tavern 角色库，36 张候选已审阅；既有视觉基线保持，桌面博客编辑器仅 20 个像素差异，其他 35 张像素一致。此夹具不执行真实 OAuth，提供商跳转、完整账号登录、PR CI 和线上部署须分别核验。
+上一轮社交登录统一的共享 SDK 配置及 Zboard audience 的 9 项相关单测通过；四应用36张候选已审阅，35张像素一致、博客桌面编辑器20个像素差异，既有视觉基线保持。本轮自定义域名验证见下一节。视觉夹具不执行真实 OAuth，完整账号登录、PR CI 和线上部署须分别核验。
+
+## 自定义登录域名（2026-10-04）
+
+统一使用 `auth.hasbai.xyz`。Auth0 自定义域状态为 ready，discovery 的 authorize/token/JWKS 均指向该域。浏览器使用真实共享 SDK 打开登录后，Google、Microsoft Account、GitHub 均进入提供商正常登录表单，实际 redirect_uri 为 `https://auth.hasbai.xyz/login/callback`。邮箱真实 PKCE 登录和新域 JWT 的财务读取、博客草稿读取/零行 PATCH 权限验证通过；缺少 token、错误签名、错误 audience 均拒绝。第三方账号完整登录未代用户操作。
+
+本地固定 Linux 镜像生成并审阅四应用36张代表截图；34张与基线完全一致，博客桌面编辑器20个像素、Zboard桌面模板8个像素差异，无有意视觉变化，保留既有基线。Financial 登录/PWA 12项相关单测通过。完整检查和线上自动部署在 PR 发布阶段独立核验。
 
 ## 登录字段兼容（2026-10-04）
 
