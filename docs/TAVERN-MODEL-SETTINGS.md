@@ -8,8 +8,8 @@
 
 ## 当前实现与目标差异
 
-已实现参数默认值、全局/会话设置、默认关闭思考、同次候选、持久化及点击发送。RP 当前指向本地 llama.cpp 的 Qwen 模型；实际 provider/model 交给 Gateway。参数直接透传，不以路由版本、schema 或管理 API 核验作为聊天准入条件。运行时不依赖管理 Token 或推理 API Key。
-现有正常完成、停止、续写、重新生成、分支和预算校验保留。本地上游模型较慢，正文正常结束后立即独立生成三条候选，沿用完整上下文和实际请求前缀。尾部解析失败不能把正常正文改成失败。
+已实现参数默认值、全局/会话设置、默认关闭思考、独立 Director 候选、持久化及点击发送。RP 当前指向本地 llama.cpp 的 Qwen 模型；实际 provider/model 交给 Gateway。参数直接透传，不以路由版本、schema 或管理 API 核验作为聊天准入条件。运行时不依赖管理 Token 或推理 API Key。
+现有正常完成、停止、续写、重新生成、分支和预算校验保留。本地上游模型较慢，正文正常结束后，独立 Director 根据系统故事约束、核心角色卡、用户 persona、整体剧情梗概、最新状态和最近四条剧情生成三条候选。Director 结构或内容校验失败不能把正常正文改成失败。
 
 ## 设置、默认值与模型边界
 
@@ -44,7 +44,7 @@
 
 ## 续聊候选内容与 UI
 
-roleplay固定先正文、后候选两阶段。正文正常结束并保存后，立即在完整实际请求后追加本次正文与候选任务，不改写旧system和历史，保持正文不变。候选只有在该回复正常完成、协议与内容校验通过后可点击；停止、失败和不可靠终态均丢弃候选。成功续写或重新生成也使用同一协议。现有开场白和旧历史不补发模型请求。
+roleplay先正文，后独立 Director。正文正常结束并保存后，Director 自建精简上下文；不复用正文请求、工具定义、工具结果或模型投影。候选只有在该回复正常完成、协议与内容校验通过后可点击；停止、失败和不可靠终态均丢弃候选。成功续写或重新生成也使用同一协议。现有开场白和旧历史不补发模型请求。
 
 候选必须是**用户视角的完整可发送文本**，承接最新故事、用户 persona 和角色设定，语义有区分、不替用户预设选择、不虚构已发生事件。不生成角色自己的回复，不返回抽象标签如“继续探索”。依据上下文区分方向，不固定每轮相同模板。每条建议 15–60 个字符，服务端硬上限 120 个 Unicode 字符；候选可以是用户行动或台词。生成示例只放测试夹具，不作为生产兜底。
 
@@ -54,21 +54,25 @@ roleplay固定先正文、后候选两阶段。正文正常结束并保存后，
 
 正文与候选共用现有生成锁；尾部期间允许编辑自由输入草稿，发送等待本轮完成。正文及候选完成后解锁；按需补齐期间保留停止按钮和可编辑草稿。发送下一轮、重新生成、切会话、编辑分支或删除后，旧候选退出当前界面，迟到结果不能插入新会话。失败不会清空草稿。保留 Enter 发送、Shift+Enter 换行和中文 IME 保护。
 
-## 正文结束后独立生成候选
+## 正文结束后的 Director Agent（2026-10-04）
 
-沿用 `POST /api/sessions/:id/generate`、UUID、生成占用和停止信号，正常回合固定两次dynamic/rp请求。正文system只含角色/写作规则，在最后user副本附加正文-only任务，不改持久化/显示的用户原文。正文正常stop后先保存完整正文，再发送candidates_pending并立即开始候选。
+沿用 `POST /api/sessions/:id/generate`、UUID、生成占用和停止信号。正文正常 stop 后先保存完整正文并发送 `candidates_pending`，随后由独立 TypeScript `DirectorAgent` 生成候选；不新增接口、用户设置、路由或调度器。
 
-候选从最后一次正文实际messages复制，再追加该次assistant新输出和候选user任务，保留完整原前缀、摘要和世界书激活，不重复之前length续写的正文。正常不重新组装system、不缩短历史；只有超过发现窗口或明确context超限时才压缩并重建，日志记录candidatePrefixRebuilds。候选片段/补缺任务只在本轮临时消息序列，绝不作为剧情事实进入持久摘要。
+Director system 只包含候选任务协议；会话 systemPrompt、角色卡 system_prompt/post_history_instructions 是 JSON 中的故事约束数据，不能覆盖 Director 输出协议。角色只投影 name/nickname/description/personality/scenario 及上述约束，加用户名称/persona；宏展开复用原约定。示例对白、开场白原字段、作者备注、扩展脚本和世界书全文不注入。实际已发生开场可以作为剧情来源参与摘要或最近消息。
 
-候选一条一行，三条有效文本；不足三条只补缺额，length或流式超限保留半行并继续。无进展或候选故障释放回合并保留正常正文completed；用户停止/断连仍立即取消并保存正文。正文意外生成保留标记时仍隔离协议，候选仍独立请求，不把尾部写进故事。
+输入包含整体剧情梗概、正文成功后的 `agent.state` 克隆，以及最近四条有效 user/assistant 剧情（含本次完整正文）。最新状态与最近进展优先于梗概中的历史状态，用户意图与确认事件区分。旧工具调用、工具结果、候选、正文格式提醒、占用和日志字段不进入 Director。重生成替换旧版本；续写将已有前缀与新增正文合并一次。
 
-不新增接口、表、设置、额外lease或并发调度，不加应用硬轮数、正文长度、总输出额度或整轮超时。候选采用完整上下文，与正文紧接执行且cache_prompt=true；是否命中以实际cached tokens为准。任务metadata保持app/tavern、task/roleplay、签名username三项；Gateway保存完整payload/eventId。
+独立梗概覆盖近期窗口以外的已发生剧情，来源绑定有序消息 ID、role、content 指纹和格式 version。短会话完全位于近期窗口时，不增加摘要调用。长会话优先复用有效 Director 缓存或未超出较早前缀的正文 checkpoint，覆盖最长者优先；只增量总结缺失的前缀。梗概失败时本轮不生成候选，不暗中退化成只看最近情节。缓存存于每会话 DO SQLite 的 `director_synopsis` 派生表，幂等创建，无 D1 迁移；成功摘要在当前 pending/owns 下保存。新分支不复制缓存，来源改变自动失效，原历史与正文 checkpoint 不改写。
 
-日志分别记录bodyCompleteMs（正文请求stop时刻）、candidateFirstMs/ElapsedMs、正文/候选请求数、最后一次正文/候选的usage和prefill/decode。不是累计tokens，也不是把最后请求指标当整轮。
+不设置固定 6000 字截尾。只有整体输入超过已发现容量或遇到明确 context 超限时，才压缩 Director 自己的近期剧情；被移出窗口的原文合并到局部梗概，单条长正文可完整摘要并标注 condensed。此临时结果不写入持久梗概缓存或正文 summary/projection。核心角色、系统故事约束和状态不截断；无法容纳则保留正常正文、返回空候选。
 
-候选与所属 message ID 一起在终态保存，为 `messages` 增加 nullable JSON 元数据列，旧记录保持 NULL，保留正文与 ID。刷新只读已存结果；重新生成、续写为新 message ID，分支不复制旧候选。候选不是额外消息，也不进入下一轮 Prompt。SSE 通过独立的候选事件或 done 消息元数据通知前端；只有当前会话最新正常版本且已解锁才可发送。重复原 UUID仍返回既有生成结果，不再推理，所有状态复用现有请求幂等机制。
+通过同一 Gateway `dynamic/rp` 发送 `response_format: {type:"json_schema",json_schema:{name:"director_choices",strict:true,schema:...}}`。Schema 限制唯一对象字段 `choices`，数组 `minItems=maxItems=3`，字符串非空且最多120个Unicode字符；不是 Chat Completions 的 `n=3`。Director 请求完全省略 tools/tool_choice，固定关闭思考。
 
-所有推理通过 AI Gateway；开启请求日志及三个归属字段，`skipCache:true`，通过 `cf-aig-collect-log-payload:true` 保存完整请求与回复，不使用 `collectLog:false`。用户名只取已验签的 北极小站共享 Auth0 JWT 公共 claim；前端只传 Access Token，后端不逐轮查询 Auth0 Management API 或 `/userinfo`，不采用 RP persona 名称、用户 ID 或客户端 metadata。缺名称的旧 Token在占锁和模型请求前返回明确重新登录错误。Action 必须先发布，让新 Token带名称，再发布依赖该 claim 的 Worker。
+服务端聚合完整 JSON 后，只在可靠 stop 时检查唯一字段、恰三字符串、trim 后非空/互异、长度和控制字符，全部合格才保存三条。代码围栏、逐行文本、额外字段、拒绝、工具响应、缺终态或 length 均丢弃全部候选；不拼半个 JSON、不逐条补缺、不填模板。Director 故障不影响已成功正文与状态提交；用户停止/断连/占用丢失仍沿原取消机制结束。
+
+正文、梗概、Director 的模型请求和指标分开记录。短回合通常正文与 Director 两次请求；工具、正文续写、梗概增量或局部压缩会增加请求，不承诺固定调用次数或跨阶段 KV 缓存。完整 Gateway payload、eventId、skipCache 与 app/task/username 三项 metadata 保持现有契约。
+
+候选仍与所属 message ID 一起保存为现有 nullable 元数据；刷新和 UUID 回放仅读取结果。候选不是剧情消息，不进入正文摘要或模型投影。SSE 与按钮发送契约保持现有 `candidates_pending → done`。
 
 ## 按运行容量自动压缩
 
@@ -76,7 +80,7 @@ roleplay固定先正文、后候选两阶段。正文正常结束并保存后，
 
 超过发现窗口或收到明确上下文错误后，按时间顺序摘要较早完整轮次。保存nullable摘要checkpoint，记录来源消息ID与内容指纹；历史原文、导出和版本不变，编辑/重生成只能复用来源仍有效的摘要，分支首次不复制旧摘要。摘要失败保留旧记录。摘要自身超限或length时进一步拆小输入。
 
-length自动继续同一assistant消息、UUID和SSE，候选标记可以跨模型请求；特别长的生成内容仅在当前模型投影中压缩早期片段。最终stop才提交候选。用户停止和断连取消当前正文或摘要；无进展/上游故障保存部分正文。180秒占用持续续租，所有写入以生成ID隔离，不作为回复总时限。
+length自动继续同一assistant消息、UUID和SSE，正文兼容标记可以跨模型请求；特别长的生成内容仅在当前模型投影中压缩早期片段。最终stop才提交候选。用户停止和断连取消当前正文或摘要；无进展/上游故障保存部分正文。180秒占用持续续租，所有写入以生成ID隔离，不作为回复总时限。
 
 ## 实施顺序与验收
 
@@ -84,15 +88,15 @@ length自动继续同一assistant消息、UUID和SSE，候选标记可以跨模�
 | --- | --- | --- |
 | 1 | 统一默认值/校验/参数透传、固定 RP | 默认发送思考 false；路由调整不阻断对话；缺省旧会话仍可读写 |
 | 2 | 全局和会话参数组件、设置页分组 | 首屏思考关闭、模型可选 RP、恢复默认、范围错误、保存持久化和当前会话设置可用 |
-| 3 | 候选 D1 兼容迁移、尾部解析和原请求幂等 | 隔离 D1 先验证；一次调用完成正文与候选；跨 chunk 解析、截断丢弃、原 UUID去重；不污染历史 |
+| 3 | 候选 D1 兼容迁移、尾部解析和原请求幂等 | 隔离 D1 先验证；正文/Director隔离；跨chunk JSON、三条原子验证、原UUID去重；梗概版本及增量缓存 |
 | 4 | 候选按钮、显式发送入口、状态隔离 | 最多三条、原文点击发送、草稿保留、尾部可编辑草稿；切会话/分支/重生成丢弃旧结果 |
 | 5 | 视觉、PR CI、兼容发布和真实模型验收 | 固定 Linux 截图审阅导入、必需状态全绿、D1 迁移先行、Workers Builds 自动发布与线上版本核验 |
 
-自动化覆盖缺省/非法参数、旧 JSON、白名单拒绝、默认 false 的实际请求映射、正文停止/失败/长度状态、跨 chunk 分隔符、候选逐行文本/CRLF/空值/重复/超三条、一次调用与重复 UUID、并发/会话隔离、草稿和键盘发送、刷新恢复与旧结果丢弃。刷新/重复读取不暗中重试推理；短上下文预算、后台容量刷新及探测失败不中断聊天、明确超限反馈分别验证。
+自动化覆盖缺省/非法参数、旧 JSON、白名单拒绝、默认 false 的实际请求映射、正文停止/失败/长度状态、跨 chunk 分隔符、候选JSON/空值/重复/非三条/额外字段、独立请求与重复UUID、并发/会话隔离、草稿和键盘发送、刷新恢复与旧结果丢弃。刷新/重复读取不暗中重试推理；短上下文预算、后台容量刷新及探测失败不中断聊天、明确超限反馈分别验证。
 
 浏览器与视觉清单覆盖设置和会话设置正常/加载/错误/保存/恢复默认、候选等待/成功/失败/空结果/发送、长句、iPhone WebKit、desktop、深色、键盘与减弱动效。输入可用、无横向溢出、软键盘/安全区不遮挡操作分别检查；设备模拟不算真机。
 
-真实 JWT/API 验收单列：RP 默认请求确实关闭思考，开启后也确实可切换；受支持参数实际生效；回复正常完成后候选可生成、点击原文进入下一轮、会话恢复一致。比较相同有限任务关闭/开启时首个正文字符耗时及可用 usage，但不把一次快响应、缺少 reasoning_content 或模型口头承诺当作关闭证明。正文首字、正文完成、候选就绪分别计时；验收同一轮只有一次模型调用/一次预填充，候选仅增加尾部解码。
+真实 JWT/API 验收单列：RP 默认请求确实关闭思考，开启后也确实可切换；受支持参数实际生效；回复正常完成后候选可生成、点击原文进入下一轮、会话恢复一致。比较相同有限任务关闭/开启时首个正文字符耗时及可用 usage，但不把一次快响应、缺少 reasoning_content 或模型口头承诺当作关闭证明。正文首字、正文完成、候选就绪分别计时；验收正文、梗概和Director的实际请求数与输入来源，候选JSON必须受Schema约束。
 
 实现、CI、自动发布与真实模型验收已完成，证据及上游502时的未知窗口局限见交付状态。
 
@@ -101,12 +105,12 @@ length自动继续同一assistant消息、UUID和SSE，候选标记可以跨模�
 - [Cloudflare动态路由](https://developers.cloudflare.com/ai-gateway/features/dynamic-routing/usage/)（文档示例为AI.run）与[官方SDK动态unified示例](https://github.com/cloudflare/ai/blob/main/packages/ai-gateway-provider/README.md)：结合本轮edge-preview实证，当前入口为 `env.AI.gateway('default').run`，`provider:'compat'`、`endpoint:'chat/completions'`，query指定 `model:'dynamic/rp'`。通过Gateway路由并记录日志，不携带推理密钥，不使用REST ai/run或直接指定@cf模型。
 - [llama.cpp服务契约](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)：`/props`运行容量及`chat_template_kwargs`；当前模板实际使用enable_thinking，关闭时预填充空think，开启时等待思考内容。reasoning_format:none不是关闭思考。
 
-系统、角色附加规则与候选协议合并为一个前置system消息，兼容本地模板。通知复用共享`@hasbai/ui/notice`；项目原则见[AGENTS.md](../AGENTS.md#项目实现原则)。真实模型及发布证据见交付状态。
+正文与Director各自拥有独立system；Director故事约束放在JSON数据，输出协议保持独立。通知复用共享`@hasbai/ui/notice`；项目原则见[AGENTS.md](../AGENTS.md#项目实现原则)。真实模型及发布证据见交付状态。
 
 ## 对话 UI 与提示词修订（2026-10-03）
 
 消息区采用右侧用户气泡、无气泡角色正文，当前单角色会话隐藏双方姓名与头像，保留无障碍身份。发送/停止使用44px圆形图标按钮；输入框单行起步，按实际内容伸展到200px后内部滚动，发送后复位。复制、编辑与最后一条回答的重新生成放正文末尾；保留键盘、中文输入法、停止、续写和草稿。
 
-全局与当前会话都可编辑 System Prompt，并独立恢复默认提示；全局用于新会话，现有会话保留自身快照。默认鼓励3–6段、约300–600字的自然对白与场景细节，仍由用户控制自己的行动；长度是提示目标，不设应用输出上限。只精确升级旧默认字符串，用户自定义内容不覆盖；用户提示始终进入system，角色卡提示附加，含 `{{original}}` 时替换且不重复插入。固定候选标记不含UUID，有利于稳定前缀，不承诺缓存一定命中。
+全局与当前会话都可编辑 System Prompt，并独立恢复默认提示；全局用于新会话，现有会话保留自身快照。默认鼓励3–6段、约300–600字的自然对白与场景细节，仍由用户控制自己的行动；长度是提示目标，不设应用输出上限。只精确升级旧默认字符串，用户自定义内容不覆盖；用户提示始终进入system，角色卡提示附加，含 `{{original}}` 时替换且不重复插入。正文兼容分隔符不含UUID；Director使用JSON Schema，不承诺跨阶段缓存命中。
 
 Gateway 当前通过 universal 绑定调用动态路由；原始流继续实时传送，Gateway日志同时聚合 `choices[0].delta.content` 并保留 `streamed_data`。不在应用端回写 response 或借 metadata 存正文，不增第二次推理，也不改为非流式。旧 `/run` 记录不能追溯改写成聚合格式。
