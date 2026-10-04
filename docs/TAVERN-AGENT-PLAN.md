@@ -1,8 +1,20 @@
 # Tavern Agent：长期方案与当前优先级
 
-2026-10-04。目标：有状态、长期记忆、多轮工具推理的角色Agent，优先适配32K且prefill/decode慢的本地模型。当前推进state快照与最小工具闭环，持续优化缓存前缀；后续逐步验证发布，不将尚不存在的工具塞进提示词。
+2026-10-04。目标：有状态、长期记忆、多轮工具推理的角色Agent，优先适配32K且prefill/decode慢的本地模型。本批实现state快照、原生工具续轮、会话记忆、持久模型投影和世界书检索；发布及真实应用验收见交付状态。
 
 代码入口为主分支`apps/tavern`。保留现有数据和ID、角色卡、共享认证、候选、流式正文、停止、续写、重新生成、编辑分支和导出。
+
+## Agent 实施契约（2026-10-04）
+
+- 每个assistant版本保存before/after状态与工具步骤。scene、facts、relationships、inventory采用有界JSON patch，省略保留，null删除。状态只在正文正常完成且整回合未被停止时，与消息/revision在DO事务内提交；候选故障保留正常正文状态。
+- 重生成与中断续写从对应版本before开始；失败版本保持可见，但Prompt/state/记忆共用最新成功剧情版本。分支仅复制编辑点之前的成功状态，重映射消息锚点，排除编辑点旧after与工具步骤。D1兼容迁移0008保存分支seed，惰性导入失败仍可恢复。
+- 真实RP原生tools往返已先验证。search_memory返回最多三条会话原文/世界书短记录及版本来源；update_state只暂存已发生事实。不接受URL、SQL、owner或session参数。工具与结果按实际顺序追加；重复调用或连续无新检索证据结束，无硬轮数、正文总输出量或整轮deadline。
+- 正文仍流式输出，工具协议/reasoning独立解析。length自动继续；仅在超过发现窗口或明确超限后压缩，超长工具辅助正文只压缩模型投影，持久正文不裁剪。候选保留正文实际前缀及同一tools schema，但tool_choice=none，绝不执行未来行动。
+- DO仅保留最新可复用模型投影，来源版本/正文/角色/设置/书版本与当前system均校验；普通下一轮追加已发送提醒与新状态/输入，候选不进入持久投影。压缩、角色/世界书激活变化和编辑使投影失效。没有每轮摘要或额外token计数请求。
+- 世界书仍保留既有关键词/常驻机制；按需search_memory另检索已绑定启用条目。DO内分块绑定book/entry/content hash，移除未绑定或旧版本。每次最多新增8块向量、总检索10秒，渐进补齐；向量不可用回退真实关键词结果，外层停止立即退出。固定`@cf/baai/bge-m3`仅用于检索嵌入，通过既有Gateway/AI绑定与三项归属日志，不新增秘钥、向量服务或浏览器模型入口。
+- 当前模型服务实测一个slot、运行32768。复用上游有限slot调度，真实并发/取消/切回与KV指标分别验收；不为单slot创建无收益的独立会话亲和，不承诺全部历史必然缓存命中。
+
+依据：[DO SQLite](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)、[Workers AI Gateway binding](https://developers.cloudflare.com/ai-gateway/usage/worker-binding-methods/)、[BGE-M3](https://developers.cloudflare.com/workers-ai/models/bge-m3/)。后续embedding扩展长期会话记忆、精确tokenizer或多slot亲和均以实际收益为前提，不是本批额外服务依赖。
 
 ## 本轮实施：固定两阶段、完整上下文（2026-10-04，实施前修订）
 

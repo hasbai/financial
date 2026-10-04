@@ -1,6 +1,7 @@
 import type { FinishReason, Message } from '../shared/types';
 import { HttpError } from './http';
 import { message, type MessageRow, type SessionRow } from './store';
+import { emptyState, stableJson, storyMessages, type ModelProjection, type StoryState, type ToolStep } from './agent';
 
 export const SESSION_SCHEMA = `
 CREATE TABLE IF NOT EXISTS sessions (
@@ -17,7 +18,10 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS messages_session ON messages(session_id,ordinal,created_at,id);
 CREATE TABLE IF NOT EXISTS cancelled_requests (session_id TEXT NOT NULL, request_id TEXT NOT NULL, PRIMARY KEY(session_id,request_id));
 CREATE TABLE IF NOT EXISTS session_meta (id TEXT PRIMARY KEY, deleted INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 1, synced_revision INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS turn_snapshots (message_id TEXT PRIMARY KEY, before_json TEXT NOT NULL, after_json TEXT, steps_json TEXT NOT NULL DEFAULT '[]');
+CREATE TABLE IF NOT EXISTS model_projections (message_id TEXT PRIMARY KEY, value_json TEXT NOT NULL);
 `;
+export type TurnSnapshot={message_id:string;before_json:string;after_json:string|null;steps_json:string};
 /** Only the current session's SQLite operations; no remote database or model awaits in transactions. */
 export class SessionStore {
  constructor(readonly storage: Pick<DurableObjectStorage,'sql'|'transactionSync'>, readonly id:string) {}
@@ -28,6 +32,13 @@ export class SessionStore {
  deleted(){return this.rows<{deleted:number}>('SELECT deleted FROM session_meta WHERE id=?',this.id)[0]?.deleted===1;}
  get():SessionRow {if(this.deleted())throw new HttpError(404,'会话不存在');const row=this.rows<SessionRow & Record<string,SqlStorageValue>>('SELECT * FROM sessions WHERE id=?',this.id)[0];if(!row)throw new HttpError(404,'会话不存在');return row;}
  messages():Message[]{return this.rawMessages().map(message);}
+ snapshots():TurnSnapshot[]{return this.rows<TurnSnapshot & Record<string,SqlStorageValue>>('SELECT * FROM turn_snapshots');}
+ snapshot(id:string){return this.rows<TurnSnapshot & Record<string,SqlStorageValue>>('SELECT * FROM turn_snapshots WHERE message_id=?',id)[0];}
+ projection(id:string):ModelProjection|null{const row=this.rows<{value_json:string}>('SELECT value_json FROM model_projections WHERE message_id=?',id)[0];return row?JSON.parse(row.value_json):null;}
+ state(history:Message[]=storyMessages(this.messages())):StoryState{for(const m of [...history].reverse()){const s=this.snapshot(m.id);if(s?.after_json)return JSON.parse(s.after_json);}return emptyState();}
+ before(id:string):StoryState{const s=this.snapshot(id);return s?JSON.parse(s.before_json):this.state(storyMessages(this.messages()).filter(m=>m.ordinal<(this.findMessage(id)?.ordinal??0)));}
+ beginState(id:string,state:StoryState){if(!this.pending(id))throw new HttpError(409,'生成已停止');this.write('INSERT INTO turn_snapshots(message_id,before_json) VALUES(?,?)',id,stableJson(state));}
+ saveSteps(id:string,steps:ToolStep[]){if(!this.pending(id))return false;this.write('UPDATE turn_snapshots SET steps_json=? WHERE message_id=?',JSON.stringify(steps),id);return true;}
  rawMessages():MessageRow[]{return this.rows<MessageRow & Record<string,SqlStorageValue>>('SELECT * FROM messages WHERE session_id=? ORDER BY ordinal,created_at,id',this.id);}
  findRequest(requestId:string){return this.rows<MessageRow & Record<string,SqlStorageValue>>("SELECT * FROM messages WHERE session_id=? AND request_id=? AND role='assistant'",this.id,requestId)[0];}
  findMessage(id:string){return this.rows<MessageRow & Record<string,SqlStorageValue>>('SELECT * FROM messages WHERE session_id=? AND id=?',this.id,id)[0];}
@@ -36,6 +47,7 @@ export class SessionStore {
   this.transaction(()=>{
    this.write('INSERT INTO sessions VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',row.id,row.owner,row.title,row.character_json,row.character_name,row.settings_json,row.book_ids_json,null,null,row.created_at,row.updated_at,row.summary_json??null);
    for(const m of messages)this.insert(m);
+   for(const s of JSON.parse(row.agent_seed_json??'[]') as TurnSnapshot[]){if(!this.findMessage(s.message_id))throw new Error('状态来源不存在');this.write('INSERT INTO turn_snapshots VALUES(?,?,?,?)',s.message_id,s.before_json,s.after_json,s.steps_json);}
    const restored=this.rawMessages();if(JSON.stringify(restored)!==JSON.stringify(messages.map(m=>({id:m.id,session_id:this.id,role:m.role,content:m.content,status:m.status,ordinal:m.ordinal,request_id:m.request_id,created_at:m.created_at,finish_reason:m.finish_reason??null,candidates_json:m.candidates_json??null}))))throw new Error('会话导入校验失败');
    this.write('INSERT INTO session_meta(id) VALUES(?)',this.id);
   });
@@ -63,8 +75,12 @@ export class SessionStore {
  pending(assistantId:string){return this.owns(assistantId)&&this.findMessage(assistantId)?.status==='pending';}
  saveSummary(assistantId:string,summary:string|null){if(!this.pending(assistantId))return false;return this.write('UPDATE sessions SET summary_json=? WHERE id=? AND generation_id=? AND EXISTS(SELECT 1 FROM messages WHERE id=? AND status=\'pending\')',summary,this.id,assistantId,assistantId)>0;}
  saveOutput(assistantId:string,content:string){if(!this.pending(assistantId))return false;return this.write("UPDATE messages SET content=? WHERE id=? AND session_id=? AND status='pending'",content,assistantId,this.id)>0;}
- finish(assistantId:string,output:string,status:Message['status'],finishReason:FinishReason,candidates:string[]){return this.transaction(()=>{
+ finish(assistantId:string,output:string,status:Message['status'],finishReason:FinishReason,candidates:string[],state?:StoryState,projection?:ModelProjection){return this.transaction(()=>{
   if(this.owns(assistantId)){
+   if(status==='completed'&&finishReason==='stop'&&this.pending(assistantId)){
+    if(state)this.write('UPDATE turn_snapshots SET after_json=? WHERE message_id=?',stableJson(state),assistantId);
+    if(projection){this.write('DELETE FROM model_projections');this.write('INSERT INTO model_projections VALUES(?,?)',assistantId,JSON.stringify(projection));}
+   }
    this.write("UPDATE messages SET content=?,candidates_json=CASE WHEN status='aborted' OR ?<>'completed' THEN NULL ELSE ? END,finish_reason=CASE WHEN status='aborted' AND finish_reason IS NOT NULL THEN finish_reason ELSE ? END,status=CASE WHEN status='aborted' THEN 'aborted' ELSE ? END WHERE id=? AND session_id=?",output,status,candidates.length?JSON.stringify(candidates):null,finishReason,status,assistantId,this.id);
    this.write('UPDATE sessions SET generation_id=NULL,generation_until=NULL,updated_at=? WHERE id=? AND generation_id=?',Date.now(),this.id,assistantId);this.dirty();
   }

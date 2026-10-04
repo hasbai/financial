@@ -12,6 +12,7 @@ import {TavernSession} from './worker/session-object';
 export class TestSession extends TavernSession {
  constructor(ctx,env){let bodyMessages;super(ctx,{...env,AI:{gateway:()=>({run:async request=>{
  const input=request.query.messages.at(-1).content;
+ if(input.includes('工具抵达北港')&&request.query.messages.at(-1).role!=='tool')return new Response('data: '+JSON.stringify({choices:[{delta:{tool_calls:[{index:0,id:'state-call',type:'function',function:{name:'update_state',arguments:'{"patch":{"scene":"北港"}}'}}]},finish_reason:'tool_calls'}]})+'\\n\\ndata: [DONE]\\n\\n',{headers:{'Content-Type':'text/event-stream'}});
  if(input.startsWith('正文已经完成')){if(JSON.stringify(request.query.messages.slice(0,bodyMessages.length))!==JSON.stringify(bodyMessages))throw new Error('candidate prefix changed');}
  else bodyMessages=structuredClone(request.query.messages);
  if(input.includes('等待'))return new Response(new ReadableStream(),{headers:{'Content-Type':'text/event-stream'}});
@@ -39,8 +40,11 @@ try{
  a=await(await call('a','read')).json();assert.equal(a.value.messages.at(-1).content,'你好。');assert.equal((await(await call('b','read')).json()).value.messages.length,0);
  assert.equal((await(await call('a','generate',{requestId})).json()).replayed,true);
  const fork=await(await call('a','fork',{messageId:a.value.messages.at(-1).id,content:'新分支'})).json();assert.equal((await(await call(fork.value.id,'read')).json()).value.messages.at(-1).content,'新分支');
+ await(await call('a','generate',{requestId:crypto.randomUUID(),content:'工具抵达北港'})).text();a=await(await call('a','read')).json();assert.equal(a.value.session.state.scene,'北港');
+ const preTool=a.value.messages.findLast(m=>m.role==='user');const priorBranch=await(await call('a','fork',{messageId:preTool.id,content:'不同方向'})).json();assert.equal((await(await call(priorBranch.value.id,'read')).json()).value.session.state.scene,null);
+ const stateBranch=await(await call('a','fork',{messageId:a.value.messages.at(-1).id,content:'编辑这一轮'})).json();assert.equal((await(await call(stateBranch.value.id,'read')).json()).value.session.state.scene,null);
  const pending=await call('b','generate',{requestId:crypto.randomUUID(),content:'等待'}),reader=pending.body.getReader();await reader.read();const b=await(await call('b','read')).json();await call('b','stop',{generationId:b.value.session.generationId});while(!(await reader.read()).done){};
- await call('a','update',{title:'已保存'});await runtime.dispose();runtime=new Miniflare(convertV4MiniflareOptions(options));a=await(await call('a','read')).json();assert.equal(a.value.session.title,'已保存');assert.equal(a.value.messages.at(-1).content,'你好。');
+ await call('a','update',{title:'已保存'});await runtime.dispose();runtime=new Miniflare(convertV4MiniflareOptions(options));a=await(await call('a','read')).json();assert.equal(a.value.session.title,'已保存');assert.equal(a.value.messages.at(-1).content,'你好。');assert.equal(a.value.session.state.scene,'北港');
  const interrupted=await call('b','generate',{requestId:crypto.randomUUID(),content:'等待'});await interrupted.body.getReader().read();await runtime.dispose();runtime=new Miniflare(convertV4MiniflareOptions(options));const recovered=await(await call('b','read')).json();assert.equal(recovered.value.session.generationId,null);assert.equal(recovered.value.messages.at(-1).status,'aborted');
  await call('a','remove');await runtime.dispose();runtime=new Miniflare(convertV4MiniflareOptions(options));assert.equal((await(await call('a','read')).json()).status,404);db=await runtime.getD1Database('DB');assert.equal((await db.prepare("SELECT count(*) n FROM messages WHERE id='legacy'").first()).n,1);
  console.log('workerd SQLite: import, fence, identity/session isolation, streamed reply, replay, fork, stop, restart and deletion passed');
