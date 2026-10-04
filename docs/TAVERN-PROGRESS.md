@@ -1,5 +1,17 @@
 # Tavern 交付状态
 
+## 架构对照与混合检索（2026-10-04，已上线）
+
+对照固定提交的 DSH Tavern/NextTavern 后，修复历史前三条吞掉世界书结果，以及非法/重复工具调用先发生外部索引/向量请求的问题。两源有命中时保留已召回历史中的最新两条和最优世界书一条，按完整来源身份去重；工具调用整批纯校验后才外部检索。当前 Director、调用次数与摘要契约同步方案，后续按锚点读原文、候选独立恢复、后台状态结算的收益与验收条件见 Agent 方案。
+
+- 相关97项检查通过；workerd/SQLite隔离资源的导入、停止、重启、回放、分支与删除通过，模型为夹具。固定Linux28流程84图通过，82逐像素一致，桌面两图24/1像素既有差异保留旧基线；不声称真机。
+- [PR #54](https://github.com/hasbai/financial/pull/54) head `10cc5d0e80dbfd173225843c421efa6845bde972`，Check `37213607412`、Blog `37213607370`、Zboard `37213607364`、Tavern `37213607388` 的八项必需状态成功，各workflow一次统一等待。Squash `cc10af8cd7a362235a2944beb0d281cfe4bbf6a0`。
+- 自动Build `dce288dd-c293-4b75-8465-1ea08197450e` success、commit_hash一致；deployment `cd3b9c67-8bcd-4d1b-a40a-ba168454cbbb` version `5a116599-423f-4648-8959-f81fd88dd9e7` 流量100%。Node fetch health200同版本；另一个客户端403未外推为全站保护。没有手动部署。
+- 真实Universal Login/PKCE/JWT三轮正文24/23/70字，均completed/stop、刷新与原UUID回放一致、占用释放。混合回合 `b6c7bb88-a177-4ba8-9606-49b7b7fc8360` 两次正文请求/两次真实BGE-M3请求；三条结果同时包含最新用户更正和带book/revision/entry的世界书原文，并实际进入原生工具续轮。独立Director无tools/tool_choice，三候选逐字等于Gateway JSON，六条完整日志与三项metadata一致。
+- 准备历史的第二轮候选为空：短开场的整体梗概输出长于来源，被正文压缩的严格缩短校验拒绝，没有发Director；正常正文保留。第一轮与混合回合各三候选。此现象保留为下一轮梗概与压缩分工改进证据，不声称候选全场景可靠。首次验收脚本错误要求准备轮必三候选而提前退出，临时2/2资源清理；按现有0/3契约纠正脚本后完成检索验收，临时3/3资源清理。全局设置未变，私人历史未修改。
+
+证据位于忽略目录 `apps/tavern/.local-visual/mixed-recall`，不包含Token。本批真实非法工具/重复工具零embedding未另诱导生产模型，以生成链路自动化为证。
+
 ## Director 与整体剧情梗概（2026-10-04，已上线）
 
 按用户最新要求替换完整前缀候选：Director是独立TypeScript模块，system只保留候选协议；核心卡片、用户persona、系统故事约束、整体剧情梗概、本轮最新state与最近四条纯剧情作为JSON数据。工具定义/调用/结果、正文投影、世界书全文与作者扩展不进入Director。三条choices使用严格JSON Schema，服务端完整stop后三条原子校验；无效/length/摘要故障保留正常正文、空候选。

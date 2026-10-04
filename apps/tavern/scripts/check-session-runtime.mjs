@@ -10,6 +10,7 @@ const root=resolve(import.meta.dirname,'..'),persist=mkdtempSync(join(tmpdir(),'
 const source=`
 import {TavernSession} from './worker/session-object';
 export class TestSession extends TavernSession {
+ async inspectStorage(){const tables=this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE type='table'").toArray().map(r=>r.name).filter(n=>!n.startsWith('_cf')&&!n.startsWith('sqlite_'));return {tables,alarm:await this.ctx.storage.getAlarm(),bytes:this.ctx.storage.sql.databaseSize};}
  constructor(ctx,env){super(ctx,{...env,AI:{gateway:()=>({run:async request=>{
  const director=!!request.query.response_format;const synopsis=request.query.messages[0].content.startsWith('总结已发生剧情');const input=request.query.messages.at(-1).content;
  if(!director&&input.includes('工具抵达北港')&&request.query.messages.at(-1).role!=='tool')return new Response('data: '+JSON.stringify({choices:[{delta:{tool_calls:[{index:0,id:'state-call',type:'function',function:{name:'update_state',arguments:'{"patch":{"scene":"北港"}}'}}]},finish_reason:'tool_calls'}]})+'\\n\\ndata: [DONE]\\n\\n',{headers:{'Content-Type':'text/event-stream'}});
@@ -19,6 +20,7 @@ export class TestSession extends TavernSession {
  }})}});}
 }
 export default {async fetch(request,env){const d=await request.json();const stub=env.SESSIONS.getByName(JSON.stringify([d.owner,d.id]));
+ if(d.method==='inspect')return Response.json(await stub.inspectStorage());
  if(d.method==='generate')return stub.fetch(new Request('https://session/generate',{method:'POST',headers:{'X-Tavern-Owner':d.owner,'X-Tavern-Session':d.id,'X-Tavern-Username':'test','Content-Type':'application/json'},body:JSON.stringify(d.data)}));
  return new Response(await stub.invoke(d.owner,d.id,d.method,d.data??{}),{headers:{'Content-Type':'application/json'}});
 }};`;
@@ -45,6 +47,9 @@ try{
  const pending=await call('b','generate',{requestId:crypto.randomUUID(),content:'等待'}),reader=pending.body.getReader();await reader.read();const b=await(await call('b','read')).json();await call('b','stop',{generationId:b.value.session.generationId});while(!(await reader.read()).done){};
  await call('a','update',{title:'已保存'});await runtime.dispose();runtime=new Miniflare(convertV4MiniflareOptions(options));a=await(await call('a','read')).json();assert.equal(a.value.session.title,'已保存');assert.equal(a.value.messages.at(-1).content,'你好。');assert.equal(a.value.session.state.scene,'北港');
  const interrupted=await call('b','generate',{requestId:crypto.randomUUID(),content:'等待'});await interrupted.body.getReader().read();await runtime.dispose();runtime=new Miniflare(convertV4MiniflareOptions(options));const recovered=await(await call('b','read')).json();assert.equal(recovered.value.session.generationId,null);assert.equal(recovered.value.messages.at(-1).status,'aborted');
- await call('a','remove');await runtime.dispose();runtime=new Miniflare(convertV4MiniflareOptions(options));assert.equal((await(await call('a','read')).json()).status,404);db=await runtime.getD1Database('DB');assert.equal((await db.prepare("SELECT count(*) n FROM messages WHERE id='legacy'").first()).n,1);
- console.log('workerd SQLite: import, fence, identity/session isolation, streamed reply, replay, fork, stop, restart and deletion passed');
+ assert.equal((await(await call('a','remove')).json()).ok,true);let empty=await(await call('a','inspect')).json();assert.deepEqual(empty.tables,[]);assert.equal(empty.alarm,null);assert.equal(typeof empty.bytes,'number');
+ await runtime.dispose();runtime=new Miniflare(convertV4MiniflareOptions(options));assert.equal((await(await call('a','read')).json()).status,404);assert.equal((await(await call('a','remove')).json()).ok,true);empty=await(await call('a','inspect')).json();assert.deepEqual(empty.tables,[]);assert.equal(empty.alarm,null);assert.equal(typeof empty.bytes,'number');
+ assert.equal((await(await call('a','generate',{requestId:crypto.randomUUID(),content:'旧会话不能复活'})).json()).message,'会话不存在');empty=await(await call('a','inspect')).json();assert.deepEqual(empty.tables,[]);assert.equal(empty.alarm,null);assert.equal((await(await call('b','read')).json()).ok,true);
+ db=await runtime.getD1Database('DB');assert.equal((await db.prepare("SELECT count(*) n FROM messages WHERE id='legacy'").first()).n,1);
+ console.log('workerd SQLite: import, fence, isolation, streaming, replay, fork, stop, restart, deleteAll with no business tables/alarm and stale-request rejection passed (empty SQLite page bytes: '+empty.bytes+')');
 }finally{await runtime.dispose();rmSync(persist,{recursive:true,force:true});}

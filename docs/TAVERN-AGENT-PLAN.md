@@ -22,6 +22,8 @@
 
 ## 架构对照与迭代（2026-10-04）
 
+本轮追加用户要求：删除会话时同时清理对应DO存储/实例生命周期；不能只隐藏会话并永久保留DO tombstone。真实验收还发现短来源梗概因套用压缩的缩短条件而拒绝，需区分梗概构建与上下文缩容。实施与验收契约见下文及模型设置文档；PR54混合检索的已交付证据见交付状态。
+
 主参考为 [flizzywine/dsh-tavern 架构](https://github.com/flizzywine/dsh-tavern/blob/f9d6ab0842f61af97a48efee113cd89792b28220/docs/architecture.md)，固定提交 `f9d6ab0842f61af97a48efee113cd89792b28220`；补充参考 [NextTavern 检索](https://github.com/a86582751/dsh-nexttavern/blob/b497ecfaafea92b25622e59b0b5b49e1905bceaf/src/memory/memory-retrieval.ts)与[来源校验](https://github.com/a86582751/dsh-nexttavern/blob/b497ecfaafea92b25622e59b0b5b49e1905bceaf/src/memory/memory-provenance.ts)，固定提交 `b497ecfaafea92b25622e59b0b5b49e1905bceaf`。参考其设计与源码，不安装插件或复制运行时；上游缓存与速度宣传不作为本项目验收结果。
 
 | 架构能力 | 本项目现状与差距 | 迭代与完成条件 |
@@ -189,7 +191,7 @@ D1保留角色库、世界书、设置和会话目录，R2保持私有附件。�
 
 惰性导入旧会话：旧生成为空或已到期时，在D1原子设置storage_backend=do、永久generation_id=do:<sessionId>占用哨兵，阻止仍在运行的旧Worker改写。然后读取全部版本/设置/摘要，保留ID/ordinal/候选/终态，DO事务导入并逐字段校验。导入失败保留冻结的D1来源供重试，不删记录；切换后只写DO。新会话与分支先原子创建D1目录及初始来源，失败仍可从目录找到并惰性恢复。回滚先暂停会话写入并导出新事件，不能回到陈旧D1覆盖历史。
 
-DO的revision/synced_revision记录待同步目录，alarm幂等重试，正文终态不等待D1网络。世界书更新先持久标记dirty，再在D1保留旧+新引用并集，DO提交后才同步收窄；失败保留引用，重启后按已提交DO状态清理。删除保留DO tombstone，D1隐藏目录并释放绑定，不删除旧原文、不惰性复活。目录失败只影响列表同步，不将已提交正文当失败。隔离workerd SQLite已验证，再应用增量D1迁移并自动发布。
+DO的revision/synced_revision记录待同步目录，alarm幂等重试，正文终态不等待D1网络。世界书更新先持久标记dirty，再在D1保留旧+新引用并集，DO提交后才同步收窄；失败保留引用，重启后按已提交DO状态清理。删除先持久标记清理意图与alarm，确认D1隐藏目录和释放绑定，最后await deleteAll清空整个私有SQLite/元数据及alarm，成功后才返回。失败以原意图、重复DELETE或alarm继续；构造函数不建表，已删除会话的旧请求不写表或重导入。D1删除标记作为永久防复活依据，迁移前旧原文保留；DO不永久保留tombstone。普通同步不得清除D1删除标记。生成或收尾未结束仍拒绝删除。当前兼容日期支持deleteAll原子取消alarm，不提前取消重试alarm；空存储实例在运行时关闭后释放，不承诺内存立即销毁。依据：[SQLite deleteAll](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/#deleteall)、[DO生命周期](https://developers.cloudflare.com/durable-objects/best-practices/access-durable-objects-storage/#remove-a-durable-objects-storage)。目录失败只影响列表同步，不将已提交正文当失败。
 
 短事务领取占用，外部模型await期间允许stop进入；不持有blockConcurrencyWhile。重复requestId回放已有结果，同会话其他请求明确冲突。重启未完成回合可标记中断，不自动重复模型请求。
 

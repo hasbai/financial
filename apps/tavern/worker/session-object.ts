@@ -14,12 +14,18 @@ export class TavernSession extends DurableObject<Env> {
  private loading?:Promise<SessionStore>;
  private syncing?:Promise<void>;
  private mutating=false;
+ private removed?:{owner:string;id:string};
  private active?:{requestId:string;id:string;abort:AbortController};
- constructor(ctx:DurableObjectState,env:Env){super(ctx,env);this.ctx.storage.sql.exec(SESSION_SCHEMA);}
+ constructor(ctx:DurableObjectState,env:Env){super(ctx,env);}
+ private hasSchema(){return this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'").toArray().length>0;}
+ private available(store:SessionStore){if(this.removed||this.store!==store||store.deleted())throw new HttpError(404,'会话不存在');}
  private async load(owner:string,id:string):Promise<SessionStore>{
-  if(this.store){if(this.store.id!==id||this.store.directory()?.owner!==owner)throw new HttpError(404,'会话不存在');return this.store;}
+  if(this.removed)throw new HttpError(404,'会话不存在');
+  if(this.store){if(this.store.id!==id||this.store.directory()?.owner!==owner||this.store.deleted())throw new HttpError(404,'会话不存在');return this.store;}
   if(this.loading){await this.loading;return this.load(owner,id);}
   this.loading=(async()=>{
+   const directory=await getSession(this.env,owner,id);if(directory.deleted_at)throw new HttpError(404,'会话不存在');
+   this.ctx.storage.sql.exec(SESSION_SCHEMA);
    const store=new SessionStore(this.ctx.storage,id);
    if(!store.exists()){
     // Frozen before reading messages: every old mutation checks this existing generation fence.
@@ -32,27 +38,36 @@ export class TavernSession extends DurableObject<Env> {
     store.import(row,messages);
    }
    if(store.directory()?.owner!==owner)throw new HttpError(404,'会话不存在');
-   store.recover();this.store=store;await this.scheduleSync();return store;
+   this.store=store;if(store.deleted())throw new HttpError(404,'会话不存在');store.recover();await this.scheduleSync();return store;
   })();
   try{return await this.loading;}finally{this.loading=undefined;}
  }
- private async scheduleSync(){await this.ctx.storage.setAlarm(Date.now()+1000);}
+ private async scheduleSync(){if(!this.removed)await this.ctx.storage.setAlarm(Date.now()+1000);}
+ /** Keep the retry alarm until the final atomic deletion also removes it. */
+ private async purge(store:SessionStore){
+  const row=store.directory();
+  const result=await this.env.DB.prepare("UPDATE sessions SET deleted_at=COALESCE(deleted_at,?),book_ids_json='[]' WHERE id=? AND owner=? AND storage_backend='do'").bind(Date.now(),row.id,row.owner).run();
+  if(!result.meta.changes)throw new Error('会话删除同步失败');
+  await this.ctx.storage.deleteAll();
+  this.removed={owner:row.owner,id:row.id};this.store=undefined;this.loading=undefined;
+ }
  /** Directory writes are serialized, and their revision stays durable until D1 acknowledges it. */
  private async sync(){
   if(this.mutating){await this.scheduleSync();return;}
   if(this.syncing)return this.syncing;
   this.syncing=(async()=>{
    const store=this.store;if(!store)return;
-   for(;;){const meta=store.syncState();if(meta.revision===meta.synced_revision)return;const row=store.directory();
-    const result=await this.env.DB.prepare("UPDATE sessions SET title=?,settings_json=?,book_ids_json=?,updated_at=?,deleted_at=? WHERE id=? AND owner=? AND storage_backend='do'").bind(row.title,row.settings_json,meta.deleted?'[]':row.book_ids_json,row.updated_at,meta.deleted?Date.now():null,row.id,row.owner).run();
+   for(;;){const meta=store.syncState();if(meta.deleted){await this.purge(store);return;}if(meta.revision===meta.synced_revision)return;const row=store.directory();
+    const result=await this.env.DB.prepare("UPDATE sessions SET title=?,settings_json=?,book_ids_json=?,updated_at=? WHERE id=? AND owner=? AND storage_backend='do' AND deleted_at IS NULL").bind(row.title,row.settings_json,row.book_ids_json,row.updated_at,row.id,row.owner).run();
     if(!result.meta.changes)throw new Error('会话目录同步失败');store.synced(meta.revision);
    }
   })();
   try{await this.syncing;}finally{this.syncing=undefined;}
  }
- private async settled(id:string){if(this.active?.id===id)this.active=undefined;await this.scheduleSync();this.ctx.waitUntil(this.sync().catch(()=>{}));}
+ private async settled(id:string){if(this.active?.id===id)this.active=undefined;if(this.removed||this.store?.deleted())return;await this.scheduleSync();this.ctx.waitUntil(this.sync().catch(()=>{}));}
  async alarm(){
-  if(!this.store){const row=this.ctx.storage.sql.exec<SessionRow & Record<string,SqlStorageValue>>('SELECT * FROM sessions LIMIT 1').toArray()[0];if(!row)return;await this.load(row.owner,row.id);}
+  if(this.removed)return;
+  if(!this.store){if(!this.hasSchema())return;const row=this.ctx.storage.sql.exec<SessionRow & Record<string,SqlStorageValue>>('SELECT * FROM sessions LIMIT 1').toArray()[0];if(!row)return;const stored=new SessionStore(this.ctx.storage,row.id);if(stored.deleted())this.store=stored;else await this.load(row.owner,row.id);}
   try{await this.sync();}catch{await this.ctx.storage.setAlarm(Date.now()+10000);}
  }
  private async read(owner:string,id:string){const store=await this.load(owner,id);return {session:{...session(store.get(),true),state:store.state()},messages:currentMessages(store.messages())};}
@@ -93,12 +108,25 @@ export class TavernSession extends DurableObject<Env> {
   if(!result[0].meta.changes)throw new HttpError(409,'世界书状态已改变，请重试');
   const saved=await callSession(this.env,owner,next,'read');return saved.session;
  }
- private async remove(owner:string,id:string){const store=await this.load(owner,id);store.remove();await this.scheduleSync();return {ok:true};}
+ private async remove(owner:string,id:string){
+  if(this.active)throw new HttpError(409,'请先停止生成');
+  if(this.loading)await this.loading;
+  const directory=await getSession(this.env,owner,id);
+  if(this.removed){if(this.removed.owner!==owner||this.removed.id!==id)throw new HttpError(404,'会话不存在');return {ok:true};}
+  let store=this.store;
+  if(!store&&this.hasSchema()){const stored=new SessionStore(this.ctx.storage,id);if(stored.exists())store=stored;}
+  if(!store){
+   if(directory.deleted_at){await this.ctx.storage.deleteAll();this.removed={owner,id};return {ok:true};}
+   store=await this.load(owner,id);
+  }
+  if(store.id!==id||store.directory()?.owner!==owner)throw new HttpError(404,'会话不存在');
+  this.store=store;if(!store.deleted())store.remove();await this.scheduleSync();await this.purge(store);return {ok:true};
+ }
  private async export(owner:string,id:string){const store=await this.load(owner,id),row=store.get();return {row,messages:store.messages(),snapshots:store.snapshots()};}
  async invoke(owner:string,id:string,method:SessionMethod,data:Record<string,unknown>={}){
   const mutation=['update','fork','remove'].includes(method);
   try{
-   if(method!=='stop')await this.load(owner,id);
+   if(method!=='stop'&&method!=='remove')await this.load(owner,id);
    if(mutation){if(this.mutating||this.syncing)throw new HttpError(409,'会话状态已改变，请重试');this.mutating=true;}
    let value!:SessionResults[SessionMethod];
    try{
@@ -111,15 +139,15 @@ export class TavernSession extends DurableObject<Env> {
      case 'export':value=await this.export(owner,id);break;
     }
    }finally{if(mutation)this.mutating=false;}
-   if(mutation)await this.sync().catch(()=>{});
+   if(mutation&&method!=='remove')await this.sync().catch(()=>{});
    return JSON.stringify({ok:true,value});
   }catch(e){if(e instanceof HttpError)return JSON.stringify({ok:false,status:e.status,message:e.message});throw e;}
  }
  async fetch(request:Request){
   try{
    const owner=request.headers.get('X-Tavern-Owner')??'',id=request.headers.get('X-Tavern-Session')??'',username=decodeURIComponent(request.headers.get('X-Tavern-Username')??'');
-   const store=await this.load(owner,id),data=await body(request);if(this.mutating)throw new HttpError(409,'会话状态已改变，请重试');
-   return await generate(request,this.env,this.ctx,owner,id,data,username,store,(id)=>this.settled(id),(assistantId,abort)=>{this.active={requestId:String(data.requestId),id:assistantId,abort};},()=>{if(this.mutating)throw new HttpError(409,'会话状态已改变，请重试');});
+   const store=await this.load(owner,id),data=await body(request);this.available(store);if(this.mutating)throw new HttpError(409,'会话状态已改变，请重试');
+   return await generate(request,this.env,this.ctx,owner,id,data,username,store,(id)=>this.settled(id),(assistantId,abort)=>{this.active={requestId:String(data.requestId),id:assistantId,abort};},()=>{this.available(store);if(this.mutating)throw new HttpError(409,'会话状态已改变，请重试');});
   }catch(e){if(e instanceof HttpError)return json({message:e.message},e.status);throw e;}
  }
 }
