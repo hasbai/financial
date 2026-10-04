@@ -126,6 +126,7 @@
           ],
           "snapshots": [
             "home.png",
+            "home-dark.png",
             "articles.png",
             "article.png",
             "article-dark.png",
