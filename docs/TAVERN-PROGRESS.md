@@ -1,11 +1,17 @@
 # Tavern 交付状态
 
-## 同一来源的多片段检索（2026-10-05，交付中）
+## 同一来源的多片段检索（2026-10-05，已上线）
 
 已复现并修复长消息连续检索误判：首查铜钥匙、再查同一成功版本后半段银怀表，第二片段虽然有效，旧来源身份守卫仍报工具无进展。合并继续按来源去重，进展身份加入片段正文；不同query返回同一片段、相同query重复仍停止，不更改来源/版本隔离和检索上限。
 
 - 新增失败用例在修复前明确报工具无进展；修复后agent/index相关96项检查通过，覆盖新片段、重复片段、旧/失败版本排除、原生工具追加、正常正文与三候选、持久步骤/UUID回放/占用释放。
-- 真实workerd/SQLite模型夹具串行检索同一长消息两处细节成功；两步骤与锚点落库，重启及UUID回放正常。固定Linux28流程84图通过，81图逐像素一致，桌面世界书dark/error及角色库dark的24/27/1像素既有差异保留基线；设备模拟不是真机。Architect复核无阻塞。生产模型、CI及发布尚待验证，不以本地证据冒称完成。
+- 真实workerd/SQLite模型夹具串行检索同一长消息两处细节成功；两步骤与锚点落库，重启及UUID回放正常。固定Linux28流程84图通过，81图逐像素一致，桌面世界书dark/error及角色库dark的24/27/1像素既有差异保留基线；设备模拟不是真机。Architect代码复核无阻塞。
+- [PR #56](https://github.com/hasbai/financial/pull/56) head `212e9d9a520adb31820a941eeb8c737b987df86f`，Check `37217269897`、Tavern `37217269939`、Blog `37217269966`、Zboard `37217269926` 各一次统一等待，八项必需状态成功，包含最新main后squash `98c46133f62aa4ae2ca6e7960475720bb923341b`。
+- main push自动Build `5fec1656-83b5-4053-aca1-5b36aec4115b` success，push_event/main/commit_hash匹配；deployment `3533c87e-4883-41e8-87a0-c1332f250a15` 的 version `0b271589-90d8-4e8c-b2ac-5497b62d5434` 流量100%，health200版本一致。没有手动部署。
+- 真实Universal Login/PKCE/JWT请求 `2cc1e030-7f80-49ef-afdf-f0b5d90a5ba4`，模型依次调用铜钥匙、银怀表两次search_memory，中间实际有工具结果后的推理；最终正文请求带同一成功开场消息锚点的两个不同片段。三次正文请求、一次独立Director，正文24字、completed/stop/三候选，delta与保存一致；两步骤导出、刷新与UUID回放、占用释放通过，开场原文保留。四条Gateway完整请求/响应及app/task/签名username归属核对，候选逐字等于聚合JSON，Director无tools/tool_choice。
+- 临时角色/会话2/2清理，全局设置未变、私人历史未修改。首次验收在Auth0请求20秒超时，未创建资源；公共Auth0接口与health200后普通登录重试成功。重复片段无进展、失败版本和分支隔离以自动化为证，本批未另诱导线上模型失败/跨分支检索，不冒称全场景可靠。
+
+本批真实验收证据位于忽略目录`apps/tavern/.local-visual/fragment-progress`，无Token；Linux审阅记录为`2026-10-04T16-30-08.065Z`。持续迭代仍按Agent方案中实际样本与验收条件推进，不因此新增read_memory、候选重试或模型服务。
 
 ## 会话DO清理与梗概分工（2026-10-05，已上线）
 
