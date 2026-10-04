@@ -294,6 +294,31 @@ it('compresses only the model projection of long tool-assisted prose while retai
  aiRun.mockImplementation(async request=>{const q=request.query as {messages:{content:string}[]};if(q.messages[0].content.startsWith('总结已发生剧情'))return completion('旧事。');if(q.messages[0].content.startsWith('压缩会话记忆'))return completion('已经到达港口。');if((request.query as {response_format?:unknown}).response_format)return candidateCompletion(['我问问。','我坐下。','我看窗外。']);if(++bodies===1)return tool('update_state',{patch:{scene:'港口'}});if(bodies===2)return completion('正文'.repeat(2200),'length');expect(q.messages.some(m=>m.content.includes('已发生正文摘要'))).toBe(true);return completion('结尾。');});
  await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'抵达港口'})).text();await Promise.all(work);expect(sessionDb.prepare('SELECT content,status FROM messages WHERE session_id=? ORDER BY created_at DESC LIMIT 1').get(s.id)).toMatchObject({content:'正文'.repeat(2200)+'结尾。',status:'completed'});
 });
+it.each(['plain','crlf','trailing-newline'])('compresses %s prose emitted alongside a tool call while preserving the call, result and full saved reply',async format=>{
+ const {s}=await seed();db.prepare('UPDATE model_capabilities SET value_json=?').run(JSON.stringify({contextTokens:2048,inputRatio:1.2,source:'llama.cpp:n_ctx'}));let bodies=0;
+ const prose='已发生场景：'.repeat(300)+(format==='crlf'?'\r\n':'')+'已发生场景：'.repeat(300)+(format==='trailing-newline'?'\n':''),nativeCall={id:'state-with-prose',type:'function',function:{name:'update_state',arguments:JSON.stringify({patch:{scene:'港口'}})}};
+ aiRun.mockImplementation(async request=>{const q=request.query as {messages:{role:string;content:string;tool_calls?:unknown[];tool_call_id?:string}[]};
+  if(q.messages[0].content.startsWith('总结已发生剧情'))return completion('抵达港口。');if(q.messages[0].content.startsWith('压缩会话记忆'))return completion('已经到达港口。');if((request.query as {response_format?:unknown}).response_format)return candidateCompletion(['我问问。','我坐下。','我看窗外。']);
+  if(++bodies===1)return new Response('data: '+JSON.stringify({choices:[{delta:{content:prose,tool_calls:[{index:0,...nativeCall}]},finish_reason:'tool_calls'}]})+'\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}});
+  const at=q.messages.findIndex(m=>m.tool_calls?.length);expect(q.messages[at].tool_calls).toEqual([nativeCall]);expect(q.messages[at].content).toContain('已发生正文摘要');expect(q.messages[at+1]).toMatchObject({role:'tool',tool_call_id:nativeCall.id,content:'{"ok":true}'});return completion('结尾。');
+ });
+ const requestId=crypto.randomUUID(),wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'抵达港口'})).text();await Promise.all(work);expect(wire).not.toContain('"type":"error"');
+ expect(sessionDb.prepare('SELECT content,status FROM messages WHERE request_id=? AND role=?').get(requestId,'assistant')).toMatchObject({content:prose.replace(/\r\n?/g,'\n')+'结尾。',status:'completed'});expect(JSON.parse(sessionDb.prepare('SELECT after_json FROM turn_snapshots').get()!.after_json as string).scene).toBe('港口');
+});
+it.each(['tool','length','stream'])('never summarizes legacy candidate actions in a %s body/tool projection',async mode=>{
+ const {s}=await seed();db.prepare('UPDATE model_capabilities SET value_json=?').run(JSON.stringify({contextTokens:2048,inputRatio:1.2,source:'llama.cpp:n_ctx'}));let bodies=0;const sources:string[]=[];
+ const raw='已抵达。\n[TAVERN_NEXT]\n'+'未来行动未发生'.repeat(700);
+ aiRun.mockImplementation(async request=>{const q=request.query as {messages:{content:string}[]};
+  if(q.messages[0].content.startsWith('压缩会话记忆')){sources.push(JSON.stringify(q.messages));return completion('旧');}
+  if(++bodies===1)return tool('update_state',{patch:{scene:'旅店'}});
+  if(mode==='tool')return new Response('data: '+JSON.stringify({choices:[{delta:{content:raw,tool_calls:[{index:0,id:'next',type:'function',function:{name:'update_state',arguments:JSON.stringify({patch:{scene:'港口'}})}}]},finish_reason:'tool_calls'}]})+'\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}});
+  if(mode==='length')return completion(raw,'length');
+  return new Response('data: '+JSON.stringify({choices:[{delta:{content:raw}}]})+'\n\ndata: '+JSON.stringify({error:{message:'maximum context length is 2048 tokens'}})+'\n\n',{headers:{'Content-Type':'text/event-stream'}});
+ });
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'抵达港口'})).text();await Promise.all(work);
+ expect(wire).toContain('"type":"error"');expect(sources.length).toBeGreaterThan(0);expect(sources.join('')).not.toContain('未来行动未发生');expect(sessionDb.prepare('SELECT after_json FROM turn_snapshots').get()?.after_json).toBeNull();
+ const saved=sessionDb.prepare('SELECT content FROM messages WHERE session_id=? ORDER BY created_at DESC LIMIT 1').get(s.id);expect(saved?.content).toBe('已抵达。');
+});
 it('retains a stopped prefix once when continuation calls a tool then finishes through length',async()=>{
  const {s}=await seed();sessionDb.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at,finish_reason) VALUES('stopped',?,'assistant','独有事实：铜钥匙在掌柜口袋。','aborted',1,?,'stopped')").run(s.id,Date.now());
  aiRun.mockResolvedValueOnce(tool('update_state',{patch:{scene:'旅店'}})).mockResolvedValueOnce(completion('她取出钥匙。','length')).mockResolvedValueOnce(completion('灯亮了。'));

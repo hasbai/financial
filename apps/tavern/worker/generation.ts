@@ -76,6 +76,8 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
    const saveSummary=async()=>{await owns();const saved=store.saveSummary(assistantId,conversation.summary?JSON.stringify(conversation.summary):null);if(!saved){abort.abort();throw new Error('生成已停止');}if(conversation.contextTokens!==null)await recordFeedback(env,capability,{contextLimit:conversation.contextTokens});};
    await saveSummary();
    const syncOutput=(start:number)=>{const delta=output.slice(start);if(!delta)return;conversation.appendOutput({id:assistantId,role:'assistant',content:'',status:'completed',ordinal:0,requestId,createdAt:now},delta,continuing);continuation='接着最后一条未完成的正文续写，不重复已有内容。';};
+   // Only plain emitted prose may become story memory; legacy candidate protocol stays opaque.
+   const storyWire=(raw:string,start:number):PromptMessage=>output.slice(start).trim()===raw.replace(/\r\n?/g,'\n').trim()?conversation.storyFragment(raw):{role:'assistant',content:raw};
    for(;;){
    await owns();const storyAtStart=output.length;let requestOutput='';const toolCalls=new ToolCallStream();
    finishReason='upstream';const gatewayOptions=roleplayGatewayOptions(env,username,requestId);
@@ -100,19 +102,21 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
      await owns();if(!store.saveOutput(assistantId,output))throw new Error('生成已停止');lastSaved=Date.now();lastSize=output.length;
     }
    }
-   if(streamLimit){if(toolCalls.size)throw new Error('工具调用中断');syncOutput(storyAtStart);if(toolTranscript.length&&requestOutput)toolTranscript.push(conversation.storyFragment(requestOutput));conversation.contextTokens=streamLimit;const before=conversation.prompt(continuation,conversation.options,toolTranscript).estimatedTokens;await conversation.compressProjection(toolTranscript);prompt=await conversation.fit(continuation,conversation.options,toolTranscript);if(prompt.estimatedTokens>=before)throw new Error('会话压缩未缩短输入');await saveSummary();continue;}
+   if(streamLimit){if(toolCalls.size)throw new Error('工具调用中断');syncOutput(storyAtStart);if(toolTranscript.length&&requestOutput)toolTranscript.push(storyWire(requestOutput,storyAtStart));conversation.contextTokens=streamLimit;const before=conversation.prompt(continuation,conversation.options,toolTranscript).estimatedTokens;await conversation.compressProjection(toolTranscript);prompt=await conversation.fit(continuation,conversation.options,toolTranscript);if(prompt.estimatedTokens>=before)throw new Error('会话压缩未缩短输入');await saveSummary();continue;}
    if(upstreamReason==='tool_calls'){
     finishReason='unsupported';
     const calls=toolCalls.finish();if(!calls.length)throw new Error('工具调用为空');agent.validate(calls);const recalled=new Map();
     for(const call of calls)if(call.function.name==='search_memory'){const args=JSON.parse(call.function.arguments);if(typeof args.query==='string')recalled.set(args.query,await lore.search(args.query));}
     await owns();const results=agent.execute(calls,recalled);if(!store.saveSteps(assistantId,agent.steps))throw new Error('生成已停止');
-    const additions:PromptMessage[]=[{role:'assistant',content:requestOutput,tool_calls:calls},...results];
+    const toolMessage=storyWire(requestOutput,storyAtStart);
+    toolMessage.tool_calls=calls;
+    const additions:PromptMessage[]=[toolMessage,...results];
     if(storyAtStart&&!toolTranscript.length)toolTranscript.push(conversation.storyFragment(output.slice(0,storyAtStart)));toolTranscript.push(...additions);prompt=conversation.extend(prompt,additions);
     if(prompt.needsCompression)prompt=await conversation.fit(continuation,conversation.options,toolTranscript);await saveSummary();continue;
    }
    if(toolCalls.size)throw new Error('工具终态无效');
    if(upstreamReason==='length'){if(!requestOutput.length)throw new Error('模型续写没有进展');
-    if(toolTranscript.length)toolTranscript.push(conversation.storyFragment(requestOutput),{role:'user',content:'接着最后一条未完成的正文续写，不重复已有内容。'});
+    if(toolTranscript.length)toolTranscript.push(storyWire(requestOutput,storyAtStart),{role:'user',content:'接着最后一条未完成的正文续写，不重复已有内容。'});
     syncOutput(storyAtStart);prompt=await conversation.fit(continuation,conversation.options,toolTranscript);await saveSummary();continue;}
    const parsed=parser.finish();parserFinished=true;output+=parsed.body;if(parsed.body){if(firstBodyAt===null&&parsed.body.trim())firstBodyAt=Date.now();await send({type:'delta',text:parsed.body});}
    if(abort.signal.aborted)throw new Error('aborted');
