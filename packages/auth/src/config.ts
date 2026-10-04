@@ -19,7 +19,8 @@ export function hasPermission(claims: { permissions?: unknown }, permission: str
 }
 
 /** UI gating for SDK-issued tokens; APIs still verify signatures and authorization. */
-export function tokenHasPermission(token: string, permission: string): boolean {
+export function tokenHasPermission(token: string | undefined, permission: string): boolean {
+  if (!token) return false;
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return false;

@@ -184,3 +184,11 @@ it("reports token renewal failures as login errors and keeps ledger access close
   expect(auth.error).toBe("网络不可用");
   expect(auth.loading).toBe(false);
 });
+
+it("keeps access closed when the SDK has no access token", async () => {
+  sdk.getTokenSilently.mockResolvedValue(undefined);
+  const auth = createAuth();
+  await auth.init(vi.fn());
+  expect(auth.authorized).toBe(false);
+  await expect(auth.getToken()).rejects.toThrow("login_required");
+});
