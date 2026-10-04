@@ -41,12 +41,12 @@ test('SSR, direct Data API navigation, skeleton, canonical URLs and reading stat
   await expect(page.getByRole('heading', { name: /北极小站/ })).toBeVisible();
   await expect(page).toHaveTitle('北极小站 — 写下此刻，留给以后。');
   await expect(page.getByRole('link', { name: '北极小站首页', exact: true, includeHidden: true })).toHaveAttribute('href', '/');
-  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', '北极小站，公开阅读文章与手记，统一登录后使用经授权的个人工具。');
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', '北极小站，记录思考与日常。');
   const home = await request.get('/', { maxRedirects: 0 });
   expect(home.status()).toBe(200);
-  expect(await home.text()).toContain('Google 登录使用账号标识');
-  await expect(page.locator('.hero-description')).toContainText('个人博客与工具站');
-  await expect(page.locator('.hero-description a')).toHaveAttribute('href', '/privacy');
+  expect(await home.text()).toContain('本站公开阅读，编辑发布需登录后使用。');
+  await expect(page.locator('.hero-description')).toHaveText('写一点思考，记一些日常，让值得留下的文字慢慢生长。');
+  await expect(page.locator('.footer-note')).toHaveText('本站公开阅读，编辑发布需登录后使用。');
   await expect(page).toHaveScreenshot('home.png', { fullPage: true });
   await page.getByRole('button', { name: '切换深色' }).click();
   await expect(page).toHaveScreenshot('home-dark.png', { fullPage: true });
