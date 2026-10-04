@@ -1,9 +1,9 @@
 import { capabilities, modelInput, recordFeedback, type Capability } from './models';
-import { candidateDelimiter, candidateInstruction, CANDIDATE_REMINDER, CandidateStream, recoveryCandidates, validateCandidates } from '../shared/candidates';
+import { candidateDelimiter, BODY_TASK, CANDIDATE_TASK, CandidateStream, recoveryCandidates, validateCandidates } from '../shared/candidates';
 import { roleplayGatewayOptions } from './gateway';
 import { InferenceMetrics } from './metrics';
 import { parseBook } from '../shared/cards';
-import { buildPrompt } from '../shared/prompt';
+import { buildPrompt, type PromptMessage } from '../shared/prompt';
 import { ConversationContext, summarizeWithModel, explicitContextLimit, contextLimit } from './context';
 import { sseData } from '../shared/sse';
 import { generationNotice } from '../shared/outcomes';
@@ -39,13 +39,13 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
   const userMessage:Message={id:crypto.randomUUID(),role:'user',content:text,status:'completed',ordinal,requestId,createdAt:messageTime};
   const assistantOrdinal=regenerate||continuing?ordinal:ordinal+1;
   const books=await ownedBooks(env,owner,JSON.parse(row.book_ids_json));
-  conversation=new ConversationContext([...base,...(regenerate||continuing?[]:[userMessage])],JSON.parse(row.character_json),books.filter(b=>b.enabled).map(b=>parseBook(JSON.parse(b.book_json),b.name)),settings(JSON.parse(row.settings_json)),capability.contextTokens,{protocol:candidateInstruction(),formatReminder:CANDIDATE_REMINDER,inputRatio:capability.inputRatio},messages=>summarizeWithModel(env,username,requestId,settings(JSON.parse(row.settings_json)),messages,abort.signal));
+  conversation=new ConversationContext([...base,...(regenerate||continuing?[]:[userMessage])],JSON.parse(row.character_json),books.filter(b=>b.enabled).map(b=>parseBook(JSON.parse(b.book_json),b.name)),settings(JSON.parse(row.settings_json)),capability.contextTokens,{protocol:'',formatReminder:BODY_TASK,inputRatio:capability.inputRatio},messages=>summarizeWithModel(env,username,requestId,settings(JSON.parse(row.settings_json)),messages,abort.signal));
   await conversation.restore(row.summary_json);if(continuing)conversation.resume(assistantId);
   prompt=conversation.prompt(continuing?'继续上一条回复，从中断处接着写，不要重复已有内容。':'');
   modelInput(settings(JSON.parse(row.settings_json)));
   await owns();store.start(assistantId,regenerate||continuing?undefined:userMessage,{id:assistantId,role:'assistant',content:prefix,status:'pending',ordinal:assistantOrdinal,requestId,createdAt:messageTime+1});ready=true;
  }catch(error){clearInterval(stopWatcher);abort.abort();store.release(assistantId);await onSettled(assistantId);if(error instanceof Error&&error.message.includes('上下文上限'))throw new HttpError(400,error.message);throw error;}
- let disconnected=false;let output=prefix;let finishReason:FinishReason='interrupted';let model='';let gatewayLogId:string|null=null;let metrics=new InferenceMetrics();let firstModelStarted:number|null=null;let modelRequests=0;let firstBodyAt:number|null=null;let candidates:string[]=[];const parser=new CandidateStream(candidateDelimiter());let tailAnnounced=false;let parserFinished=false;let candidateOutcome='inline';let candidateMissingReason='';
+ let disconnected=false;let output=prefix;let finishReason:FinishReason='interrupted';let model='';let gatewayLogId:string|null=null;let metrics=new InferenceMetrics();let firstModelStarted:number|null=null;let modelRequests=0;let firstBodyAt:number|null=null;let candidates:string[]=[];const parser=new CandidateStream(candidateDelimiter());let parserFinished=false;let candidateOutcome='not-started';let bodyModel='';let bodyGatewayLogId:string|null=null;let bodyFinishedAt:number|null=null;let candidateStartedAt:number|null=null;let candidateFirstAt:number|null=null;let candidateFinishedAt:number|null=null;let bodyRequests=0;let candidatePrefixRebuilds=0;let bodyMetrics:ReturnType<InferenceMetrics['snapshot']>|null=null;
 
  const stream=new TransformStream<Uint8Array,Uint8Array>(); const writer=stream.writable.getWriter(),encoder=new TextEncoder();
  const send=async(event:unknown)=>{await writer.write(encoder.encode('data: '+JSON.stringify(event)+'\n\n'));};
@@ -59,12 +59,11 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
    prompt=await conversation.fit(continuation);
    const saveSummary=async()=>{await owns();const saved=store.saveSummary(assistantId,conversation.summary?JSON.stringify(conversation.summary):null);if(!saved){abort.abort();throw new Error('生成已停止');}if(conversation.contextTokens!==null)await recordFeedback(env,capability,{contextLimit:conversation.contextTokens});};
    await saveSummary();
-   let wireOutput=prefix;
-   const syncOutput=(start:number)=>{const delta=wireOutput.slice(start);if(!delta)return;conversation.appendOutput({id:assistantId,role:'assistant',content:'',status:'completed',ordinal:0,requestId,createdAt:now},delta,continuing);continuation='接着最后一条未完成的输出续写，不重复已有内容，完成正文与候选。';};
+   const syncOutput=(start:number)=>{const delta=output.slice(start);if(!delta)return;conversation.appendOutput({id:assistantId,role:'assistant',content:'',status:'completed',ordinal:0,requestId,createdAt:now},delta,continuing);continuation='接着最后一条未完成的正文续写，不重复已有内容。';};
    for(;;){
-   await owns();const wireAtStart=wireOutput.length;
+   await owns();const storyAtStart=output.length;let requestOutput='';
    finishReason='upstream';const gatewayOptions=roleplayGatewayOptions(env,username,requestId);
-   firstModelStarted??=Date.now();modelRequests++;metrics=new InferenceMetrics();
+   firstModelStarted??=Date.now();modelRequests++;bodyRequests++;metrics=new InferenceMetrics();
    const result=await env.AI.gateway(env.AIG_GATEWAY_ID).run({provider:'compat',endpoint:'chat/completions',headers:{...gatewayOptions.extraHeaders,'Content-Type':'application/json'},query:{model:'dynamic/rp',messages:prompt.messages,stream:true,...modelInput(opts)}},{gateway:gatewayOptions.gateway,signal:abort.signal});
    if(!(result instanceof Response)){finishReason='unsupported';throw new Error('nonstream');}
    gatewayLogId=result.headers.get('cf-aig-log-id');
@@ -79,68 +78,82 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
     metrics.observe(event);
     const choice=event.choices?.[0];if(typeof choice?.finish_reason==='string'&&choice.finish_reason){if(upstreamReason&&upstreamReason!==choice.finish_reason){finishReason='interrupted';throw new Error('conflicting finish');}upstreamReason=choice.finish_reason;}
     const delta=choice?.delta?.content;
-    if(typeof delta==='string') {wireOutput+=delta;const body=parser.push(delta);output+=body;if(body){if(firstBodyAt===null&&body.trim())firstBodyAt=Date.now();await send({type:'delta',text:body});}if(parser.inTail&&!tailAnnounced){tailAnnounced=true;await send({type:'candidates_pending',messageId:assistantId});}}
+    if(typeof delta==='string') {requestOutput+=delta;const body=parser.push(delta);output+=body;if(body){if(firstBodyAt===null&&body.trim())firstBodyAt=Date.now();await send({type:'delta',text:body});}}
     if(Date.now()-lastSaved>800 || output.length-lastSize>1000){
      await owns();if(!store.saveOutput(assistantId,output))throw new Error('生成已停止');lastSaved=Date.now();lastSize=output.length;
     }
    }
-   if(streamLimit){syncOutput(wireAtStart);conversation.contextTokens=streamLimit;const before=conversation.prompt(continuation).estimatedTokens;await conversation.compress();prompt=await conversation.fit(continuation);if(prompt.estimatedTokens>=before)throw new Error('会话压缩未缩短输入');await saveSummary();continue;}
-   if(upstreamReason==='length'){if(wireOutput.length<=wireAtStart)throw new Error('模型续写没有进展');
-    syncOutput(wireAtStart);prompt=await conversation.fit(continuation);await saveSummary();continue;}
+   if(streamLimit){syncOutput(storyAtStart);conversation.contextTokens=streamLimit;const before=conversation.prompt(continuation).estimatedTokens;await conversation.compress();prompt=await conversation.fit(continuation);if(prompt.estimatedTokens>=before)throw new Error('会话压缩未缩短输入');await saveSummary();continue;}
+   if(upstreamReason==='length'){if(!requestOutput.length)throw new Error('模型续写没有进展');
+    syncOutput(storyAtStart);prompt=await conversation.fit(continuation);await saveSummary();continue;}
    const parsed=parser.finish();parserFinished=true;output+=parsed.body;if(parsed.body){if(firstBodyAt===null&&parsed.body.trim())firstBodyAt=Date.now();await send({type:'delta',text:parsed.body});}
    if(abort.signal.aborted)throw new Error('aborted');
    finishReason=upstreamReason==='stop'?'stop':upstreamReason==='length'?'length':upstreamReason==='content_filter'?'content_filter':upstreamReason?'unsupported':'interrupted';
    if(finishReason!=='stop')throw new Error('incomplete');
    if(!output.slice(prefix.length).trim()){finishReason='empty';throw new Error('empty');}
-   candidates=parsed.candidates;
-   if(candidates.length<3){
-    candidateMissingReason=parser.inTail?'invalid-or-incomplete-tail':'missing-marker';
-    candidateOutcome='recovering';
-    await owns();if(!store.saveOutput(assistantId,output))throw new Error('生成已停止');
-    if(!tailAnnounced){tailAnnounced=true;await send({type:'candidates_pending',messageId:assistantId});}
-    // Keep all candidate-only output away from story deltas and persisted prose.
-    syncOutput(wireAtStart);
-    try{
-     while(candidates.length<3){
-      const previousCount=candidates.length;
-      let repairText='';
-      continuation=`正文已完成，不再写正文。只补充${3-candidates.length}条不同的用户续聊台词或行动，每条一行且不超过120字；不输出说明、序号或JSON。承接正文，不写角色回答，不把未发生的事当事实。已有候选：${JSON.stringify(candidates)}`;
-      for(;;){
-       prompt=await conversation.fit(continuation,{protocol:'当前任务仅输出用户续聊候选，一条一行，不写正文或说明，候选互不重复且每条不超过120字。',formatReminder:''});await saveSummary();await owns();
-       const options=roleplayGatewayOptions(env,username,requestId);modelRequests++;metrics=new InferenceMetrics();
-       const response=await env.AI.gateway(env.AIG_GATEWAY_ID).run({provider:'compat',endpoint:'chat/completions',headers:{...options.extraHeaders,'Content-Type':'application/json'},query:{model:'dynamic/rp',messages:prompt.messages,stream:true,...modelInput(opts)}},{gateway:options.gateway,signal:abort.signal});
-       if(!(response instanceof Response))throw new Error('nonstream');gatewayLogId=response.headers.get('cf-aig-log-id');
-       if(!response.ok){const limit=await inspectLimit(response,env,capability);if(!limit)throw new Error('upstream');conversation.contextTokens=limit;await conversation.compress();continue;}
-       if(!response.body||!response.headers.get('Content-Type')?.includes('text/event-stream')){await response.body?.cancel();throw new Error('nonstream');}
-       let reason:string|undefined,chunk='',limit:number|undefined;
-       for await(const data of sseData(response.body,abort.signal)){
-        if(data==='[DONE]')break;const event=JSON.parse(data);metrics.observe(event);
-        if(event.error){limit=contextLimit(event);if(limit)break;throw new Error('upstream');}
-        const choice=event.choices?.[0];if(choice?.finish_reason){if(reason&&reason!==choice.finish_reason)throw new Error('conflicting finish');reason=choice.finish_reason;}
-        if(typeof choice?.delta?.content==='string')chunk+=choice.delta.content;
-       }
-       await owns();repairText+=chunk;
-       if(chunk)conversation.appendOutput({id:assistantId,role:'assistant',content:'',status:'completed',ordinal:0,requestId,createdAt:now},chunk,continuing);
-       if(limit){conversation.contextTokens=limit;if(chunk)continuation+='\n仅从上次中断处接着输出候选，不重复已输出部分，不写正文。';await conversation.compress();continue;}
-       if(reason==='length'){if(!chunk)throw new Error('no progress');continuation+='\n仅从上次中断处接着输出候选，不重复已输出部分，不写正文。';continue;}
-       if(reason!=='stop')throw new Error('incomplete');break;
+   bodyFinishedAt=Date.now();bodyModel=model;bodyGatewayLogId=gatewayLogId;bodyMetrics=metrics.snapshot();
+   await owns();if(!store.saveOutput(assistantId,output))throw new Error('生成已停止');
+   await send({type:'candidates_pending',messageId:assistantId});
+   syncOutput(storyAtStart);
+   // Append to the actual final body request; do not rebuild its system/history.
+   const candidateTranscript:PromptMessage[]=[{role:'user',content:CANDIDATE_TASK}];
+   prompt=conversation.extend(prompt,[{role:'assistant',content:requestOutput},...candidateTranscript]);
+   candidateStartedAt=Date.now();candidateOutcome='generating';
+   const rebuildCandidatePrompt=async(limit?:number)=>{
+    const before=prompt.estimatedTokens;if(limit){conversation.contextTokens=limit;await conversation.compress();}
+    prompt=await conversation.fit('',{protocol:'',formatReminder:''},candidateTranscript);
+    if(limit&&prompt.estimatedTokens>=before)throw new Error('会话压缩未缩短输入');
+    candidatePrefixRebuilds++;await saveSummary();
+   };
+   try{
+    while(candidates.length<3){
+     const previousCount=candidates.length;let candidateText='';
+     for(;;){
+      if(prompt.needsCompression)await rebuildCandidatePrompt();await owns();
+      const options=roleplayGatewayOptions(env,username,requestId);modelRequests++;metrics=new InferenceMetrics();
+      const response=await env.AI.gateway(env.AIG_GATEWAY_ID).run({provider:'compat',endpoint:'chat/completions',headers:{...options.extraHeaders,'Content-Type':'application/json'},query:{model:'dynamic/rp',messages:prompt.messages,stream:true,...modelInput(opts)}},{gateway:options.gateway,signal:abort.signal});
+      if(!(response instanceof Response))throw new Error('nonstream');gatewayLogId=response.headers.get('cf-aig-log-id');
+      if(!response.ok){const limit=await inspectLimit(response,env,capability);if(!limit)throw new Error('upstream');await rebuildCandidatePrompt(limit);continue;}
+      if(!response.body||!response.headers.get('Content-Type')?.includes('text/event-stream')){await response.body?.cancel();throw new Error('nonstream');}
+      let reason:string|undefined,chunk='',limit:number|undefined;
+      for await(const data of sseData(response.body,abort.signal)){
+       if(data==='[DONE]')break;const event=JSON.parse(data);metrics.observe(event);if(typeof event.model==='string')model=event.model;
+       if(event.error){limit=contextLimit(event);if(limit)break;throw new Error('upstream');}
+       const choice=event.choices?.[0];if(choice?.finish_reason){if(reason&&reason!==choice.finish_reason)throw new Error('conflicting finish');reason=choice.finish_reason;}
+       if(typeof choice?.delta?.content==='string'){chunk+=choice.delta.content;if(choice.delta.content.trim())candidateFirstAt??=Date.now();}
       }
-      candidates=validateCandidates([...candidates,...recoveryCandidates(repairText)]);
+      await owns();candidateText+=chunk;
+      if(limit||reason==='length'){
+       if(reason==='length'&&!chunk)throw new Error('no progress');
+       const additions:PromptMessage[]=[...(chunk?[{role:'assistant' as const,content:chunk}]:[]),{role:'user',content:'仅从上次中断处接着输出候选，不重复已输出部分，不写正文。'}];
+       candidateTranscript.push(...additions);prompt=conversation.extend(prompt,additions);
+       if(limit)await rebuildCandidatePrompt(limit);continue;
+      }
+      if(reason!=='stop')throw new Error('incomplete');
+      candidates=validateCandidates([...candidates,...recoveryCandidates(candidateText)]);
       if(candidates.length===previousCount){candidateOutcome='no-progress';break;}
+      if(candidates.length<3){
+       const additions:PromptMessage[]=[{role:'assistant',content:chunk},{role:'user',content:`只补充${3-candidates.length}条不同的用户续聊台词或行动，各一行且不超过120字，不输出正文或说明。已有候选：${JSON.stringify(candidates)}`}];
+       candidateTranscript.push(...additions);prompt=conversation.extend(prompt,additions);
+      }
+      break;
      }
-     if(candidates.length===3)candidateOutcome='recovered';
-    }catch(error){if(abort.signal.aborted)throw error;candidateOutcome='recovery-error';}
-   }
+     if(candidateOutcome==='no-progress')break;
+    }
+    if(candidates.length===3)candidateOutcome='completed';
+   }catch(error){if(abort.signal.aborted)throw error;candidateOutcome='error';}
+   candidateFinishedAt=Date.now();
    break;
    }
-  }catch{if(abort.signal.aborted)finishReason=abortReason;else if(finishReason==='stop')finishReason='upstream';status=['stopped','disconnected','timeout'].includes(finishReason)?'aborted':'error';failure=generationNotice(finishReason);}
+  }catch{if(candidateStartedAt!==null)candidateOutcome=abort.signal.aborted?abortReason:'error';if(abort.signal.aborted)finishReason=abortReason;else if(finishReason==='stop')finishReason='upstream';status=['stopped','disconnected','timeout'].includes(finishReason)?'aborted':'error';failure=generationNotice(finishReason);}
   finally{
+   if(candidateStartedAt!==null)candidateFinishedAt??=Date.now();
    finishing=true;clearInterval(stopWatcher);
    if(!parserFinished)output+=parser.finish().body;
    request.signal.removeEventListener('abort',onDisconnect);
    try{
     const saved=store.finish(assistantId,output,status,finishReason,candidates);await onSettled(assistantId);
-    console.info('tavern-generation-outcome',{messageId:assistantId,requestId,gatewayLogId,finishReason:saved?.finish_reason,status:saved?.status,model,modelRequests,metricsScope:'last-model-request',...metrics.snapshot(),firstBodyMs:firstBodyAt===null?null:firstBodyAt-started,modelFirstBodyMs:firstBodyAt===null||firstModelStarted===null?null:firstBodyAt-firstModelStarted,promptBudget:prompt.budget,estimatedInputTokens:prompt.estimatedTokens,chars:output.length,candidateOutcome,candidateMissingReason,candidateCount:saved?.candidates_json?JSON.parse(saved.candidates_json).length:0,elapsedMs:Date.now()-started});
+    console.info('tavern-generation-outcome',{messageId:assistantId,requestId,gatewayLogId,finishReason:saved?.finish_reason,status:saved?.status,model,modelRequests,metricsScope:candidateStartedAt===null?'last-body-request':'last-candidate-request',...metrics.snapshot(),firstBodyMs:firstBodyAt===null?null:firstBodyAt-started,modelFirstBodyMs:firstBodyAt===null||firstModelStarted===null?null:firstBodyAt-firstModelStarted,promptBudget:prompt.budget,estimatedInputTokens:prompt.estimatedTokens,chars:output.length,bodyModel,bodyGatewayLogId,bodyRequests,candidateRequests:modelRequests-bodyRequests,bodyMetricsScope:'last-body-request',bodyMetrics,bodyCompleteMs:bodyFinishedAt===null?null:bodyFinishedAt-started,candidateFirstMs:candidateFirstAt===null||candidateStartedAt===null?null:candidateFirstAt-candidateStartedAt,candidateElapsedMs:candidateFinishedAt===null||candidateStartedAt===null?null:candidateFinishedAt-candidateStartedAt,candidatePrefixRebuilds,candidateOutcome,candidateCount:saved?.candidates_json?JSON.parse(saved.candidates_json).length:0,elapsedMs:Date.now()-started});
     if(!disconnected&&!leaseLost){if(failure)await send({type:'error',message:failure});await send({type:'done',message:message(saved!)});}
    }finally{clearInterval(stopWatcher);await writer.close().catch(()=>{});}
   }

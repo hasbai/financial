@@ -10,10 +10,12 @@ const root=resolve(import.meta.dirname,'..'),persist=mkdtempSync(join(tmpdir(),'
 const source=`
 import {TavernSession} from './worker/session-object';
 export class TestSession extends TavernSession {
- constructor(ctx,env){super(ctx,{...env,AI:{gateway:()=>({run:async request=>{
+ constructor(ctx,env){let bodyMessages;super(ctx,{...env,AI:{gateway:()=>({run:async request=>{
  const input=request.query.messages.at(-1).content;
+ if(input.startsWith('正文已经完成')){if(JSON.stringify(request.query.messages.slice(0,bodyMessages.length))!==JSON.stringify(bodyMessages))throw new Error('candidate prefix changed');}
+ else bodyMessages=structuredClone(request.query.messages);
  if(input.includes('等待'))return new Response(new ReadableStream(),{headers:{'Content-Type':'text/event-stream'}});
- return new Response('data: '+JSON.stringify({choices:[{delta:{content:'你好。[TAVERN_NEXT]\\n我坐下。\\n我问问。\\n我看窗外。'},finish_reason:'stop'}]})+'\\n\\ndata: [DONE]\\n\\n',{headers:{'Content-Type':'text/event-stream'}});
+ return new Response('data: '+JSON.stringify({choices:[{delta:{content:input.startsWith('正文已经完成')?'我坐下。\\n我问问。\\n我看窗外。':'你好。'},finish_reason:'stop'}]})+'\\n\\ndata: [DONE]\\n\\n',{headers:{'Content-Type':'text/event-stream'}});
  }})}});}
 }
 export default {async fetch(request,env){const d=await request.json();const stub=env.SESSIONS.getByName(JSON.stringify([d.owner,d.id]));
