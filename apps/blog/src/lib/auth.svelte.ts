@@ -50,6 +50,8 @@ export function createAuth() {
         }
         if (user) canEdit = tokenHasPermission(await browserClient().getTokenSilently(), permissions.blog);
       } catch (e) {
+        user = undefined;
+        canEdit = false;
         const code = (e as { error?: string }).error;
         if (
           ![

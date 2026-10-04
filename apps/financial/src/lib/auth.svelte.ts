@@ -90,6 +90,8 @@ export function createAuth() {
           }
         }
       } catch (e) {
+        user = undefined;
+        authorized = false;
         error = errorMessage(e);
         clearCache();
       } finally {
@@ -102,6 +104,8 @@ export function createAuth() {
       try {
         await redirect();
       } catch (e) {
+        user = undefined;
+        authorized = false;
         error = errorMessage(e);
         loading = false;
       }
@@ -118,6 +122,8 @@ export function createAuth() {
           logoutParams: { returnTo: window.location.origin },
         });
       } catch (e) {
+        user = undefined;
+        authorized = false;
         error = errorMessage(e);
       }
     },

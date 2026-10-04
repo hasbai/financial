@@ -174,3 +174,13 @@ it("authorizes from API permissions rather than a specific account or role", asy
     await expect(auth.getToken()).rejects.toThrow("当前账号没有访问权限");
   }
 });
+
+it("reports token renewal failures as login errors and keeps ledger access closed", async () => {
+  sdk.getTokenSilently.mockRejectedValue(new Error("网络不可用"));
+  const auth = createAuth();
+  await auth.init(vi.fn());
+  expect(auth.user).toBeUndefined();
+  expect(auth.authorized).toBe(false);
+  expect(auth.error).toBe("网络不可用");
+  expect(auth.loading).toBe(false);
+});
