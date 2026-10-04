@@ -47,6 +47,12 @@ test('SSR, direct Data API navigation, skeleton, canonical URLs and reading stat
   expect(await home.text()).toContain('本站公开阅读，编辑发布需登录后使用。');
   await expect(page.locator('.hero-description')).toHaveText('写一点思考，记一些日常，让值得留下的文字慢慢生长。');
   await expect(page.locator('.footer-note')).toHaveText('本站公开阅读，编辑发布需登录后使用。');
+  const footerNavigation = await page.getByRole('navigation', { name: '页脚导航' }).boundingBox();
+  const footerNote = await page.locator('.footer-note').boundingBox();
+  expect(footerNavigation).not.toBeNull();
+  expect(footerNote).not.toBeNull();
+  expect(footerNote!.x).toBe(footerNavigation!.x);
+  expect(footerNote!.y).toBeGreaterThanOrEqual(footerNavigation!.y + footerNavigation!.height);
   await expect(page).toHaveScreenshot('home.png', { fullPage: true });
   await page.getByRole('button', { name: '切换深色' }).click();
   await expect(page).toHaveScreenshot('home-dark.png', { fullPage: true });
@@ -145,8 +151,8 @@ test('standalone pages stay out of feeds and support editable paths', async ({ p
   expect(policy.status()).toBe(200);
   expect(await policy.text()).toContain('jsclndnz@gmail.com');
   expect(await policy.text()).toContain('Google 身份信息的存储与共享');
-  expect(await policy.text()).toContain('AI 文字对话与日志');
-  expect(await policy.text()).toContain('完整请求与回复');
+  expect(await policy.text()).not.toContain('AI 文字对话与日志');
+  expect(await policy.text()).not.toContain('Auth0 的 Google 连接');
   const uuid = await request.get('/contents/40000000-0000-4000-8000-000000000002', { maxRedirects: 0 });
   expect(uuid.status()).toBe(308);
   expect(uuid.headers().location).toBe('/privacy');
