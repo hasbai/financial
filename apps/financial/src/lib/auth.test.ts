@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { createAuth } from "./auth.svelte";
 import { config } from "./config";
 import { router } from "./router.svelte";
+import { createBrowserClient } from "@hasbai/auth";
 const sdk = vi.hoisted(() => ({
   constructor: vi.fn(),
   checkSession: vi.fn(),
@@ -30,7 +31,7 @@ beforeEach(() => {
   router.navigate("/", true, true);
   sdk.getUser.mockResolvedValue({ sub: config.ownerSubject });
 });
-it("uses the hasbai organization, audience, connection and memory-only token cache", async () => {
+it("offers organization login methods with the shared audience and memory-only cache", async () => {
   const auth = createAuth();
   await auth.init(vi.fn());
   expect(sdk.constructor).toHaveBeenCalledWith(
@@ -38,15 +39,27 @@ it("uses the hasbai organization, audience, connection and memory-only token cac
       cacheLocation: "memory",
       domain: config.domain,
       clientId: config.clientId,
-      authorizationParams: expect.objectContaining({
+      authorizationParams: {
+        redirect_uri: `${window.location.origin}/auth/callback`,
         audience: config.audience,
-        connection: "eastmoney-email",
+        scope: "openid profile email",
         organization: config.organization,
-      }),
+      },
     }),
   );
   expect(auth.user?.sub).toBe(config.ownerSubject);
   expect(auth.loading).toBe(false);
+});
+it("offers the same login methods while preserving the separate Zboard audience", () => {
+  createBrowserClient("https://zboard.hasbai.xyz", {
+    audience: "https://zboard.hasbai.xyz/api",
+  });
+  expect(sdk.constructor.mock.lastCall![0].authorizationParams).toEqual({
+    redirect_uri: "https://zboard.hasbai.xyz/auth/callback",
+    audience: "https://zboard.hasbai.xyz/api",
+    scope: "openid profile email",
+    organization: config.organization,
+  });
 });
 it("handles callback and returns to a safe filtered route", async () => {
   router.navigate("/auth/callback?code=mock&state=mock", true, true);

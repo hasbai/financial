@@ -60,6 +60,14 @@ Financial `Check`、Blog `Blog` 独立 workflow，均有廉价 changes job。业
 
 本地固定 Linux 候选 `2026-10-03T17-06-10.926Z` 已审阅并导入 38 张手机/桌面基线，7 项流程通过、1 项按设备跳过。覆盖 page SSR、canonical、UUID 跳转、顶部导航、流隔离、自定义路径发布/改名/删除、重复/保留路径、失败保留输入及拒绝放弃未保存编辑。隐私页同时验证浅深色；设备为 WebKit/Chromium 模拟，不是 iOS 真机。普通 PR 验收与自动部署结论随发布另行核验。
 
+## 北极小站统一登录方式（2026-10-04）
+
+博客、财务、Tavern 和 Zboard 共用 `packages/auth` 的 Auth0 Universal Login。共享工厂不再强制 `connection=eastmoney-email`，由同一北极小站组织显示邮箱、Google、Microsoft Account 和 GitHub；Zboard 继续使用独立 API audience。通用能力后续继续在共享 packages 实现，不增加各应用专属登录选择或重复认证配置。
+
+Google、Microsoft 和 GitHub 均已启用到北极小站应用及组织，Microsoft 组织连接已补齐；全部连接保留 `assign_membership_on_login=false`，不修改成员、角色或 Action。提供商已有 `https://auth.hasbai.xyz/login/callback` 回调保留，Google/Microsoft 补登记当前共用的 `https://hasbai.eu.auth0.com/login/callback` Web 回调。自定义域名与原域名签发的 issuer 不同，本次保留现有统一 domain 及服务端验证约定。
+
+共享 SDK 配置及 Zboard audience 的 9 项相关单测通过。本地固定 Linux 镜像验证博客写作、财务总览、Zboard 页面与 Tavern 角色库，36 张候选已审阅；既有视觉基线保持，桌面博客编辑器仅 20 个像素差异，其他 35 张像素一致。此夹具不执行真实 OAuth，提供商跳转、完整账号登录、PR CI 和线上部署须分别核验。
+
 ## 登录字段兼容（2026-10-04）
 
 统一 Auth0 Action 使用 `auth0/login-claims.js`：顶层 `username`、`email` 为身份字段，`_roles` 为角色数组，`role` 为 Neon 数据库角色字符串。共享财务/博客 audience 的角色数组包含 superadmin 时签发 `role=superadmin`，其他 audience 或账号为 authenticated；Zboard 保留独立 audience，通过 `_roles` 判断管理员。酒馆同样读取 `_roles`，保留统一 audience。两份应用 setup 脚本复用同一 Action，并移除旧应用角色 Action 的重复绑定，避免重新签发旧字段。
