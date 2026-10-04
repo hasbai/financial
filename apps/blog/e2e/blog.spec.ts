@@ -223,3 +223,16 @@ test('standalone pages stay out of feeds and support editable paths', async ({ p
   expect((await request.get('/changed-page')).status()).toBe(404);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test('ordinary logged-in users can read published content but cannot enter the editor', async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem('fixture-ordinary', 'true'));
+  await page.goto('/studio');
+  await expect(page.getByRole('alert')).toHaveText('当前账号没有编辑权限');
+  await expect(page.getByRole('button', { name: '退出登录' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '写文章' })).toHaveCount(0);
+  await expect(page).toHaveScreenshot('studio-denied.png', { fullPage: true });
+  await page.getByRole('button', { name: '切换深色' }).click();
+  await expect(page).toHaveScreenshot('studio-denied-dark.png', { fullPage: true });
+  await page.goto('/articles/hello-world');
+  await expect(page.getByRole('heading', { name: 'Hello World，开始记录' })).toBeVisible();
+});

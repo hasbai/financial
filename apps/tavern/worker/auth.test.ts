@@ -19,8 +19,9 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
     exp = "1h",
     issuer = "https://auth.hasbai.xyz/",
     role: unknown = ["member", "superadmin"],
+    granted: unknown = ["manage:tavern"],
   ) =>
-    new SignJWT({ [ROLE_CLAIM]: role, [EMAIL_CLAIM]: "owner@example.test", [USERNAME_CLAIM]: "月石" })
+    new SignJWT({ permissions: granted, [ROLE_CLAIM]: role, [EMAIL_CLAIM]: "owner@example.test", [USERNAME_CLAIM]: "月石" })
       .setProtectedHeader({ alg: "RS256", kid: "test" })
       .setSubject("auth0|test")
       .setIssuer(issuer)
@@ -48,11 +49,17 @@ it("verifies signature, issuer, audience, expiry and grants admin only from the 
       status: 401,
     });
   const noRole = await new SignJWT({}).setProtectedHeader({alg:'RS256',kid:'test'}).setSubject('auth0|ordinary').setIssuer('https://auth.hasbai.xyz/').setAudience(env.AUTH0_AUDIENCE).setIssuedAt().setExpirationTime('1h').sign(keys.privateKey);
-  await expect(identity(req(noRole),env)).rejects.toMatchObject({status:403});
+  expect((await identity(req(noRole),env)).admin).toBe(false);
   for (const role of [[], ["member"], "superadmin", null, {superadmin: true}]) {
     const request = req(await sign(env.AUTH0_AUDIENCE, "1h", "https://auth.hasbai.xyz/", role));
-    await expect(identity(request, env)).rejects.toMatchObject({status: 403});
+    expect((await identity(request, env)).admin).toBe(true);
   }
+  for (const granted of [[], undefined, "manage:tavern", { "manage:tavern": true }, ["manage:other"]]) {
+    const request = req(await sign(env.AUTH0_AUDIENCE, "1h", "https://auth.hasbai.xyz/", ["superadmin"], granted ?? null));
+    expect((await identity(request, env)).admin).toBe(false);
+  }
+  const machine = await new SignJWT({ permissions: ["manage:tavern"] }).setProtectedHeader({alg:'RS256',kid:'test'}).setSubject('app@clients').setIssuer('https://auth.hasbai.xyz/').setAudience(env.AUTH0_AUDIENCE).setIssuedAt().setExpirationTime('1h').sign(keys.privateKey);
+  await expect(identity(req(machine),env)).rejects.toMatchObject({status:401});
   await expect(
     identity(new Request("https://tavern.test/api/me"), env),
   ).rejects.toMatchObject({ status: 401 });

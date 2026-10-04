@@ -61,7 +61,7 @@ GitHub Actions只在PR创建/更新时进行完整验收（手动dispatch保留�
 
 按用户要求，本地 `.env` 保存 AUTH0_TEST_EMAIL / AUTH0_TEST_PASSWORD，权限600且被Git忽略，不进入构建。`scripts/auth0-token.mjs` 只供本机检查：通过 Auth0 Universal Login 正常账号页/密码页、Cookie 会话、Authorization Code + PKCE 获取本人 Access Token。无需 Auth0 CLI 管理登录、client secret 或临时修改 grant；不改写 `.env`。授权回调严格校验 state，凭据仅提交同一 Auth0 origin，遇 MFA/CAPTCHA 等额外验证时明确停止。生产 SPA 继续使用官方 SDK，测试脚本不进入浏览器。
 
-北极小站共享配置位于 packages/auth/src/config.ts。Tavern复用相同audience与顶层_roles，不再使用专属audience。auth0/login-claims.js 与当前统一 Post Login Action 一致，签发顶层 username/email/_roles，应用通过 _roles 数组包含 superadmin 授权，财务/博客数据库使用标量 role；不查询逐轮用户资料。Neon 的现有标量角色映射须独立验证，不能把公开内容 HTTP 200 当成管理员授权成功。错误签名、错误 audience 与无 token 均由 Data API 拒绝；业务函数不再重复检查 JWT。
+北极小站共享配置位于 packages/auth/src/config.ts。Tavern 复用相同 audience，普通用户经 JWT 验证后管理本人资源；全站管理权限为 manage:tavern，不使用专属 audience。auth0/login-claims.js 与当前统一 Post Login Action 一致，签发顶层 username/email/_roles，应用通过原生 permissions 授权，_roles 仅保留兼容；财务/博客数据库使用标量 role；不查询逐轮用户资料。Neon 的现有标量角色映射须独立验证，不能把公开内容 HTTP 200 当成管理员授权成功。错误签名、错误 audience 与无 token 均由 Data API 拒绝；业务函数不再重复检查 JWT。
 
 ## 首页请求复用
 
@@ -84,3 +84,8 @@ mobile-viewport.ts 使用 VisualViewport 高度和offsetTop适配键盘；放大
 PWA导航缓存使用规范URL `/`，不预取会被Cloudflare重定向的`/index.html`。导航响应的redirected标记需清除后才能用于redirect=manual的浏览器导航。2026-09-15修复版在install阶段重建旧缓存的redirected /index.html响应，保留旧版正文/资源，允许仍活跃的旧SW恢复导航；不等待新SW激活才修复。回归通过真实HTTP307验证，而非仅比对文件内容。
 
 2026-09-16更新修复：原cache-first + waiting策略会使普通刷新继续命中旧应用壳，线上资源与dist一致不能证明已安装PWA已更新。现已增加安装/激活/导航/旧chunk/离线回退的生命周期回归；旧SW首次检测并安装修复版期间仍可能显示旧页，接管后再刷新即可取得新版。真机已安装客户端的状态仍需单独核验。
+
+
+## 2026-10-04 权限统一
+
+当前授权以[北极小站授权规则](AUTHORIZATION.md)为准。自定义 API 已启用 RBAC 与原生 permissions 声明；财务/博客的数据库 role 和 GRANT/RLS 保留，普通酒馆用户无需角色即可管理本人数据，Zboard 管理接口检查 manage:zboard。旧令牌需重新登录或到期后更新。

@@ -29,7 +29,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   sessionStorage.clear();
   router.navigate("/", true, true);
-  sdk.getUser.mockResolvedValue({ sub: config.ownerSubject });
+  sdk.getUser.mockResolvedValue({ sub: "auth0|test" });
+  sdk.getTokenSilently.mockResolvedValue("e30." + btoa(JSON.stringify({ permissions: ["access:financial"] })) + ".signature");
 });
 it("offers organization login methods with the shared audience and memory-only cache", async () => {
   const auth = createAuth();
@@ -47,7 +48,7 @@ it("offers organization login methods with the shared audience and memory-only c
       },
     }),
   );
-  expect(auth.user?.sub).toBe(config.ownerSubject);
+  expect(auth.user?.sub).toBe("auth0|test");
   expect(auth.loading).toBe(false);
 });
 it("offers the same login methods while preserving the separate Zboard audience", () => {
@@ -89,7 +90,7 @@ it("rejects external callback destinations and never retains callback parameters
 it("obtains a fresh access token for each request and clears cache on logout", async () => {
   const auth = createAuth();
   await auth.init(vi.fn());
-  sdk.getTokenSilently.mockResolvedValue("token");
+  sdk.getTokenSilently.mockClear();
   await auth.getToken();
   await auth.getToken();
   expect(sdk.getTokenSilently).toHaveBeenCalledTimes(2);
@@ -158,4 +159,18 @@ it("does not automatically sign in again after explicit logout", async () => {
   expect(sdk.loginWithRedirect).not.toHaveBeenCalled();
   await next.login();
   expect(sdk.loginWithRedirect).toHaveBeenCalledTimes(1);
+});
+
+it("authorizes from API permissions rather than a specific account or role", async () => {
+  sdk.getUser.mockResolvedValue({ sub: "github|another-admin" });
+  const admin = createAuth();
+  await admin.init(vi.fn());
+  expect(admin.authorized).toBe(true);
+  for (const claims of [{ _roles: ["superadmin"] }, { permissions: [] }, { permissions: "access:financial" }]) {
+    sdk.getTokenSilently.mockResolvedValue("e30." + btoa(JSON.stringify(claims)) + ".signature");
+    const auth = createAuth();
+    await auth.init(vi.fn());
+    expect(auth.authorized).toBe(false);
+    await expect(auth.getToken()).rejects.toThrow("当前账号没有访问权限");
+  }
 });

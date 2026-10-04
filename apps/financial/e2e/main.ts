@@ -3,7 +3,9 @@ import { mount } from "svelte";
 import { QueryClient } from "@tanstack/svelte-query";
 import "../src/style.css";
 
-const path = new URLSearchParams(location.search).get("path") || "/";
+const params = new URLSearchParams(location.search);
+const authorized = params.get("authorized") !== "false";
+const path = params.get("path") || "/";
 history.replaceState(null, "", path);
 const [{ default: Harness }, { createRepository }, { trackMobileViewport }] =
   await Promise.all([
@@ -19,6 +21,7 @@ mount(Harness, {
   target: document.getElementById("root")!,
   props: {
     page: "shell",
+    authorized,
     cache,
     api: createRepository(async () => "visual-fixture-token", cache),
   },

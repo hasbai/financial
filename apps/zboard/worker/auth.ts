@@ -1,5 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { authClaims } from "@hasbai/auth/config";
+import { authClaims, hasPermission, permissions } from "@hasbai/auth/config";
 export const ROLE_CLAIM = authClaims.roles;
 export const EMAIL_CLAIM = authClaims.email;
 const keys = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
@@ -26,10 +26,9 @@ export async function identity(
     });
     if (!payload.sub || payload.sub.endsWith("@clients"))
       throw new Error("Not a user");
-    const roles = payload[ROLE_CLAIM];
     return {
       sub: payload.sub,
-      admin: Array.isArray(roles) && roles.includes("superadmin"),
+      admin: hasPermission(payload, permissions.zboard),
       email:
         typeof payload[EMAIL_CLAIM] === "string"
           ? (payload[EMAIL_CLAIM] as string)

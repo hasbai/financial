@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => ({
       mode === "e2e"
         ? [
             {
-              find: "@hasbai/auth",
+              find: /^@hasbai\/auth$/,
               replacement: fileURLToPath(
                 new URL("./e2e/auth.ts", import.meta.url),
               ),

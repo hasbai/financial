@@ -365,3 +365,27 @@ it('appends only the last body request output after repeated length continuation
  const {s}=await seed();aiRun.mockResolvedValueOnce(completion('她说：','length'));aiRun.mockResolvedValueOnce(completion('你好。','length'));aiRun.mockResolvedValueOnce(completion('坐下吧。'));aiRun.mockResolvedValueOnce(completion('我坐下。\n我问问。\n我看窗外。'));
  const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();await Promise.all(work);const lastBody=aiRun.mock.calls[2][0].query as {messages:{role:string;content:string}[]},candidate=aiRun.mock.calls[3][0].query as {messages:{role:string;content:string}[]};expect(candidate.messages.slice(0,lastBody.messages.length)).toEqual(lastBody.messages);expect(candidate.messages.at(-2)).toEqual({role:'assistant',content:'坐下吧。'});expect(JSON.parse(wire.trim().split('data: ').at(-1)!).message.content).toBe('她说：你好。坐下吧。');expect(aiRun).toHaveBeenCalledTimes(4);
 });
+
+it('lets ordinary authenticated users manage their own cards and sessions while retaining owner isolation', async () => {
+ vi.mocked(identity).mockResolvedValue({sub:'auth0|ordinary',email:'ordinary',username:'普通用户',admin:false});
+ const created = await call('/api/characters','POST',card);
+ expect(created.status).toBe(201);
+ const character = await created.json() as {id:string};
+ const started = await call('/api/sessions','POST',{characterId:character.id});
+ expect(started.status).toBe(201);
+ const session = await started.json() as {id:string};
+ expect((await call('/api/sessions/'+session.id)).status).toBe(200);
+ const requestId = crypto.randomUUID();
+ const generated = await call('/api/sessions/'+session.id+'/generate','POST',{requestId,content:'你好'});
+ expect(generated.headers.get('Content-Type')).toContain('text/event-stream');
+ expect(await generated.text()).toContain('欢迎来到港城。');
+ await Promise.all(work);
+ expect(aiRun).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({gateway:expect.objectContaining({metadata:{app:'tavern',task:'roleplay',username:'普通用户'}})}));
+
+ vi.mocked(identity).mockResolvedValue({sub:'auth0|other-ordinary',email:'other',username:'另一用户',admin:false});
+ expect((await call('/api/characters/'+character.id)).status).toBe(404);
+ expect((await call('/api/sessions/'+session.id)).status).toBe(404);
+ vi.mocked(identity).mockResolvedValue({sub:'auth0|ordinary',email:'ordinary',username:'普通用户',admin:false});
+ expect((await call('/api/sessions/'+session.id,'DELETE')).status).toBe(200);
+ expect((await call('/api/characters/'+character.id,'DELETE')).status).toBe(200);
+});
