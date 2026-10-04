@@ -103,7 +103,7 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
    if(streamLimit){if(toolCalls.size)throw new Error('工具调用中断');syncOutput(storyAtStart);if(toolTranscript.length&&requestOutput)toolTranscript.push(conversation.storyFragment(requestOutput));conversation.contextTokens=streamLimit;const before=conversation.prompt(continuation,conversation.options,toolTranscript).estimatedTokens;await conversation.compressProjection(toolTranscript);prompt=await conversation.fit(continuation,conversation.options,toolTranscript);if(prompt.estimatedTokens>=before)throw new Error('会话压缩未缩短输入');await saveSummary();continue;}
    if(upstreamReason==='tool_calls'){
     finishReason='unsupported';
-    const calls=toolCalls.finish();if(!calls.length)throw new Error('工具调用为空');const recalled=new Map();
+    const calls=toolCalls.finish();if(!calls.length)throw new Error('工具调用为空');agent.validate(calls);const recalled=new Map();
     for(const call of calls)if(call.function.name==='search_memory'){const args=JSON.parse(call.function.arguments);if(typeof args.query==='string')recalled.set(args.query,await lore.search(args.query));}
     await owns();const results=agent.execute(calls,recalled);if(!store.saveSteps(assistantId,agent.steps))throw new Error('生成已停止');
     const additions:PromptMessage[]=[{role:'assistant',content:requestOutput,tool_calls:calls},...results];
