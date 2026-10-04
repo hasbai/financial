@@ -2,7 +2,7 @@
 
 日期：2026-10-03。目标：在 Hasbai monorepo 提供私人角色扮演对话应用，完成网络搜卡、安装、本地角色卡/世界书导入、持久会话与 `dynamic/rp` 推理闭环。财务三表边界不适用于 Tavern；不改动财务、博客或 Zboard 数据。
 
-整体调用、正文与按需候选补齐、动态短上下文预算见 [HTML 架构图](TAVERN-ARCHITECTURE.html)。
+整体调用、正文与独立候选、动态上下文压缩见 [HTML 架构图](TAVERN-ARCHITECTURE.html)。
 
 后续32K本地模型优化、会话Agent与状态/记忆/工具见[长期方案与优先级](TAVERN-AGENT-PLAN.md)。
 
@@ -56,7 +56,7 @@ D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整
 
 ## Prompt 与世界书契约
 
-顺序：系统/用户 persona → before_char 世界书 → 角色描述、性格、场景 → after_char 世界书 → 示例对白 → post_history_instructions与候选协议（合并一个前置system）→ 完整历史消息。`system_prompt` 与 `post_history_instructions` 的 `{{original}}` 合并默认值；`{{char}}`/`{{user}}`/`<char>`/`<user>` 支持，V3 nickname 优先。creator_notes、标签、来源不进入 Prompt。
+顺序：系统/用户 persona → before_char 世界书 → 角色描述、性格、场景 → after_char 世界书 → 示例对白 → post_history_instructions（合并一个前置system）→ 完整历史消息 → 最后user的正文任务；正文stop后按实际请求快照追加新正文和候选user任务。`system_prompt` 与 `post_history_instructions` 的 `{{original}}` 合并默认值；`{{char}}`/`{{user}}`/`<char>`/`<user>` 支持，V3 nickname 优先。creator_notes、标签、来源不进入 Prompt。
 
 支持 V2/V3 book 与 SillyTavern entries 对象导入；每个条目只插入一次。禁用不触发、constant 常驻、主关键词与 selective 副关键词逻辑、scan_depth、case_sensitive、priority、insertion_order、before/after_char，递归扫描有迭代上限。公开语料的散文世界书转换为常驻条目，不推断原数据未定义的关键词。正则与复杂 ST 扩展保留但不执行，解析输出能力状态。中文按字符、英文按保守字符估算 tokens（不是模型 tokenizer 精确值），容量按上游实际n_ctx及明确超限反馈更新并预留输出；后台探测不阻断对话，未知时保留核心设定和最近完整轮次。优先保留系统设定与最新完整轮次；超大的设定/单轮明确报错，不能静默切掉最新输入。
 
