@@ -64,6 +64,8 @@ CI 等待统一使用 `node scripts/wait-ci.mjs <owner/repo> <run-id> <full-sha>
 
 ## 校验与提交
 
+凭据文件（如`.env`）只能通过程序化读取用于已授权请求；禁止用`cat`、`rg`、`sed`等回显配置值，也不得打印完整环境、认证头或令牌管理API响应。诊断只输出预先选定的状态、资源ID、构建SHA等非敏感元数据；子代理交付同样遵守。
+
 完整验收在最终创建 PR 时由 GitHub Actions 执行；本地可运行 `pnpm visual:local`，只生成受影响页面的截图并审阅，使用生产构建与独立浏览器夹具。单元覆盖率和完整视觉比较仍由 CI 执行；本地普通非视觉改动至少运行 `git diff --check` 和直接相关的轻量检查。
 
 前端、共享 UI、API 契约和影响页面结果的改动由主代理修改并提交；本地 Linux 镜像截图审阅完成、需要的基线已导入后，再派新子代理推送功能分支并创建 PR，跟踪该次 CI。失败后由主代理修复，再派新子代理复核。PR 最新提交的 `check`、`visual`、`blog-check`、`blog-visual` 必需状态成功且分支包含最新 main 才能合并；Zboard 改动还须通过对应工作流。仓库只允许 squash 合并，使用 `gh pr merge --squash`。只有确认与前端输出无关且完成相关本地验证的独立改动可由维护者使用 `pnpm direct:push --validated --backend-reviewed --reviewed-path=<文件>` 快进推送 main；每个非文档文件各列一次，纯文档可省略参数。不得强推，不得将混合改动归为非前端。合并或直推后核验 Cloudflare 自动部署及线上版本。不得使用 `--admin` 绕过 PR 失败。
