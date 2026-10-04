@@ -19,7 +19,6 @@
   import Notice from "./components/Notice.svelte";
   import Loading from "./components/Loading.svelte";
   import Empty from "./components/Empty.svelte";
-  import { config } from "./lib/config";
   import { router } from "./lib/router.svelte";
   import type { createAuth } from "./lib/auth.svelte";
   let {
@@ -54,7 +53,7 @@
       : path.startsWith(destination) ||
           (destination === "/settings" && path === "/accounts");
   }
-  let authorized = $derived(auth.user?.sub === config.ownerSubject);
+  let authorized = $derived(auth.authorized);
   function toggleAmounts() {
     hidden = !hidden;
     localStorage.setItem("financial.hideAmounts", String(hidden));

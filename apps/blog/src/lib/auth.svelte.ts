@@ -1,3 +1,4 @@
+import { permissions, tokenHasPermission } from "@hasbai/auth/config";
 import { goto } from "$app/navigation";
 import { createBrowserClient, type Auth0Client, type User } from "@hasbai/auth";
 
@@ -11,6 +12,7 @@ function browserClient() {
 export function createAuth() {
   let user = $state<User>();
   let loading = $state(true);
+  let canEdit = $state(false);
   let error = $state("");
   const safe = (path: unknown) =>
     typeof path === "string" &&
@@ -19,6 +21,9 @@ export function createAuth() {
       ? path
       : "/studio";
   return {
+    get canEdit() {
+      return canEdit;
+    },
     get user() {
       return user;
     },
@@ -43,7 +48,10 @@ export function createAuth() {
           await client.checkSession({ timeoutInSeconds: 3 });
           user = await client.getUser();
         }
+        if (user) canEdit = tokenHasPermission(await browserClient().getTokenSilently(), permissions.blog);
       } catch (e) {
+        user = undefined;
+        canEdit = false;
         const code = (e as { error?: string }).error;
         if (
           ![
@@ -73,10 +81,14 @@ export function createAuth() {
         logoutParams: { returnTo: location.origin },
       });
       sharedClient = undefined;
+      user = undefined;
+      canEdit = false;
     },
     async token() {
       const value = await browserClient().getTokenSilently();
       if (!value) throw new Error("请重新登录");
+      canEdit = tokenHasPermission(value, permissions.blog);
+      if (!canEdit) throw new Error("当前账号没有编辑权限");
       return value;
     },
   };

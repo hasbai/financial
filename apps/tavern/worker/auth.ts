@@ -1,5 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { authClaims } from "@hasbai/auth/config";
+import { authClaims, hasPermission, permissions } from "@hasbai/auth/config";
 export const ROLE_CLAIM = authClaims.roles;
 export const USERNAME_CLAIM = authClaims.username;
 export const EMAIL_CLAIM = authClaims.email;
@@ -27,9 +27,7 @@ export async function identity(
     });
     if (!payload.sub || payload.sub.endsWith("@clients"))
       throw new Error("Not a user");
-    const roles = payload[ROLE_CLAIM];
-    const admin = Array.isArray(roles) && roles.includes("superadmin");
-    if (!admin) throw new AuthError(403, "无权访问酒馆");
+    const admin = hasPermission(payload, permissions.tavern);
     return {
       sub: payload.sub,
       admin,

@@ -12,22 +12,24 @@
   import Overview from "../pages/Overview.svelte";
   import Accounts from "../pages/Accounts.svelte";
   import Shell from "../Shell.svelte";
-  import { config } from "$lib/config";
   import type { createAuth } from "$lib/auth.svelte";
   let {
     api,
     cache,
     page = "editor",
     hidden = false,
+    authorized = true,
   }: {
     api: Repository;
     cache: QueryClient;
     page?: "editor" | "transactions" | "overview" | "accounts" | "shell";
     hidden?: boolean;
+    authorized?: boolean;
   } = $props();
   setRepository(untrack(() => api));
   const auth = {
-    user: { sub: config.ownerSubject },
+    user: { sub: "auth0|fixture" },
+    get authorized() { return authorized; },
     loading: false,
     error: "",
     login: async () => {},

@@ -377,3 +377,27 @@ it('cancels synopsis generation and rejects late cache writes after stopping the
  const cancel=vi.fn();aiRun.mockResolvedValueOnce(completion('正文成功。')).mockResolvedValueOnce(new ReadableStream({cancel}));
  const reader=(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'继续'})).body!.getReader();await reader.read();const drain=(async()=>{while(!(await reader.read()).done){}})();await vi.waitFor(()=>expect(aiRun).toHaveBeenCalledTimes(2));const id=sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id as string;await call('/api/sessions/'+s.id+'/stop','POST',{generationId:id});await drain;await Promise.all(work);expect(cancel).toHaveBeenCalled();expect(sessionDb.prepare('SELECT * FROM director_synopsis').all()).toHaveLength(0);expect(sessionDb.prepare('SELECT content,status,finish_reason FROM messages WHERE id=?').get(id)).toMatchObject({content:'正文成功。',status:'aborted',finish_reason:'stopped'});
 });
+
+it('lets ordinary authenticated users manage their own cards and sessions while retaining owner isolation', async () => {
+ vi.mocked(identity).mockResolvedValue({sub:'auth0|ordinary',email:'ordinary',username:'普通用户',admin:false});
+ const created = await call('/api/characters','POST',card);
+ expect(created.status).toBe(201);
+ const character = await created.json() as {id:string};
+ const started = await call('/api/sessions','POST',{characterId:character.id});
+ expect(started.status).toBe(201);
+ const session = await started.json() as {id:string};
+ expect((await call('/api/sessions/'+session.id)).status).toBe(200);
+ const requestId = crypto.randomUUID();
+ const generated = await call('/api/sessions/'+session.id+'/generate','POST',{requestId,content:'你好'});
+ expect(generated.headers.get('Content-Type')).toContain('text/event-stream');
+ expect(await generated.text()).toContain('欢迎来到港城。');
+ await Promise.all(work);
+ expect(aiRun).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({gateway:expect.objectContaining({metadata:{app:'tavern',task:'roleplay',username:'普通用户'}})}));
+
+ vi.mocked(identity).mockResolvedValue({sub:'auth0|other-ordinary',email:'other',username:'另一用户',admin:false});
+ expect((await call('/api/characters/'+character.id)).status).toBe(404);
+ expect((await call('/api/sessions/'+session.id)).status).toBe(404);
+ vi.mocked(identity).mockResolvedValue({sub:'auth0|ordinary',email:'ordinary',username:'普通用户',admin:false});
+ expect((await call('/api/sessions/'+session.id,'DELETE')).status).toBe(200);
+ expect((await call('/api/characters/'+character.id,'DELETE')).status).toBe(200);
+});

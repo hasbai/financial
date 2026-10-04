@@ -511,3 +511,10 @@ test("edit transaction can create a classification or cancel back to search", as
   ).toHaveValue("100.00");
   await expect(page.getByRole("heading", { name: "示例消费" })).toBeVisible();
 });
+
+test('accounts without financial permission cannot access the ledger', async ({ page }) => {
+  await page.goto('/e2e/index.html?path=/&authorized=false');
+  await expect(page.getByRole('heading', { name: '当前账号没有访问权限' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '记一笔' })).toHaveCount(0);
+  await expect(page).toHaveScreenshot('ledger-denied.png', { fullPage: true });
+});

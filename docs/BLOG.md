@@ -64,7 +64,7 @@ Financial `Check`、Blog `Blog` 独立 workflow，均有廉价 changes job。业
 
 博客、财务、Tavern 和 Zboard 共用 `packages/auth` 的 Auth0 Universal Login。共享工厂不再强制 `connection=eastmoney-email`，由同一北极小站组织显示邮箱、Google、Microsoft Account 和 GitHub；Zboard 继续使用独立 API audience。通用能力后续继续在共享 packages 实现，不增加各应用专属登录选择或重复认证配置。
 
-Google、Microsoft 和 GitHub 均已启用到北极小站应用及组织，Microsoft 组织连接已补齐。用户确认允许新 OAuth 账号登录、各应用权限另行分配：三个社交连接统一启用 `assign_membership_on_login=true`，邮箱连接准入与 signup 设置保留；不关联已有身份、不复制角色、不修改 Action。无角色账号仍签发 `role=authenticated`、`_roles=[]`，Tavern 要求 superadmin，Zboard 首次账号默认禁用。提供商回调统一使用 `https://auth.hasbai.xyz/login/callback`。共享 SDK 的 domain、Tavern/Zboard Worker 的 issuer/JWKS 和两应用 CSP 均使用 `auth.hasbai.xyz`；各应用自身 `/auth/callback`、组织与 API audience 保留。原租户 `hasbai.eu.auth0.com` 仍是 Auth0 管理入口，不用于应用登录。旧域会话在切换后需重新登录。
+Google、Microsoft 和 GitHub 均已启用到北极小站应用及组织，Microsoft 组织连接已补齐。用户确认允许新 OAuth 账号登录、各应用权限另行分配：三个社交连接统一启用 `assign_membership_on_login=true`，邮箱连接准入与 signup 设置保留；不关联已有身份、不复制角色、不修改 Action。无角色账号仍签发 `role=authenticated`、`_roles=[]`，Tavern 允许经过 JWT 验证的普通用户管理本人数据，Zboard 首次账号默认禁用。提供商回调统一使用 `https://auth.hasbai.xyz/login/callback`。共享 SDK 的 domain、Tavern/Zboard Worker 的 issuer/JWKS 和两应用 CSP 均使用 `auth.hasbai.xyz`；各应用自身 `/auth/callback`、组织与 API audience 保留。原租户 `hasbai.eu.auth0.com` 仍是 Auth0 管理入口，不用于应用登录。旧域会话在切换后需重新登录。
 
 上一轮社交登录统一的共享 SDK 配置及 Zboard audience 的 9 项相关单测通过；四应用36张候选已审阅，35张像素一致、博客桌面编辑器20个像素差异，既有视觉基线保持。本轮自定义域名验证见下一节。视觉夹具不执行真实 OAuth，完整账号登录、PR CI 和线上部署须分别核验。
 
@@ -76,8 +76,13 @@ Google、Microsoft 和 GitHub 均已启用到北极小站应用及组织，Micro
 
 ## 登录字段兼容（2026-10-04）
 
-统一 Auth0 Action 使用 `auth0/login-claims.js`：顶层 `username`、`email` 为身份字段，`_roles` 为角色数组，`role` 为 Neon 数据库角色字符串。共享财务/博客 audience 的角色数组包含 superadmin 时签发 `role=superadmin`，其他 audience 或账号为 authenticated；Zboard 保留独立 audience，通过 `_roles` 判断管理员。酒馆同样读取 `_roles`，保留统一 audience。两份应用 setup 脚本复用同一 Action，并移除旧应用角色 Action 的重复绑定，避免重新签发旧字段。
+统一 Auth0 Action 使用 `auth0/login-claims.js`：顶层 `username`、`email` 为身份字段，`_roles` 为角色数组，`role` 为 Neon 数据库角色字符串。共享财务/博客 audience 的角色数组包含 superadmin 时签发 `role=superadmin`，其他 audience 或账号为 authenticated；Zboard 保留独立 audience，通过 `_roles` 判断管理员。酒馆验证用户 JWT，管理员权限读取 `permissions`，保留统一 audience。两份应用 setup 脚本复用同一 Action，并移除旧应用角色 Action 的重复绑定，避免重新签发旧字段。
 
 `role` 改成数组后，Neon 仍按 anonymous 执行，导致 `permission denied for table page`；生产 page CRUD GRANT 和编辑 RLS 本身正常。本次保留 Data API `.role` 和全部生产表权限，不添加授权 SQL 包装或扩大匿名权限。新令牌已在隔离生产副本 `auth-role-array-20261004` / `br-blue-feather-b38q5syq` 实测页面草稿创建、读取、更新、删除及文章 RPC 创建/更新；匿名公开读取、草稿隔离和写入拒绝通过。生产真实 JWT 已验证 page UPDATE 权限及财务读权限；完整页面与文章写入在隔离分支实测。最新线上统一 Action 的 blocked、邮箱验证及东方财富组织资料字段保留；将错误的字符串 contains 调用修正为 includes，避免登录返回 access_denied；数据库 superadmin 角色限定到共享财务/博客 audience。新 Zboard JWT 仍在 `_roles` 中保留 superadmin，但其数据库 role 为 authenticated，财务读取返回 403、博客写入返回 400（缺少对应 audience）。已经签发的旧令牌不会因 Action 更新被撤销，需等待过期或重新登录。旧浏览器会话需重新登录取得新签名字段，未保存编辑应先保留。
 
 本地固定 Linux 流程完成博客全站和四应用代表页面截图审阅，无有意视觉修改；原视觉基线保留。完整单测、类型和视觉比较由 PR CI 执行；线上应用版本与真实 Worker JWT 验收在发布后独立核验。
+
+
+## 2026-10-04 权限统一
+
+当前授权以[北极小站授权规则](AUTHORIZATION.md)为准。自定义 API 已启用 RBAC 与原生 permissions 声明；财务/博客的数据库 role 和 GRANT/RLS 保留，普通酒馆用户无需角色即可管理本人数据，Zboard 管理接口检查 manage:zboard。旧令牌需重新登录或到期后更新。

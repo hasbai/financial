@@ -66,7 +66,8 @@
     {
       "source": "src/routes/studio/+page.svelte",
       "scenarios": [
-        "writing"
+        "writing",
+        "editor-access"
       ]
     },
     {
@@ -177,6 +178,24 @@
             "terms.png",
             "pages-studio.png",
             "page-editor.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "editor-access",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/blog.spec.ts",
+          "test": "ordinary logged-in users can read published content but cannot enter the editor",
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "studio-denied.png",
+            "studio-denied-dark.png"
           ]
         }
       ]

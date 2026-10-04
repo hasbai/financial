@@ -24,7 +24,8 @@
         "cash-report",
         "profit-report",
         "profit-dense",
-        "mobile-navigation-action"
+        "mobile-navigation-action",
+        "ledger-access"
       ]
     },
     {
@@ -474,6 +475,36 @@
           "snapshots": ["inline-account-dark-short.png"]
         }
       ]
+    },
+    {
+      "id": "ledger-access",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/mobile.spec.ts",
+          "test": "accounts without financial permission cannot access the ledger",
+          "projects": [
+            "iphone",
+            "iphone-se",
+            "android"
+          ],
+          "snapshots": [
+            "ledger-denied.png"
+          ]
+        },
+        {
+          "spec": "e2e/desktop.spec.ts",
+          "test": "accounts without financial permission cannot access the ledger",
+          "projects": [
+            "desktop"
+          ],
+          "snapshots": [
+            "ledger-denied.png"
+          ]
+        }
+      ],
+      "url": "/",
+      "state": "authenticated account without access:financial"
     }
   ],
   "router": {

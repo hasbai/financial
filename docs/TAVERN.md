@@ -48,7 +48,7 @@ flowchart LR
   Gateway --> Model[路由配置中的模型]
 ```
 
-Auth0：复用北极小站共享配置（现有API标识为 `https://financial.hasbai.xyz/api`），禁止Tavern audience限定；现有 SPA client 增量加入回调/logout/origin。JWT 验签/exp/issuer/audience 在 Worker 完成，共享顶层 `_roles` 数组必须包含 superadmin，实际用户名使用顶层 `username`，邮箱使用顶层 `email`。数据按 sub 归属，所有查询含 owner。客户端只含公开配置与内存 Access Token。财务 PostgreSQL 权限封装限制不适用于独立 Tavern Worker。
+Auth0：复用北极小站共享配置（现有API标识为 `https://financial.hasbai.xyz/api`），禁止Tavern audience限定；现有 SPA client 增量加入回调/logout/origin。JWT 验签/exp/issuer/audience 在 Worker 完成，普通登录用户不要求角色；全站管理检查原生 `permissions` 的 `manage:tavern`，实际用户名使用顶层 `username`，邮箱使用顶层 `email`。数据按 sub 归属，所有查询含 owner。客户端只含公开配置与内存 Access Token。财务 PostgreSQL 权限封装限制不适用于独立 Tavern Worker。
 
 D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整同步后原子切换，不包含私人数据。私人 D1 表：characters（完整卡 JSON、摘要、来源、原文件与头像 key、内容 hash）、worldbooks（原始书 JSON 与启用）、sessions（会话目录、可靠世界书引用与迁移占用哨兵）、messages（迁移前原文来源，只读保留）、settings（用户 persona 和生成参数）。会话角色快照、设置、全部消息版本、摘要与生成占用由每会话SQLite DO统一管理；按签名身份owner+session ID路由，旧D1原文惰性导入并保留。已安装角色删除不删除既有会话快照。R2 原文件私有，头像由 Bearer API 转 Blob URL；不创建公共桶，不自动加载角色扩展资源；发现页只显示经过HTTPS/固定头像域校验的公开Chub缩略图。
 
@@ -117,3 +117,8 @@ D1增量迁移0007只新增storage_backend和deleted_at，旧数据与ID保留�
 世界书更新先标记DO待同步，再原子预留旧+新引用并集，DO成功后才释放旧绑定；崩溃/同步失败由alarm按已提交状态收窄。删除会话保留DO tombstone与旧D1原文，隐藏目录、释放引用，不能清空对象后再次导入。
 
 本地`pnpm --filter tavern test:session-runtime`在Wrangler所带真实workerd/SQLite隔离资源验证导入、隔离、流、幂等、停止、分支和跨实例重启。该固定runtime最高支持2026-09-18，验收harness使用该日期，生产compatibility_date仍为2026-10-03；harness不打包进生产。Node SQLite测试单独覆盖目录故障与竞争。
+
+
+## 2026-10-04 权限统一
+
+当前授权以[北极小站授权规则](AUTHORIZATION.md)为准。自定义 API 已启用 RBAC 与原生 permissions 声明；财务/博客的数据库 role 和 GRANT/RLS 保留，普通酒馆用户无需角色即可管理本人数据，Zboard 管理接口检查 manage:zboard。旧令牌需重新登录或到期后更新。
