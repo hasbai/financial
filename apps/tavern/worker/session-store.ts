@@ -1,5 +1,6 @@
 import type { FinishReason, Message } from '../shared/types';
 import { HttpError } from './http';
+import type { Summary } from './context';
 import { message, type MessageRow, type SessionRow } from './store';
 import { emptyState, stableJson, storyMessages, type ModelProjection, type StoryState, type ToolStep } from './agent';
 
@@ -19,6 +20,7 @@ CREATE INDEX IF NOT EXISTS messages_session ON messages(session_id,ordinal,creat
 CREATE TABLE IF NOT EXISTS cancelled_requests (session_id TEXT NOT NULL, request_id TEXT NOT NULL, PRIMARY KEY(session_id,request_id));
 CREATE TABLE IF NOT EXISTS session_meta (id TEXT PRIMARY KEY, deleted INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 1, synced_revision INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS turn_snapshots (message_id TEXT PRIMARY KEY, before_json TEXT NOT NULL, after_json TEXT, steps_json TEXT NOT NULL DEFAULT '[]');
+CREATE TABLE IF NOT EXISTS director_synopsis (session_id TEXT PRIMARY KEY, value_json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS model_projections (message_id TEXT PRIMARY KEY, value_json TEXT NOT NULL);
 `;
 export type TurnSnapshot={message_id:string;before_json:string;after_json:string|null;steps_json:string};
@@ -35,6 +37,8 @@ export class SessionStore {
  snapshots():TurnSnapshot[]{return this.rows<TurnSnapshot & Record<string,SqlStorageValue>>('SELECT * FROM turn_snapshots');}
  snapshot(id:string){return this.rows<TurnSnapshot & Record<string,SqlStorageValue>>('SELECT * FROM turn_snapshots WHERE message_id=?',id)[0];}
  projection(id:string):ModelProjection|null{const row=this.rows<{value_json:string}>('SELECT value_json FROM model_projections WHERE message_id=?',id)[0];return row?JSON.parse(row.value_json):null;}
+ synopsis():string|null{return this.rows<{value_json:string}>('SELECT value_json FROM director_synopsis WHERE session_id=?',this.id)[0]?.value_json??null;}
+ saveSynopsis(assistantId:string,summary:Summary){if(!this.pending(assistantId))return false;this.write('INSERT INTO director_synopsis VALUES(?,?) ON CONFLICT(session_id) DO UPDATE SET value_json=excluded.value_json',this.id,JSON.stringify(summary));return true;}
  state(history:Message[]=storyMessages(this.messages())):StoryState{for(const m of [...history].reverse()){const s=this.snapshot(m.id);if(s?.after_json)return JSON.parse(s.after_json);}return emptyState();}
  before(id:string):StoryState{const s=this.snapshot(id);return s?JSON.parse(s.before_json):this.state(storyMessages(this.messages()).filter(m=>m.ordinal<(this.findMessage(id)?.ordinal??0)));}
  beginState(id:string,state:StoryState){if(!this.pending(id))throw new HttpError(409,'生成已停止');this.write('INSERT INTO turn_snapshots(message_id,before_json) VALUES(?,?)',id,stableJson(state));}

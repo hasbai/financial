@@ -1,7 +1,8 @@
 import {it,expect,vi,beforeEach,afterEach} from 'vitest';import {DatabaseSync} from 'node:sqlite';import {readFileSync} from 'node:fs';
 import worker from './index';import {TavernSession} from './session-object';import {SESSION_SCHEMA} from './session-store';
 vi.mock('cloudflare:workers',()=>({DurableObject:class {constructor(public ctx:DurableObjectState,public env:Env){}}}));import {identity,AuthError} from './auth';import {DEFAULT_SETTINGS,type Message} from '../shared/types';
-import { BODY_TASK, CANDIDATE_TASK } from '../shared/candidates';
+import { BODY_TASK } from '../shared/candidates';
+import { DIRECTOR_RESPONSE_FORMAT } from './director';
 vi.mock('./auth',async(original)=>({...await original<typeof import('./auth')>(),identity:vi.fn()}));
 const card={spec:'chara_card_v2',spec_version:'2.0',data:{name:'岚',description:'港城的旅店主人',personality:'沉稳',scenario:'港城',first_mes:'你好，{{user}}。',mes_example:'',system_prompt:'',post_history_instructions:'',alternate_greetings:['欢迎'],tags:[],creator:'测试',extensions:{}}};
 let db:DatabaseSync,sessionDb:DatabaseSync,env:Env,work:Promise<unknown>[],files:Map<string,Uint8Array>;type AiRun=(data:AIGatewayUniversalRequest,options?:{gateway?:UniversalGatewayOptions;signal?:AbortSignal})=>Promise<unknown>;let aiRun:ReturnType<typeof vi.fn<AiRun>>;let beforeRun:((sql:string,values:unknown[])=>void)|undefined;
@@ -10,7 +11,7 @@ const ctx={waitUntil:(promise:Promise<unknown>)=>{work.push(promise);}};
 async function call(path:string,method='GET',data?:unknown){return worker.fetch(new Request('https://tavern.test'+path,{method,headers:data?{'Content-Type':'application/json'}:{},body:data===undefined?undefined:JSON.stringify(data)}),env,ctx);}
 beforeEach(()=>{
  beforeRun=undefined;db=new DatabaseSync(':memory:');for(const name of ['0001_schema.sql','0002_source_catalog.sql','0003_generation_outcomes.sql','0004_source_quality.sql','0005_candidates_capabilities.sql','0006_session_summary.sql','0007_session_objects.sql','0008_branch_state_seed.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));sessionDb=new DatabaseSync(':memory:');sessionDb.exec(SESSION_SCHEMA);files=new Map();work=[];
- aiRun=vi.fn<AiRun>(async request=>{const last=(request.query as {messages:{content:string}[]}).messages.at(-1)!.content;const candidate=last.startsWith('正文已经完成')||last.startsWith('只补充')||last.startsWith('仅从');return new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{reasoning_content:'private'}}]})+'\n\ndata: '+JSON.stringify({choices:[{delta:{content:candidate?'去港口。\n问问来路。\n坐下喝茶。':'欢迎来到港城。'}}]})+'\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));c.close();}});});
+ aiRun=vi.fn<AiRun>(async request=>{const last=(request.query as {messages:{content:string}[]}).messages.at(-1)!.content;const candidate=!!(request.query as {response_format?:unknown}).response_format;const synopsis=(request.query as {messages:{content:string}[]}).messages[0].content.startsWith('总结已发生剧情');return new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{reasoning_content:'private'}}]})+'\n\ndata: '+JSON.stringify({choices:[{delta:{content:candidate?JSON.stringify({choices:['去港口。','问问来路。','坐下喝茶。']}):synopsis?'旧事。':'欢迎来到港城。'}}]})+'\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));c.close();}});});
  env=Object.assign({} as Env,{DB:{prepare:statement,batch:async(stmts:D1PreparedStatement[])=>{const result=[];db.exec('BEGIN');try{for(const s of stmts)result.push(await s.run());db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');throw e;}}},FILES:{put:async(key:string,bytes:Uint8Array)=>files.set(key,bytes),get:async(key:string)=>files.has(key)?{body:new Response(Uint8Array.from(files.get(key)!)).body}:null,delete:async(keys:string|string[])=>{for(const key of Array.isArray(keys)?keys:[keys])files.delete(key);}},AI:{gateway:(id:string)=>{expect(id).toBe('default');return {run:async(data:AIGatewayUniversalRequest,options?:{gateway?:UniversalGatewayOptions;signal?:AbortSignal})=>{const result=await aiRun(data,options);return result instanceof ReadableStream?new Response(result,{headers:{'Content-Type':'text/event-stream','cf-aig-log-id':'test-log'}}):result;}};}},AUTH0_DOMAIN:'auth.hasbai.xyz',AUTH0_AUDIENCE:'https://financial.hasbai.xyz/api',AIG_GATEWAY_ID:'default',CONTEXT_TOKENS:'16000',VERSION:{id:'test'},ASSETS:{fetch:async()=>new Response('assets')}});
  const objects=new Map<string,TavernSession>();
  const storage={sql:{exec:(sql:string,...values:unknown[])=>{beforeRun?.(sql,values);const stmt=sessionDb.prepare(sql);const rows=stmt.all(...values as never[]);return {toArray:()=>rows};}},transactionSync:<T>(fn:()=>T)=>{sessionDb.exec('BEGIN');try{const result=fn();sessionDb.exec('COMMIT');return result;}catch(e){sessionDb.exec('ROLLBACK');throw e;}},setAlarm:async()=>{}};
@@ -34,7 +35,7 @@ it('records provider cache and first body observations for body and candidate st
 });
 it('keeps inline candidate protocol out of deltas and stored story before an independent candidate model call',async()=>{
  const {s}=await seed();const wire='灯？[TAVERN_NEXT]\n我问问往事。\n我坐下喝茶。\n我看向窗外。';
- aiRun.mockImplementation(async()=>new Response(wire.split('').map(content=>'data: '+JSON.stringify({choices:[{delta:{content}}]})+'\n\n').join('')+'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}}));
+ aiRun.mockImplementation(async request=>new Response(((request.query as {response_format?:unknown}).response_format?JSON.stringify({choices:['我问问往事。','我坐下喝茶。','我看向窗外。']}):wire).split('').map(content=>'data: '+JSON.stringify({choices:[{delta:{content}}]})+'\n\n').join('')+'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}}));
  const requestId=crypto.randomUUID(),r=await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'继续'});const text=await r.text();await Promise.all(work);
  const frames=text.split('\n').filter(line=>line.startsWith('data: ')).map(line=>JSON.parse(line.slice(6)));expect(frames.filter(e=>e.type==='delta').map(e=>e.text).join('')).toBe('灯？');
  expect(frames.find(e=>e.type==='done').message).toMatchObject({content:'灯？',status:'completed',candidates:['我问问往事。','我坐下喝茶。','我看向窗外。']});
@@ -166,7 +167,7 @@ it('generates, persists and replays candidates in two stages without including c
  const {s}=await seed(),requestId=crypto.randomUUID();
  const marker='\n[TAVERN_NEXT]\n';
  aiRun.mockImplementationOnce(async()=>new ReadableStream({start(c){for(const content of ['正文。',marker.slice(0,7),marker.slice(7),'往港口走。\n问问来路。\n往港口走。\n坐下喝茶。\n第四条'])c.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{content}}]})+'\n\n'));c.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));c.close();}}));
- aiRun.mockResolvedValueOnce(completion('往港口走。\n问问来路。\n坐下喝茶。'));
+ aiRun.mockResolvedValueOnce(candidateCompletion(['往港口走。','问问来路。','坐下喝茶。']));
  const stream=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'你好'})).text();await Promise.all(work);expect(stream).toContain('candidates_pending');expect(stream).not.toContain('[TAVERN_NEXT]');
  const saved=await(await call('/api/sessions/'+s.id)).json() as {messages:Message[]};expect(saved.messages.at(-1)).toMatchObject({content:'正文。',status:'completed',candidates:['往港口走。','问问来路。','坐下喝茶。']});
  const replay=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId})).json() as {message:Message};expect(replay.message.candidates).toEqual(saved.messages.at(-1)?.candidates);expect(aiRun).toHaveBeenCalledTimes(2);expect(JSON.stringify(aiRun.mock.calls[0][0].query)).not.toContain(requestId);
@@ -179,11 +180,12 @@ it.each(['normal','regenerate','continue'])('reminds the %s request once without
  await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'原输入'})).text();await Promise.all(work);
  if(mode==='continue')sessionDb.prepare("UPDATE messages SET status='aborted',finish_reason='stopped' WHERE session_id=? AND request_id IS NOT NULL AND role='assistant'").run(s.id);
  await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),...(mode==='normal'?{content:'下一轮'}:mode==='regenerate'?{regenerate:true}:{continue:true})})).text();await Promise.all(work);
- const query=aiRun.mock.calls.at(-1)![0].query as {messages:{role:string;content:string}[]};
+ const query=aiRun.mock.calls.at(-1)![0].query as {messages:{role:string;content:string}[];response_format:unknown};
  expect(query.messages.filter(m=>m.role==='system')).toHaveLength(1);
- expect(query.messages.at(-1)?.content.endsWith(CANDIDATE_TASK)).toBe(true);
- expect(query.messages.at(-3)?.content.endsWith(BODY_TASK)).toBe(true);
- expect(aiRun).toHaveBeenCalledTimes(4);
+ expect(query).toHaveProperty('response_format',DIRECTOR_RESPONSE_FORMAT);
+ expect(JSON.stringify(query)).not.toContain(BODY_TASK);
+ const body=aiRun.mock.calls.map(c=>c[0].query).filter(q=>!!(q as {tools?:unknown}).tools).at(-1) as {messages:{content:string}[]};expect(body.messages.at(-1)?.content.endsWith(BODY_TASK)).toBe(true);
+ expect(aiRun).toHaveBeenCalledTimes(mode==='normal'?5:4);
  expect(sessionDb.prepare("SELECT content FROM messages WHERE session_id=? AND role='user' ORDER BY ordinal").all(s.id).map(m=>m.content)).toEqual(mode==='normal'?['原输入','下一轮']:['原输入']);
 });
 it.each(['stop'])('keeps clean prose with invalid candidates on %s',async finish=>{
@@ -192,11 +194,12 @@ it.each(['stop'])('keeps clean prose with invalid candidates on %s',async finish
 });
 
 function completion(content:string,finish='stop') {return new ReadableStream<Uint8Array>({start(c){c.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{content},finish_reason:finish}]})+'\n\ndata: [DONE]\n\n'));c.close();}});}
+function candidateCompletion(choices:string[]){return completion(JSON.stringify({choices}));}
 function tool(name:string,args:unknown,id='call-1'){return new Response('data: '+JSON.stringify({choices:[{delta:{tool_calls:[{index:0,id,type:'function',function:{name,arguments:JSON.stringify(args)}}]},finish_reason:'tool_calls'}]})+'\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}});}
-it('runs two native tool steps, commits the snapshot atomically and disables candidate tools with the full wire prefix',async()=>{
+it('runs two native tool steps, commits the snapshot atomically and isolates Director input from tool protocol and sees staged state',async()=>{
  const {s}=await seed();aiRun.mockResolvedValueOnce(tool('search_memory',{query:'你好'})).mockResolvedValueOnce(tool('update_state',{patch:{scene:'北港',facts:{钥匙:'旅人持有'}}},'call-2')).mockResolvedValueOnce(completion('北港灯亮了。'));
  const requestId=crypto.randomUUID(),wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'我们已经到达北港，钥匙在我手里。'})).text();await Promise.all(work);expect(wire).not.toContain('tool_calls');expect(aiRun).toHaveBeenCalledTimes(4);
- const body=aiRun.mock.calls[2][0].query as {messages:unknown[];tools:unknown},candidate=aiRun.mock.calls[3][0].query as {messages:unknown[];tools:unknown;tool_choice:string};expect(candidate.messages.slice(0,body.messages.length)).toEqual(body.messages);expect(candidate.tools).toEqual(body.tools);expect(candidate.tool_choice).toBe('none');
+ const candidate=aiRun.mock.calls[3][0].query as {messages:{role:string;content:string}[]};expect(candidate).not.toHaveProperty('tools');expect(candidate).not.toHaveProperty('tool_choice');expect(candidate).toHaveProperty('response_format',DIRECTOR_RESPONSE_FORMAT);expect(candidate.messages.map(m=>m.role)).toEqual(['system','user']);const context=JSON.parse(candidate.messages[1].content);expect(context.state).toMatchObject({scene:'北港',facts:{钥匙:'旅人持有'}});expect(context.recentStory.at(-1)).toEqual({role:'assistant',content:'北港灯亮了。'});expect(JSON.stringify(candidate)).not.toContain('call-2');
  const restored=await(await call('/api/sessions/'+s.id)).json() as {session:{state:{scene:string;facts:unknown}}};expect(restored.session.state).toMatchObject({scene:'北港',facts:{钥匙:'旅人持有'}});const snapshot=sessionDb.prepare('SELECT * FROM turn_snapshots').get();expect(JSON.parse(snapshot!.before_json as string).scene).toBeNull();expect(JSON.parse(snapshot!.steps_json as string)).toHaveLength(2);
  expect((await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId})).json() as {replayed:boolean}).replayed).toBe(true);expect(aiRun).toHaveBeenCalledTimes(4);
 });
@@ -215,8 +218,8 @@ it('rolls back staged state for duplicate tools; candidate failure still preserv
 });
 it('preserves ordered tool results through body length and candidate context rebuilds',async()=>{
  const {s}=await seed();let bodies=0,candidates=0;aiRun.mockImplementation(async request=>{const q=request.query as {messages:{role:string;content:string}[]};
-  if(q.messages.at(-1)?.content===CANDIDATE_TASK){if(++candidates===1)return Response.json({error:{message:'maximum context length is 4096 tokens'}},{status:400});const tool=q.messages.findIndex(m=>m.role==='tool'),first=q.messages.findIndex(m=>m.content==='第一段。'),last=q.messages.findIndex(m=>m.content==='第二段。');expect(tool).toBeLessThan(first);expect(first).toBeLessThan(last);return completion('我问问。\n我坐下。\n我看窗外。');}
-  if(q.messages[0].content.startsWith('压缩会话记忆'))return completion('此前问候。');
+  if((request.query as {response_format?:unknown}).response_format){if(++candidates===1)return Response.json({error:{message:'maximum context length is 4096 tokens'}},{status:400});expect(q.messages.map(m=>m.role)).toEqual(['system','user']);expect(JSON.parse(q.messages[1].content).recentStory.at(-1).content).toBe('第一段。第二段。');return candidateCompletion(['我问问。','我坐下。','我看窗外。']);}
+  if(q.messages[0].content.startsWith('总结已发生剧情'))return completion('旧事。');if(q.messages[0].content.startsWith('压缩会话记忆'))return completion('此前问候。');
   if(++bodies===1)return tool('update_state',{patch:{scene:'旅店'}});if(bodies===2)return completion('第一段。','length');const result=q.messages.findIndex(m=>m.role==='tool'),first=q.messages.findIndex(m=>m.content==='第一段。');expect(result).toBeLessThan(first);return completion('第二段。');
  });
  await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'继续当前场景'})).text();await Promise.all(work);expect((await(await call('/api/sessions/'+s.id)).json() as {messages:Message[]}).messages.at(-1)?.content).toBe('第一段。第二段。');
@@ -227,7 +230,7 @@ it('appends to a successful actual model projection and invalidates it for chang
 });
 it('compresses only the model projection of long tool-assisted prose while retaining full persisted body',async()=>{
  const {s}=await seed();db.prepare('UPDATE model_capabilities SET value_json=?').run(JSON.stringify({contextTokens:2048,inputRatio:1.2,source:'llama.cpp:n_ctx'}));let bodies=0;
- aiRun.mockImplementation(async request=>{const q=request.query as {messages:{content:string}[]};if(q.messages[0].content.startsWith('压缩会话记忆'))return completion('已经到达港口。');if(q.messages.at(-1)?.content===CANDIDATE_TASK)return completion('我问问。\n我坐下。\n我看窗外。');if(++bodies===1)return tool('update_state',{patch:{scene:'港口'}});if(bodies===2)return completion('正文'.repeat(2200),'length');expect(q.messages.some(m=>m.content.includes('已发生正文摘要'))).toBe(true);return completion('结尾。');});
+ aiRun.mockImplementation(async request=>{const q=request.query as {messages:{content:string}[]};if(q.messages[0].content.startsWith('总结已发生剧情'))return completion('旧事。');if(q.messages[0].content.startsWith('压缩会话记忆'))return completion('已经到达港口。');if((request.query as {response_format?:unknown}).response_format)return candidateCompletion(['我问问。','我坐下。','我看窗外。']);if(++bodies===1)return tool('update_state',{patch:{scene:'港口'}});if(bodies===2)return completion('正文'.repeat(2200),'length');expect(q.messages.some(m=>m.content.includes('已发生正文摘要'))).toBe(true);return completion('结尾。');});
  await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'抵达港口'})).text();await Promise.all(work);expect(sessionDb.prepare('SELECT content,status FROM messages WHERE session_id=? ORDER BY created_at DESC LIMIT 1').get(s.id)).toMatchObject({content:'正文'.repeat(2200)+'结尾。',status:'completed'});
 });
 it('retains a stopped prefix once when continuation calls a tool then finishes through length',async()=>{
@@ -250,14 +253,14 @@ it('rejects invalid tool parameters without committing state and preserves a sto
 it('automatically continues through more than three length finishes with one parser and UUID',async()=>{
  const {s}=await seed(),requestId=crypto.randomUUID();
  for(const content of ['她说：','你好。','\n[TAV','ERN_NEXT]\n去港口','。\n坐下喝茶。'])aiRun.mockResolvedValueOnce(completion(content,'length'));
- aiRun.mockResolvedValueOnce(completion('\n问问来路。'));aiRun.mockResolvedValueOnce(completion('去港口。\n坐下喝茶。\n问问来路。'));
+ aiRun.mockResolvedValueOnce(completion('\n问问来路。'));aiRun.mockResolvedValueOnce(candidateCompletion(['去港口。','坐下喝茶。','问问来路。']));
  const text=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'你好'})).text();await Promise.all(work);
  const saved=sessionDb.prepare('SELECT * FROM messages WHERE request_id=? AND role=?').get(requestId,'assistant');expect(saved).toMatchObject({content:'她说：你好。',status:'completed',finish_reason:'stop'});expect(JSON.parse(saved!.candidates_json as string)).toEqual(['去港口。','坐下喝茶。','问问来路。']);expect(text).not.toContain('[TAVERN_NEXT]');expect(aiRun).toHaveBeenCalledTimes(7);expect(sessionDb.prepare('SELECT count(*) n FROM messages WHERE request_id=? AND role=?').get(requestId,'assistant')?.n).toBe(1);
  for(const [,opts]of aiRun.mock.calls){expect(opts?.gateway).not.toHaveProperty('requestTimeoutMs');}for(const [request]of aiRun.mock.calls)expect(request.query).not.toHaveProperty('max_tokens');
 });
 it.each(['http','stream'])('keeps generated prefix and continuation across a %s context error, with persistent valid summary',async mode=>{
  const {s}=await seed();sessionDb.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) VALUES(?,?,'user',?,'completed',1,?)").run(crypto.randomUUID(),s.id,'旧问题'.repeat(800),Date.now());sessionDb.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) VALUES(?,?,'assistant',?,'completed',2,?)").run(crypto.randomUUID(),s.id,'旧回答'.repeat(800),Date.now()+1);
- let bodyCalls=0;aiRun.mockImplementation(async request=>{const q=request.query as {messages:{content:string}[]};if(q.messages[0].content.startsWith('压缩会话记忆'))return completion('旧事');bodyCalls++;
+ let bodyCalls=0;aiRun.mockImplementation(async request=>{const q=request.query as {messages:{content:string}[]};if(q.messages[0].content.startsWith('总结已发生剧情'))return completion('旧事。');if(q.messages[0].content.startsWith('压缩会话记忆'))return completion('旧事');bodyCalls++;
  if(bodyCalls===1&&mode==='http')return completion('她抬起头，','length');
  if((bodyCalls===1&&mode==='stream')||(bodyCalls===2&&mode==='http'))return mode==='http'?Response.json({error:{message:'maximum context length is 4096 tokens'}},{status:400}):new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"她抬起头，"}}]}\n\ndata: {"error":{"message":"maximum context length is 4096 tokens"}}\n\n'));c.close();}});
  expect(q.messages.at(-1)?.content).toContain('接着最后一条');expect(q.messages.some(m=>m.content==='她抬起头，')).toBe(true);return completion('把热茶递给你。');});
@@ -303,67 +306,76 @@ it('does not call the model if cancellation wins during capability preparation',
 });
 it('sends done and permits another generation while the directory is stalled',async()=>{
  const {s}=await seed();const original=env.DB.prepare.bind(env.DB);let release!:()=>void;const blocked=new Promise<void>(r=>release=r);env.DB.prepare=(sql:string)=>{const stmt=original(sql);if(sql.startsWith('UPDATE sessions SET title')){const run=stmt.run.bind(stmt);stmt.run=(async(...args:Parameters<typeof run>)=>{await blocked;return run(...args);}) as typeof stmt.run;const bind=stmt.bind.bind(stmt);stmt.bind=(...values:unknown[])=>{const bound=bind(...values),boundRun=bound.run.bind(bound);bound.run=async()=>{await blocked;return boundRun();};return bound;};}return stmt;};
- try{const first=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();expect(first).toContain('"type":"done"');const second=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'继续'})).text();expect(second).toContain('"type":"done"');expect(aiRun).toHaveBeenCalledTimes(4);}finally{release();await Promise.all(work);}
+ try{const first=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();expect(first).toContain('"type":"done"');const second=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'继续'})).text();expect(second).toContain('"type":"done"');expect(aiRun).toHaveBeenCalledTimes(5);}finally{release();await Promise.all(work);}
 });
 
 it.each([0,1,2,3])('independently generates candidates despite %i accidental inline candidates without changing prose and replays persisted results',async count=>{
  const {s}=await seed(),requestId=crypto.randomUUID(),all=['我去港口。','我坐下喝茶。','我问问来路。'];
  aiRun.mockResolvedValueOnce(completion('正文。'+(count?'\n[TAVERN_NEXT]\n'+all.slice(0,count).join('\n'):'')));
- aiRun.mockResolvedValueOnce(completion(all.join('\n')));
+ aiRun.mockResolvedValueOnce(candidateCompletion(all));
  const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'下一步'})).text();await Promise.all(work);
  const events=wire.split('\n').filter(l=>l.startsWith('data: ')).map(l=>JSON.parse(l.slice(6)));
  expect(events.filter(e=>e.type==='delta').map(e=>e.text).join('')).toBe('正文。');expect(events.at(-1).message).toMatchObject({content:'正文。',candidates:all,status:'completed',finishReason:'stop'});
  const replay=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId})).json() as {message:Message};expect(replay.message.candidates).toEqual(all);expect(aiRun).toHaveBeenCalledTimes(2);
- expect((aiRun.mock.calls[1][0].query as {messages:{content:string}[]}).messages.at(-1)?.content).toContain('正文已经完成');
+ expect(aiRun.mock.calls[1][0].query).toHaveProperty('response_format',DIRECTOR_RESPONSE_FORMAT);
 });
-it('does not impose a three-call cap while candidates make progress',async()=>{
- const {s}=await seed();aiRun.mockResolvedValueOnce(completion('正文。'));
- for(const candidate of ['我去港口。','我坐下喝茶。','我问问来路。'])aiRun.mockResolvedValueOnce(completion(candidate));
- const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();await Promise.all(work);expect(aiRun).toHaveBeenCalledTimes(4);expect(JSON.parse(wire.trim().split('data: ').at(-1)!).message.candidates).toHaveLength(3);
+it.each([JSON.stringify({choices:['一条','两条']}),JSON.stringify({choices:['重复','重复','第三条']}),'我去港口。\n我坐下喝茶。\n我问问来路。'])('rejects invalid Director output atomically and keeps completed prose: %s',async content=>{
+ const {s}=await seed();aiRun.mockResolvedValueOnce(completion('正文。')).mockResolvedValueOnce(completion(content));
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();await Promise.all(work);expect(aiRun).toHaveBeenCalledTimes(2);expect(JSON.parse(wire.trim().split('data: ').at(-1)!).message).toMatchObject({content:'正文。',status:'completed',finishReason:'stop',candidates:[]});
 });
-it('stops candidate recovery on duplicate-only output and retains completed prose',async()=>{
- const {s}=await seed();aiRun.mockResolvedValueOnce(completion('正文。\n[TAVERN_NEXT]\n我去港口。'));aiRun.mockResolvedValueOnce(completion('我去港口。'));aiRun.mockResolvedValueOnce(completion('我去港口。'));
- await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();await Promise.all(work);expect(aiRun).toHaveBeenCalledTimes(3);expect(sessionDb.prepare("SELECT content,status,candidates_json FROM messages WHERE request_id IS NOT NULL AND role='assistant'").get()).toMatchObject({content:'正文。',status:'completed',candidates_json:'["我去港口。"]'});
-});
-it('continues a length-truncated candidate repair while isolating every byte from story',async()=>{
- const {s}=await seed();aiRun.mockResolvedValueOnce(completion('正文。'));aiRun.mockResolvedValueOnce(completion('我去港口。\n我坐','length'));aiRun.mockResolvedValueOnce(completion('下喝茶。\n我问问来路。'));
- const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();await Promise.all(work);const done=JSON.parse(wire.trim().split('data: ').at(-1)!).message;expect(done).toMatchObject({content:'正文。',candidates:['我去港口。','我坐下喝茶。','我问问来路。']});expect(aiRun).toHaveBeenCalledTimes(3);
+it('discards a truncated Director JSON without appending it to story or retrying partial JSON',async()=>{
+ const {s}=await seed();aiRun.mockResolvedValueOnce(completion('正文。')).mockResolvedValueOnce(completion('{"choices":["我去港口。","我坐','length'));
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();await Promise.all(work);expect(JSON.parse(wire.trim().split('data: ').at(-1)!).message).toMatchObject({content:'正文。',status:'completed',candidates:[]});expect(aiRun).toHaveBeenCalledTimes(2);
 });
 it('immediately cancels candidate recovery and retains the generated body',async()=>{
  const {s}=await seed();const cancelled=vi.fn();aiRun.mockResolvedValueOnce(completion('正文。'));aiRun.mockResolvedValueOnce(new ReadableStream({cancel:cancelled}));
  const reader=(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).body!.getReader();await reader.read();let wire='';const drain=(async()=>{for(;;){const next=await reader.read();if(next.done)return;wire+=new TextDecoder().decode(next.value);}})();await vi.waitFor(()=>expect(aiRun).toHaveBeenCalledTimes(2));const id=sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id;await call('/api/sessions/'+s.id+'/stop','POST',{generationId:id});await drain;await Promise.all(work);expect(cancelled).toHaveBeenCalled();expect(sessionDb.prepare('SELECT content,status,finish_reason FROM messages WHERE id=?').get(id as string)).toMatchObject({content:'正文。',status:'aborted',finish_reason:'stopped'});expect(wire).not.toContain('我去港口');
 });
-it.each(['http','stream'])('compresses discovered context overflow during %s candidate repair without altering saved prose',async mode=>{
- const {s}=await seed();for(const [ordinal,role]of [[1,'user'],[2,'assistant']] as const)sessionDb.prepare('INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) VALUES(?,?,?,?,?,?,?)').run(crypto.randomUUID(),s.id,role,'旧会话'.repeat(1000),'completed',ordinal,Date.now()+ordinal);
- let repairs=0;aiRun.mockImplementation(async request=>{const messages=(request.query as {messages:{content:string}[]}).messages;
- if(messages[0].content.startsWith('压缩会话记忆'))return completion('旧事已记。');
- if(!messages.some(m=>m.content===CANDIDATE_TASK))return completion('已完成正文。');
- expect(sessionDb.prepare("SELECT content FROM messages WHERE role='assistant' AND status='pending'").get()?.content).toBe('已完成正文。');
- expect(messages.at(-1)?.content).not.toContain(BODY_TASK);expect(messages[0].content).not.toContain('角色正文 + 用户续聊候选');
- if(++repairs===1)return mode==='http'?Response.json({error:{n_ctx:4096}},{status:400}):new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{content:'我去'}}]})+'\n\ndata: {"error":{"n_ctx":4096}}\n\n'));c.close();}});
- if(mode==='stream')expect(messages.at(-1)?.content).toContain('仅从上次中断处');
- return completion(mode==='stream'?'港口。\n我坐下喝茶。\n我问问来路。':'我去港口。\n我坐下喝茶。\n我问问来路。');});
- const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'接下来呢'})).text();await Promise.all(work);const done=JSON.parse(wire.trim().split('data: ').at(-1)!).message;expect(done).toMatchObject({content:'已完成正文。',status:'completed',candidates:['我去港口。','我坐下喝茶。','我问问来路。']});expect(repairs).toBe(2);
+it.each(['http','stream'])('shrinks only Director recent story after %s context overflow',async mode=>{
+ const {s}=await seed();let directors=0;aiRun.mockImplementation(async request=>{
+  if((request.query as {messages:{content:string}[]}).messages[0].content.startsWith('总结已发生剧情'))return completion('旧事。');if(!(request.query as {response_format?:unknown}).response_format)return completion('已完成正文。');
+  const q=request.query as {messages:{role:string;content:string}[]};expect(q.messages.map(m=>m.role)).toEqual(['system','user']);expect(q.messages[0].content).not.toContain('压缩会话记忆');
+  if(++directors===1)return mode==='http'?Response.json({error:{n_ctx:4096}},{status:400}):new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"{\\"choices\\":["}}]}\n\ndata: {"error":{"n_ctx":4096}}\n\n'));c.close();}});
+  expect(JSON.parse(q.messages[1].content).recentStory).toHaveLength(2);return candidateCompletion(['我去港口。','我坐下喝茶。','我问问来路。']);
+ });
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'接下来呢'})).text();await Promise.all(work);expect(JSON.parse(wire.trim().split('data: ').at(-1)!).message).toMatchObject({content:'已完成正文。',status:'completed',candidates:['我去港口。','我坐下喝茶。','我问问来路。']});expect(directors).toBe(2);expect(sessionDb.prepare('SELECT summary_json FROM sessions WHERE id=?').get(s.id)?.summary_json).toBeNull();
 });
-
-it('ends recovery when compression makes no progress while preserving completed prose and releasing the turn',async()=>{
- const {ConversationContext}=await import('./context');const compress=vi.spyOn(ConversationContext.prototype,'compress').mockResolvedValue();
- try{const {s}=await seed();for(const [ordinal,role]of [[1,'user'],[2,'assistant']] as const)sessionDb.prepare('INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) VALUES(?,?,?,?,?,?,?)').run(crypto.randomUUID(),s.id,role,'旧会话'.repeat(1000),'completed',ordinal,Date.now()+ordinal);
- aiRun.mockResolvedValueOnce(completion('已完成正文。'));aiRun.mockResolvedValueOnce(Response.json({error:{n_ctx:4096}},{status:400}));
- const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'接下来呢'})).text();await Promise.all(work);const done=JSON.parse(wire.trim().split('data: ').at(-1)!).message;expect(done).toMatchObject({content:'已完成正文。',status:'completed',finishReason:'stop',candidates:[]});expect(sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id).toBeNull();expect(aiRun).toHaveBeenCalledTimes(2);
- }finally{compress.mockRestore();}
-});
-
-it('preserves the actual body prompt including reminders and book activation when starting candidates',async()=>{
+it('keeps worldbook dumps and body reminders out of Director while preserving body activation',async()=>{
  const {s}=await seed();const book=await(await call('/api/worldbooks','POST',{raw:{name:'火山',entries:[{keys:['火山'],content:'火山之约必须保密。',enabled:true}]}})).json() as {id:string};await call('/api/sessions/'+s.id,'PATCH',{bookIds:[book.id]});
- aiRun.mockResolvedValueOnce(completion('她望向火山。'));aiRun.mockResolvedValueOnce(completion('我坐下。\n我问问。\n我看窗外。'));
+ aiRun.mockResolvedValueOnce(completion('她望向火山。'));aiRun.mockResolvedValueOnce(candidateCompletion(['我坐下。','我问问。','我看窗外。']));
  await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'说说远处的山'})).text();await Promise.all(work);
- const body=aiRun.mock.calls[0][0].query as {messages:{role:string;content:string}[]},candidate=aiRun.mock.calls[1][0].query as {messages:{role:string;content:string}[]};expect(candidate.messages.slice(0,body.messages.length)).toEqual(body.messages);expect(candidate.messages.slice(body.messages.length)).toEqual([{role:'assistant',content:'她望向火山。'},{role:'user',content:CANDIDATE_TASK}]);expect(candidate.messages[0].content).not.toContain('火山之约必须保密');expect(body.messages.at(-1)?.content).toBe('说说远处的山\n\n'+BODY_TASK);
+ const body=aiRun.mock.calls[0][0].query as {messages:{role:string;content:string}[]},candidate=aiRun.mock.calls[1][0].query as {messages:{role:string;content:string}[]};expect(candidate.messages).toHaveLength(2);expect(JSON.parse(candidate.messages[1].content).recentStory.at(-1)).toEqual({role:'assistant',content:'她望向火山。'});expect(JSON.stringify(candidate)).not.toContain('火山之约必须保密');expect(body.messages.at(-1)?.content).toBe('说说远处的山\n\n'+BODY_TASK);
  await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'然后呢'})).text();await Promise.all(work);expect((aiRun.mock.calls[2][0].query as {messages:{content:string}[]}).messages[0].content).toContain('火山之约必须保密');
 });
-it('appends only the last body request output after repeated length continuations',async()=>{
- const {s}=await seed();aiRun.mockResolvedValueOnce(completion('她说：','length'));aiRun.mockResolvedValueOnce(completion('你好。','length'));aiRun.mockResolvedValueOnce(completion('坐下吧。'));aiRun.mockResolvedValueOnce(completion('我坐下。\n我问问。\n我看窗外。'));
- const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();await Promise.all(work);const lastBody=aiRun.mock.calls[2][0].query as {messages:{role:string;content:string}[]},candidate=aiRun.mock.calls[3][0].query as {messages:{role:string;content:string}[]};expect(candidate.messages.slice(0,lastBody.messages.length)).toEqual(lastBody.messages);expect(candidate.messages.at(-2)).toEqual({role:'assistant',content:'坐下吧。'});expect(JSON.parse(wire.trim().split('data: ').at(-1)!).message.content).toBe('她说：你好。坐下吧。');expect(aiRun).toHaveBeenCalledTimes(4);
+it('gives Director the complete combined body once after repeated length continuations',async()=>{
+ const {s}=await seed();aiRun.mockResolvedValueOnce(completion('她说：','length'));aiRun.mockResolvedValueOnce(completion('你好。','length'));aiRun.mockResolvedValueOnce(completion('坐下吧。'));aiRun.mockResolvedValueOnce(candidateCompletion(['我坐下。','我问问。','我看窗外。']));
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();await Promise.all(work);const candidate=aiRun.mock.calls[3][0].query as {messages:{role:string;content:string}[]};expect(candidate.messages).toHaveLength(2);expect(JSON.parse(candidate.messages[1].content).recentStory.at(-1)).toEqual({role:'assistant',content:'她说：你好。坐下吧。'});expect(JSON.parse(wire.trim().split('data: ').at(-1)!).message.content).toBe('她说：你好。坐下吧。');expect(aiRun).toHaveBeenCalledTimes(4);
+});
+
+it('supplies an incremental overall synopsis, reuses it on regeneration and keeps body checkpoints separate',async()=>{
+ const {s}=await seed();for(let ordinal=1;ordinal<=6;ordinal++)sessionDb.prepare('INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) VALUES(?,?,?,?,?,?,?)').run('past-'+ordinal,s.id,ordinal%2?'user':'assistant','已发生的重要剧情'+ordinal+'，包含约定和未决线索。','completed',ordinal,Date.now()+ordinal);
+ let synopses=0;aiRun.mockImplementation(async request=>{
+  const q=request.query as {messages:{content:string}[];response_format?:unknown};
+  if(q.messages[0].content.startsWith('总结已发生剧情')){synopses++;expect(JSON.stringify(q)).not.toContain('tool_call_id');return completion('旅人抵达港城，仍有约定未完成。');}
+  if(q.response_format){const context=JSON.parse(q.messages[1].content);expect(context.synopsis).toBe('旅人抵达港城，仍有约定未完成。');expect(context.recentStory).toHaveLength(4);expect(context.recentStory.at(-1).content).toBe('最新回应。');return candidateCompletion(['我询问约定。','我整理行李。','我观察门外。']);}
+  return completion('最新回应。');
+ });
+ const first=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'现在继续'})).text();await Promise.all(work);expect(JSON.parse(first.trim().split('data: ').at(-1)!).message.candidates).toHaveLength(3);expect(synopses).toBe(1);
+ const cached=JSON.parse(sessionDb.prepare('SELECT value_json FROM director_synopsis WHERE session_id=?').get(s.id)!.value_json as string);expect(cached.covered).toHaveLength(5);expect(sessionDb.prepare('SELECT summary_json FROM sessions WHERE id=?').get(s.id)?.summary_json).toBeNull();
+ const projection=sessionDb.prepare('SELECT value_json FROM model_projections').get()!.value_json as string;expect(projection).not.toContain('director_choices');expect(projection).not.toContain('旅人抵达港城，仍有约定未完成。');
+ await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),regenerate:true})).text();await Promise.all(work);expect(synopses).toBe(1);
+ await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'新的情节'})).text();await Promise.all(work);expect(synopses).toBe(2);
+ const latest=(await(await call('/api/sessions/'+s.id)).json() as {messages:Message[]}).messages.at(-1)!;const fork=await(await call('/api/sessions/'+s.id+'/fork','POST',{messageId:latest.id,content:'另一条情节'})).json() as {id:string};expect(sessionDb.prepare('SELECT * FROM director_synopsis WHERE session_id=?').get(fork.id)).toBeUndefined();
+});
+it('preserves a completed body when the required overall synopsis fails rather than omitting old story',async()=>{
+ const {s}=await seed();for(let ordinal=1;ordinal<=4;ordinal++)sessionDb.prepare('INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) VALUES(?,?,?,?,?,?,?)').run('past-'+ordinal,s.id,ordinal%2?'user':'assistant','已发生剧情。','completed',ordinal,Date.now()+ordinal);
+ aiRun.mockResolvedValueOnce(completion('正文成功。')).mockRejectedValueOnce(Error('synopsis unavailable'));
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'继续'})).text();await Promise.all(work);expect(JSON.parse(wire.trim().split('data: ').at(-1)!).message).toMatchObject({content:'正文成功。',status:'completed',finishReason:'stop',candidates:[]});expect(aiRun).toHaveBeenCalledTimes(2);expect(sessionDb.prepare('SELECT * FROM director_synopsis').all()).toHaveLength(0);expect(sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id).toBeNull();
+});
+it('cancels synopsis generation and rejects late cache writes after stopping the turn',async()=>{
+ const {s}=await seed();for(let ordinal=1;ordinal<=4;ordinal++)sessionDb.prepare('INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) VALUES(?,?,?,?,?,?,?)').run('past-'+ordinal,s.id,ordinal%2?'user':'assistant','已发生剧情。','completed',ordinal,Date.now()+ordinal);
+ const cancel=vi.fn();aiRun.mockResolvedValueOnce(completion('正文成功。')).mockResolvedValueOnce(new ReadableStream({cancel}));
+ const reader=(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'继续'})).body!.getReader();await reader.read();const drain=(async()=>{while(!(await reader.read()).done){}})();await vi.waitFor(()=>expect(aiRun).toHaveBeenCalledTimes(2));const id=sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id as string;await call('/api/sessions/'+s.id+'/stop','POST',{generationId:id});await drain;await Promise.all(work);expect(cancel).toHaveBeenCalled();expect(sessionDb.prepare('SELECT * FROM director_synopsis').all()).toHaveLength(0);expect(sessionDb.prepare('SELECT content,status,finish_reason FROM messages WHERE id=?').get(id)).toMatchObject({content:'正文成功。',status:'aborted',finish_reason:'stopped'});
 });
 
 it('lets ordinary authenticated users manage their own cards and sessions while retaining owner isolation', async () => {

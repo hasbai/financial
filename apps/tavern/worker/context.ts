@@ -5,7 +5,7 @@ import { roleplayGatewayOptions } from './gateway';
 import { modelInput } from './models';
 
 export type Summary = { text: string; covered: string[]; fingerprint: string };
-async function fingerprint(history: Message[]) {
+export async function fingerprint(history: Message[]) {
  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(history.map(m => [m.id, m.content]))));
  return Array.from(new Uint8Array(bytes), n => n.toString(16).padStart(2, '0')).join('');
 }
@@ -108,43 +108,50 @@ export class ConversationContext {
    } else throw new Error('当前输入与角色设定超过模型上下文，无法压缩历史');
   }
  }
- private async summarize(previous: string, history: Message[]): Promise<string> {
+ private async summarize(previous:string,history:Message[]){
+  const options={contextTokens:this.contextTokens,inputRatio:this.options.inputRatio,infer:this.infer};
+  try{return await summarizeStory(previous,history,options);}finally{this.contextTokens=options.contextTokens;}
+ }
+
+}
+
+/** Shared algorithm; callers own separate source checkpoints and context limits. */
+export async function summarizeStory(previous:string,history:Message[],options:{contextTokens:number|null;inputRatio:number;infer:(messages:PromptMessage[])=>Promise<string>;rule?:string}):Promise<string>{
   const source = [previous, ...history.map(m => m.content)].filter(Boolean).join('\n');
-  const messages: PromptMessage[] = [{ role: 'system', content: SUMMARY_RULE }, {role:'user',content:[previous?'已有记忆：\n'+previous:'',...history.map(m=>(m.role==='user'?'用户：':'角色：')+m.content),'请压缩以上会话。'].filter(Boolean).join('\n')}];
-  const cost = 256 + messages.reduce((n, m) => n + Math.ceil(estimateTokens(m.content) * this.options.inputRatio) + 8, 0);
-  let split = this.contextTokens !== null && cost > this.contextTokens;
+  const messages: PromptMessage[] = [{ role: 'system', content: (options.rule ?? SUMMARY_RULE) }, {role:'user',content:[previous?'已有记忆：\n'+previous:'',...history.map(m=>(m.role==='user'?'用户：':'角色：')+m.content),'请压缩以上会话。'].filter(Boolean).join('\n')}];
+  const cost = 256 + messages.reduce((n, m) => n + Math.ceil(estimateTokens(m.content) * options.inputRatio) + 8, 0);
+  let split = options.contextTokens !== null && cost > options.contextTokens;
   if (!split) {
    try {
-    const text = (await this.infer(messages)).trim();
+    const text = (await options.infer(messages)).trim();
     if (!text || text.length >= source.length) throw new Error('会话压缩未产生有效摘要');
     return text;
    } catch (error) {
     if (!(error instanceof SummaryRetry)) throw error;
-    if (error.contextTokens) this.contextTokens = error.contextTokens;
+    if (error.contextTokens) options.contextTokens = error.contextTokens;
     split = true;
    }
   }
   // Each retry reduces the source; no unchanged oversized summary request is repeated.
-  const previousCost = 256 + Math.ceil(estimateTokens(SUMMARY_RULE + '已有记忆：\n' + previous) * this.options.inputRatio) + 16;
-  if (previous && (history.length === 0 || (this.contextTokens !== null && previousCost >= this.contextTokens))) {
-   const shorter = await this.summarize('', [{ ...history[0], role: 'user', content: previous }]);
-   return this.summarize(shorter, history);
+  const previousCost = 256 + Math.ceil(estimateTokens((options.rule ?? SUMMARY_RULE) + '已有记忆：\n' + previous) * options.inputRatio) + 16;
+  if (previous && (history.length === 0 || (options.contextTokens !== null && previousCost >= options.contextTokens))) {
+   const shorter = await summarizeStory('', [{ ...history[0], role: 'user', content: previous }], options);
+   return summarizeStory(shorter, history, options);
   }
   if (history.length > 1) {
    const middle = Math.ceil(history.length / 2);
-   const first = await this.summarize(previous, history.slice(0, middle));
-   return this.summarize(first, history.slice(middle));
+   const first = await summarizeStory(previous, history.slice(0, middle), options);
+   return summarizeStory(first, history.slice(middle), options);
   }
   const m = history[0];
-  if(m?.content.length===1 && previous){const shorter=await this.summarize('',[{...m,role:'user',content:previous}]);return this.summarize(shorter,history);}
+  if(m?.content.length===1 && previous){const shorter=await summarizeStory('',[{...m,role:'user',content:previous}], options);return summarizeStory(shorter,history, options);}
   if (!m || m.content.length < 2) throw new Error('模型上下文无法容纳会话摘要');
   const middle = Math.ceil(m.content.length / 2);
-  const first = await this.summarize(previous, [{ ...m, content: m.content.slice(0, middle) }]);
-  return this.summarize(first, [{ ...m, content: m.content.slice(middle) }]);
- }
+  const first = await summarizeStory(previous, [{ ...m, content: m.content.slice(0, middle) }], options);
+  return summarizeStory(first, [{ ...m, content: m.content.slice(middle) }], options);
 }
 
-export async function summarizeWithModel(env: Env, username: string, requestId: string, settings: Settings, messages: PromptMessage[], signal: AbortSignal) {
+export async function summarizeWithModel(env: Env, username: string, requestId: string, settings: Settings, messages: PromptMessage[], signal: AbortSignal, observe?:(event:Parameters<import('./metrics').InferenceMetrics['observe']>[0],logId:string|null)=>void) {
  const opts = roleplayGatewayOptions(env, username, requestId);
  const result = await env.AI.gateway(env.AIG_GATEWAY_ID).run({ provider: 'compat', endpoint: 'chat/completions', headers: { ...opts.extraHeaders, 'Content-Type': 'application/json' },
   query: { model: 'dynamic/rp', messages, stream: true, ...modelInput({ ...settings, thinkingEnabled: false }) } }, { gateway: opts.gateway, signal });
@@ -159,7 +166,7 @@ export async function summarizeWithModel(env: Env, username: string, requestId: 
  let text = '', finish = '';
  for await (const data of sseData(result.body, signal)) {
   if (data === '[DONE]') break;
-  const event = JSON.parse(data);
+  const event = JSON.parse(data);observe?.(event,result.headers.get('cf-aig-log-id'));
   if (event.error) { const limit = contextLimit(event); if (limit) throw new SummaryRetry(limit); throw new Error('会话压缩失败'); }
   const c = event.choices?.[0];
   if (typeof c?.delta?.content === 'string') text += c.delta.content;
