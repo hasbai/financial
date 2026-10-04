@@ -3,6 +3,7 @@ import worker from './index';import {TavernSession} from './session-object';impo
 vi.mock('cloudflare:workers',()=>({DurableObject:class {constructor(public ctx:DurableObjectState,public env:Env){}}}));import {identity,AuthError} from './auth';import {DEFAULT_SETTINGS,type Message} from '../shared/types';
 import { BODY_TASK } from '../shared/candidates';
 import { DIRECTOR_RESPONSE_FORMAT } from './director';
+import { LoreIndex } from './lore';
 vi.mock('./auth',async(original)=>({...await original<typeof import('./auth')>(),identity:vi.fn()}));
 const card={spec:'chara_card_v2',spec_version:'2.0',data:{name:'岚',description:'港城的旅店主人',personality:'沉稳',scenario:'港城',first_mes:'你好，{{user}}。',mes_example:'',system_prompt:'',post_history_instructions:'',alternate_greetings:['欢迎'],tags:[],creator:'测试',extensions:{}}};
 let db:DatabaseSync,sessionDb:DatabaseSync,env:Env,work:Promise<unknown>[],files:Map<string,Uint8Array>;type AiRun=(data:AIGatewayUniversalRequest,options?:{gateway?:UniversalGatewayOptions;signal?:AbortSignal})=>Promise<unknown>;let aiRun:ReturnType<typeof vi.fn<AiRun>>;let beforeRun:((sql:string,values:unknown[])=>void)|undefined;
@@ -196,6 +197,29 @@ it.each(['stop'])('keeps clean prose with invalid candidates on %s',async finish
 function completion(content:string,finish='stop') {return new ReadableStream<Uint8Array>({start(c){c.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{content},finish_reason:finish}]})+'\n\ndata: [DONE]\n\n'));c.close();}});}
 function candidateCompletion(choices:string[]){return completion(JSON.stringify({choices}));}
 function tool(name:string,args:unknown,id='call-1'){return new Response('data: '+JSON.stringify({choices:[{delta:{tool_calls:[{index:0,id,type:'function',function:{name,arguments:JSON.stringify(args)}}]},finish_reason:'tool_calls'}]})+'\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}});}
+it.each([{query:'钥匙',owner:'other'},{query:''},{query:'字'.repeat(161)}])('rejects invalid memory arguments before lore indexing: %j',async args=>{
+ const recall=vi.spyOn(LoreIndex.prototype,'search').mockResolvedValue([]);
+ try{const {s}=await seed();aiRun.mockResolvedValueOnce(tool('search_memory',args));const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'回忆钥匙'})).text();await Promise.all(work);expect(wire).toContain('"type":"error"');expect(recall).not.toHaveBeenCalled();expect(aiRun).toHaveBeenCalledTimes(1);}finally{recall.mockRestore();}
+});
+it('rejects an identical repeated memory call before doing the second external search',async()=>{
+ const recall=vi.spyOn(LoreIndex.prototype,'search').mockResolvedValue([]);
+ try{const {s}=await seed();aiRun.mockResolvedValueOnce(tool('search_memory',{query:'你好'})).mockResolvedValueOnce(tool('search_memory',{query:'你好'},'again'));const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'回忆开场'})).text();await Promise.all(work);expect(wire).toContain('"type":"error"');expect(recall).toHaveBeenCalledTimes(1);expect(aiRun).toHaveBeenCalledTimes(2);}finally{recall.mockRestore();}
+});
+it.each(['invalid','duplicate'])('preflights the full tool batch before any lore search: %s',async kind=>{
+ const recall=vi.spyOn(LoreIndex.prototype,'search').mockResolvedValue([]);
+ try{const {s}=await seed();const first={index:0,id:'first',type:'function',function:{name:'search_memory',arguments:'{"query":"钥匙"}'}},second={...first,index:1,id:'second',function:{name:kind==='invalid'?'fetch':'search_memory',arguments:kind==='invalid'?'{}':first.function.arguments}};
+ aiRun.mockResolvedValueOnce(new Response('data: '+JSON.stringify({choices:[{delta:{tool_calls:[first,second]},finish_reason:'tool_calls'}]})+'\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}}));
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'回忆钥匙'})).text();await Promise.all(work);expect(wire).toContain('"type":"error"');expect(recall).not.toHaveBeenCalled();expect(aiRun).toHaveBeenCalledTimes(1);}finally{recall.mockRestore();}
+});
+it('passes mixed history and worldbook sources into the native model continuation',async()=>{
+ const evidence={id:'lore-key',text:'铜钥匙打开北门。',source:{bookId:'gates',revision:'v1',entryId:'keys'}},recall=vi.spyOn(LoreIndex.prototype,'search').mockResolvedValue([evidence]);
+ try{const {s}=await seed();for(const [i,text] of ['钥匙在岚手中。','门上有钥匙孔。','更正：钥匙已交给旅人。'].entries())sessionDb.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at) VALUES(?,?,'assistant',?,'completed',?,?)").run('history-'+i,s.id,text,i+1,Date.now()+i);
+ aiRun.mockResolvedValueOnce(tool('search_memory',{query:'钥匙'})).mockResolvedValueOnce(completion('旅人走向北门。'));
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'回忆钥匙'})).text();await Promise.all(work);expect(wire).toContain('"status":"completed"');
+ const query=aiRun.mock.calls[1][0].query as {messages:{role:string;content:string}[]},hits=JSON.parse(query.messages.find(m=>m.role==='tool')!.content);
+ expect(hits).toHaveLength(3);expect(hits).toContainEqual(evidence);expect(hits.some((h:{id:string})=>h.id==='history-2')).toBe(true);expect(recall).toHaveBeenCalledTimes(1);
+ }finally{recall.mockRestore();}
+});
 it('runs two native tool steps, commits the snapshot atomically and isolates Director input from tool protocol and sees staged state',async()=>{
  const {s}=await seed();aiRun.mockResolvedValueOnce(tool('search_memory',{query:'你好'})).mockResolvedValueOnce(tool('update_state',{patch:{scene:'北港',facts:{钥匙:'旅人持有'}}},'call-2')).mockResolvedValueOnce(completion('北港灯亮了。'));
  const requestId=crypto.randomUUID(),wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'我们已经到达北港，钥匙在我手里。'})).text();await Promise.all(work);expect(wire).not.toContain('tool_calls');expect(aiRun).toHaveBeenCalledTimes(4);

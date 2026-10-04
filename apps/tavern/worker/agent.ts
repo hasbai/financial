@@ -36,6 +36,17 @@ export function patchState(state:StoryState,value:unknown):StoryState {
 /** Latest successful story versions; failed regenerations remain visible but never replace committed facts. */
 export function storyMessages(messages:Message[]):Message[]{const chosen=new Map<number,Message>();for(const m of messages)if(m.status==='completed')chosen.set(m.ordinal,m);return [...chosen.values()].sort((a,b)=>a.ordinal-b.ordinal);}
 export type MemoryHit={id:string;text:string;source:{messageId?:string;ordinal?:number;role?:Message['role'];bookId?:string;revision?:string;entryId?:string}};
+const memoryIdentity=(hit:MemoryHit)=>stableJson({id:hit.id,source:hit.source});
+/** Keep both sources without comparing lexical scores with vector similarity. */
+export function mergeMemory(history:MemoryHit[],lore:MemoryHit[]):MemoryHit[]{
+ const unique=(hits:MemoryHit[])=>[...new Map(hits.map(hit=>[memoryIdentity(hit),hit])).values()];
+ const story=unique(history),books=unique(lore);
+ if(!books.length)return story.slice(0,3);
+ // History recall is already relevance-filtered and chronological. Keep its latest corrections.
+ const chosen=story.slice(-2),seen=new Set(chosen.map(memoryIdentity));
+ for(const hit of [...books,...story]){const key=memoryIdentity(hit);if(!seen.has(key)){chosen.push(hit);seen.add(key);}if(chosen.length===3)break;}
+ return chosen;
+}
 export function searchMemory(history:Message[],query:string):MemoryHit[]{
  if(!query.trim()||[...query].length>160)throw Error('query需为1–160字');
  const normalized=query.toLocaleLowerCase(),parts=normalized.match(/[a-z0-9]+|[\p{Script=Han}]+/gu)??[];
@@ -64,13 +75,25 @@ export type ToolStep={call:ToolCall;result:string};
 export class AgentTurn {
  state:StoryState;steps:ToolStep[]=[];private seen=new Set<string>();private evidence=new Set<string>();private emptySearch=false;
  constructor(readonly before:StoryState,readonly history:Message[]){this.state=structuredClone(before);}
+ /** Check the entire batch without consuming calls or touching external retrieval. */
+ validate(calls:ToolCall[]):void{
+  const seen=new Set(this.seen);let state=this.state;
+  for(const call of calls){
+   const args=JSON.parse(call.function.arguments);if(!object(args))throw Error('工具参数无效');
+   const key=call.function.name+':'+stableJson(args);if(seen.has(key))throw Error('工具调用没有进展');seen.add(key);
+   if(call.function.name==='search_memory'){if(Object.keys(args).length!==1||typeof args.query!=='string')throw Error('记忆检索参数无效');searchMemory([],args.query);}
+   else if(call.function.name==='update_state'){if(Object.keys(args).length!==1||!('patch'in args))throw Error('状态更新参数无效');state=patchState(state,args.patch);}
+   else throw Error('工具不存在');
+  }
+ }
  execute(calls:ToolCall[],lore:Map<string,MemoryHit[]>=new Map()):PromptMessage[]{
+  this.validate(calls);
   const results:PromptMessage[]=[];let progress=false;
   for(const call of calls){
    const args=JSON.parse(call.function.arguments);if(!object(args))throw Error('工具参数无效');
    const key=call.function.name+':'+stableJson(args);if(this.seen.has(key))throw Error('工具调用没有进展');this.seen.add(key);
    let value:unknown;
-   if(call.function.name==='search_memory'){if(Object.keys(args).length!==1||typeof args.query!=='string')throw Error('记忆检索参数无效');const hits=[...searchMemory(this.history,args.query),...(lore.get(args.query)??[])].slice(0,3);value=hits;const added=hits.filter(hit=>!this.evidence.has(hit.id));for(const hit of hits)this.evidence.add(hit.id);progress ||= added.length>0||!this.emptySearch&&!hits.length;this.emptySearch ||= !hits.length;}
+   if(call.function.name==='search_memory'){if(Object.keys(args).length!==1||typeof args.query!=='string')throw Error('记忆检索参数无效');const hits=mergeMemory(searchMemory(this.history,args.query),lore.get(args.query)??[]);value=hits;const added=hits.filter(hit=>!this.evidence.has(memoryIdentity(hit)));for(const hit of hits)this.evidence.add(memoryIdentity(hit));progress ||= added.length>0||!this.emptySearch&&!hits.length;this.emptySearch ||= !hits.length;}
    else if(call.function.name==='update_state'){if(Object.keys(args).length!==1||!('patch'in args))throw Error('状态更新参数无效');const next=patchState(this.state,args.patch);progress ||= stableJson(next)!==stableJson(this.state);this.state=next;value={ok:true};}
    else throw Error('工具不存在');
    const result=stableJson(value);this.steps.push({call,result});results.push({role:'tool',tool_call_id:call.id,content:result});

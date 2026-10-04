@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {AgentTurn,emptyState,patchState,searchMemory,stableJson,storyMessages,ToolCallStream} from './agent';
+import {AgentTurn,emptyState,mergeMemory,patchState,searchMemory,stableJson,storyMessages,ToolCallStream} from './agent';
 import type {Message} from '../shared/types';
 const m=(id:string,ordinal:number,content:string,status:Message['status']='completed'):Message=>({id,ordinal,content,status,role:'assistant',requestId:null,createdAt:ordinal});
 it('validates bounded state patches, preserves omissions and supports deletion without prototype writes',()=>{
@@ -29,4 +29,37 @@ it('stages native state and memory results without changing the before snapshot 
 it('allows one empty search result but stops consecutive different queries without new evidence',()=>{
  const turn=new AgentTurn(emptyState(),[]);const call=(query:string)=>({id:query,type:'function' as const,function:{name:'search_memory',arguments:JSON.stringify({query})}});
  expect(turn.execute([call('灯塔')])[0].content).toBe('[]');expect(()=>turn.execute([call('北港')])).toThrow('没有进展');
+});
+it('keeps worldbook evidence when history fills the recall limit, including the latest correction',()=>{
+ const history=[m('old',0,'钥匙在岚手中。'),m('middle',1,'门上的钥匙孔是铜制的。'),m('corrected',2,'更正：钥匙已交给旅人。')];
+ const lore={id:'book-hit',text:'铜钥匙只能打开北门，南门需要银钥匙。',source:{bookId:'gates',revision:'v1',entryId:'keys'}};
+ const turn=new AgentTurn(emptyState(),history);
+ const results=turn.execute([{id:'search',type:'function',function:{name:'search_memory',arguments:'{"query":"钥匙"}'}}],new Map([['钥匙',[lore]]]));
+ const hits=JSON.parse(results[0].content);
+ expect(hits).toHaveLength(3);expect(hits).toContainEqual(lore);expect(hits.some((hit:{id:string})=>hit.id==='corrected')).toBe(true);
+});
+it('fills recall from either available source and deduplicates by source, not a shared id',()=>{
+ const history=searchMemory([m('same',0,'铜钥匙'),m('next',1,'银钥匙')],'钥匙');
+ const lore={id:'same',text:'铜钥匙打开北门。',source:{bookId:'gates',revision:'v1',entryId:'keys'}};
+ expect(mergeMemory(history,[])).toEqual(history);expect(mergeMemory([], [lore,lore])).toEqual([lore]);
+ expect(mergeMemory(history,[lore,lore])).toEqual([...history,lore]);
+ const second={...lore,id:'second',source:{...lore.source,entryId:'second'}};
+ expect(mergeMemory(history.slice(0,1),[lore,second])).toEqual([history[0],lore,second]);
+});
+it('counts a new source or book revision as evidence while stopping repeated evidence',()=>{
+ const turn=new AgentTurn(emptyState(),[m('same',0,'铜钥匙')]);
+ const call=(query:string)=>({id:query,type:'function' as const,function:{name:'search_memory',arguments:JSON.stringify({query})}});
+ turn.execute([call('铜钥匙')]);
+ const lore={id:'same',text:'钥匙打开北门。',source:{bookId:'gates',revision:'v1',entryId:'keys'}};
+ expect(turn.execute([call('钥匙')],new Map([['钥匙',[lore]]]))[0].content).toContain('"bookId":"gates"');
+ expect(turn.execute([call('银钥匙')],new Map([['银钥匙',[{...lore,source:{...lore.source,revision:'v2'}}]]]))[0].content).toContain('"revision":"v2"');
+ expect(()=>turn.execute([call('北门')],new Map([['北门',[{...lore,source:{...lore.source,revision:'v2'}}]]]))).toThrow('没有进展');
+});
+it('preflights a whole batch without consuming calls or partially staging state',()=>{
+ const turn=new AgentTurn(emptyState(),[]),update={id:'update',type:'function' as const,function:{name:'update_state',arguments:'{"patch":{"scene":"港口"}}'}},search={id:'search',type:'function' as const,function:{name:'search_memory',arguments:'{"query":"钥匙"}'}};
+ expect(()=>turn.validate([search,{...search,id:'duplicate'}])).toThrow('没有进展');
+ expect(()=>turn.execute([update,{...search,function:{name:'search_memory',arguments:'{"query":"钥匙","owner":"other"}'}}])).toThrow();
+ expect(turn.state).toEqual(emptyState());expect(turn.steps).toEqual([]);
+ turn.validate([update,search]);turn.validate([update,search]);expect(turn.execute([update,search]).map(r=>r.tool_call_id)).toEqual(['update','search']);
+ expect(turn.state.scene).toBe('港口');expect(()=>turn.validate([search])).toThrow('没有进展');
 });

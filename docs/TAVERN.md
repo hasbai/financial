@@ -56,9 +56,9 @@ D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整
 
 ## Prompt 与世界书契约
 
-顺序：系统/用户 persona → before_char 世界书 → 角色描述、性格、场景 → after_char 世界书 → 示例对白 → post_history_instructions（合并一个前置system）→ 完整历史消息 → 最后user的正文任务；正文stop后按实际请求快照追加新正文和候选user任务。`system_prompt` 与 `post_history_instructions` 的 `{{original}}` 合并默认值；`{{char}}`/`{{user}}`/`<char>`/`<user>` 支持，V3 nickname 优先。creator_notes、标签、来源不进入 Prompt。
+正文顺序：系统/用户 persona → before_char 世界书 → 角色描述、性格、场景 → after_char 世界书 → 示例对白 → post_history_instructions（合并一个前置system）→ 完整历史消息或有效摘要/模型投影 → 最后user的正文任务。正文stop后独立Director按[候选契约](TAVERN-MODEL-SETTINGS.md#正文结束后的-director-agent2026-10-04)读取核心卡片、故事约束、persona、整体梗概、最新状态与最近四条剧情，不携带正文工具或请求投影。`system_prompt` 与 `post_history_instructions` 的 `{{original}}` 合并默认值；`{{char}}`/`{{user}}`/`<char>`/`<user>` 支持，V3 nickname 优先。creator_notes、标签、来源不进入 Prompt。
 
-支持 V2/V3 book 与 SillyTavern entries 对象导入；每个条目只插入一次。禁用不触发、constant 常驻、主关键词与 selective 副关键词逻辑、scan_depth、case_sensitive、priority、insertion_order、before/after_char，递归扫描有迭代上限。公开语料的散文世界书转换为常驻条目，不推断原数据未定义的关键词。正则与复杂 ST 扩展保留但不执行，解析输出能力状态。中文按字符、英文按保守字符估算 tokens（不是模型 tokenizer 精确值），容量按上游实际n_ctx及明确超限反馈更新并预留输出；后台探测不阻断对话，未知时保留核心设定和最近完整轮次。优先保留系统设定与最新完整轮次；超大的设定/单轮明确报错，不能静默切掉最新输入。
+支持 V2/V3 book 与 SillyTavern entries 对象导入；每个条目只插入一次。禁用不触发、constant 常驻、主关键词与 selective 副关键词逻辑、scan_depth、case_sensitive、priority、insertion_order、before/after_char，递归扫描有迭代上限。公开语料的散文世界书转换为常驻条目，不推断原数据未定义的关键词。正则与复杂 ST 扩展保留但不执行，解析输出能力状态。中文按字符、英文按保守字符估算 tokens（不是模型 tokenizer 精确值），容量按上游实际n_ctx及明确超限反馈更新，不预扣输出预算；后台探测不阻断对话，未知时保留全部有效历史。超限才摘要较早剧情，原文不删除；超大的核心设定/当前输入明确报错，不能静默切掉最新输入。
 
 ## 生成、重试与编辑契约
 
@@ -66,7 +66,7 @@ D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整
 
 会话Agent的状态版本、原生工具、长记忆、持久模型投影与世界书检索以[当前Agent实施契约](TAVERN-AGENT-PLAN.md#agent-实施契约2026-10-04)为准。失败重生成只影响可见最新结果，已提交剧情版本仍用于模型与状态；不把失败工具暂存或续聊候选保存成已发生事实。
 
-停止使用专属 API 改状态；流式泵检测停止并取消上游，不仅隐藏 UI。客户端断网通过 reader.cancel 导致中断；所有结尾都释放本次锁。重新生成追加替代助手消息，旧内容保留；显示最新版本（包括失败或部分回复），不让旧成功版本遮住本次失败。编辑历史创建新会话并复制到编辑点，保留原会话。没有自动隐式重试或切模型。长请求设置最长生成时限，终止异常 upstream SSE，过滤 reasoning_content。
+停止使用专属 API 改状态；流式泵检测停止并取消上游，不仅隐藏 UI。客户端断网通过 reader.cancel 导致中断；所有结尾都释放本次锁。重新生成追加替代助手消息，旧内容保留；显示最新版本（包括失败或部分回复），不让旧成功版本遮住本次失败。编辑历史创建新会话并复制到编辑点，保留原会话。没有自动隐式重试或切模型；正文length按同一请求显式续写契约继续。不设整轮最长生成时限，持续续租占用用于中断恢复；异常 upstream SSE结束并保存实际部分正文，过滤 reasoning_content。
 
 ## 2026-10-03 使用反馈修订
 
