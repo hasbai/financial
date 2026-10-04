@@ -232,6 +232,11 @@ test('ordinary logged-in users can read published content but cannot enter the e
   await expect(page.getByRole('link', { name: '写文章' })).toHaveCount(0);
   await expect(page).toHaveScreenshot('studio-denied.png', { fullPage: true });
   await page.getByRole('button', { name: '切换深色' }).click();
+  await expect(page.locator('html')).toHaveClass(/dark/);
+  await expect(page.getByRole('button', { name: '切换浅色' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '编辑室', exact: true })).toHaveCSS('color', 'rgb(240, 240, 240)');
+  const actions = page.locator('.header-actions [data-slot="button"]');
+  for (let index = 0; index < 2; index++) await expect(actions.nth(index)).toHaveCSS('color', 'rgb(240, 240, 240)');
   await expect(page).toHaveScreenshot('studio-denied-dark.png', { fullPage: true });
   await page.goto('/articles/hello-world');
   await expect(page.getByRole('heading', { name: 'Hello World，开始记录' })).toBeVisible();
