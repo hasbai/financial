@@ -18,6 +18,29 @@ it('assembles chunked tool calls, rejects malformed indices and incomplete ident
  const stream=new ToolCallStream();stream.push([{index:0,id:'c',type:'function',function:{name:'update_',arguments:'{"patch":'}}]);stream.push([{index:0,function:{name:'state',arguments:'{"scene":"港口"}}'}}]);expect(stream.finish()[0].function).toEqual({name:'update_state',arguments:'{"patch":{"scene":"港口"}}'});
  expect(()=>new ToolCallStream().push([{index:9}])).toThrow();const partial=new ToolCallStream();partial.push([{index:0,function:{name:'update_state'}}]);expect(()=>partial.finish()).toThrow();
 });
+it('anchors excerpts at the longest matching term instead of an earlier partial match',()=>{
+ const content='北门早已关闭。'+'风'.repeat(1000)+'北门钥匙如今放在南塔木柜。';
+ const hits=searchMemory([m('story',0,content)],'北门钥匙');
+ expect(hits).toHaveLength(1);expect(hits[0].text).toContain('北门钥匙如今放在南塔木柜');expect([...hits[0].text].length).toBeLessThanOrEqual(600);
+});
+it('maps expanding lowercase offsets back to original Unicode characters without empty or split excerpts',()=>{
+ for(const prefix of ['İ'.repeat(800),'😀'.repeat(61)+'a']){
+  const content=prefix+'南塔钥匙藏在木柜。',hit=searchMemory([m('unicode',0,content)],'南塔钥匙')[0];
+  expect(hit.text).toContain('南塔钥匙藏在木柜');expect(hit.text.isWellFormed()).toBe(true);expect(content.includes(hit.text)).toBe(true);expect([...hit.text].length).toBeLessThanOrEqual(600);
+ }
+ const prefix='😀'.repeat(251)+'a',hit=searchMemory([m('emoji',0,prefix+'南塔钥匙藏在木柜。')],'南塔钥匙')[0];
+ expect([...hit.text].slice(0,100).join('')).toBe([...prefix].slice(-100).join(''));
+});
+it('matches supplementary Han bigrams without matching a shared surrogate half',()=>{
+ expect(searchMemory([m('related',0,'𠀀𠀁藏在北门')],'𠀀𠀁𠀂')[0]?.id).toBe('related');
+ expect(searchMemory([m('partial',0,'𠀀藏在北门')],'𠀀𠀁𠀂')).toEqual([]);
+ expect(searchMemory([m('partial',0,'𠀀藏在北门')],'𠀀𠀁')).toEqual([]);
+ expect(searchMemory([m('unrelated',0,'𠀃藏在北门')],'𠀀𠀁𠀂')).toEqual([]);
+});
+it('keeps a full 160-character query inside the bounded excerpt',()=>{
+ const query='北门钥匙'.repeat(40),content='北门。'+'风'.repeat(1000)+query+'在南塔。';
+ expect(searchMemory([m('long-query',0,content)],query)[0].text).toContain(query+'在南塔');
+});
 it('stages native state and memory results without changing the before snapshot or accepting repeated calls',()=>{
  const before=emptyState(),turn=new AgentTurn(before,[m('old',0,'铜钥匙还在岚手中')]);
  const update={id:'u',type:'function' as const,function:{name:'update_state',arguments:'{"patch":{"scene":"旅店"}}'}};

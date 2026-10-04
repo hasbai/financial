@@ -241,6 +241,16 @@ it('continues native retrieval for distinct fragments of one long message, persi
  const steps=JSON.parse(sessionDb.prepare('SELECT steps_json FROM turn_snapshots').get()!.steps_json as string);expect(steps.map((step:{call:{id:string}})=>step.call.id)).toEqual(['keys','watch']);
  expect((await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId})).json() as {replayed:boolean}).replayed).toBe(true);expect(aiRun).toHaveBeenCalledTimes(4);
 });
+it('sends an intact exact-query excerpt after earlier partial matches and expanding Unicode to the model and export',async()=>{
+ const {s}=await seed(),original='北门早已关闭。'+'İ'.repeat(800)+'😀'.repeat(61)+'a北门钥匙放在南塔木柜。';sessionDb.prepare('UPDATE messages SET content=? WHERE session_id=?').run(original,s.id);
+ aiRun.mockResolvedValueOnce(tool('search_memory',{query:'北门钥匙'},'keys')).mockResolvedValueOnce(completion('北门钥匙放在南塔木柜。'));
+ const requestId=crypto.randomUUID(),wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'核对旧事'})).text();await Promise.all(work);expect(wire).not.toContain('"type":"error"');
+ const query=aiRun.mock.calls[1][0].query as {messages:{role:string;content:string}[]},hit=JSON.parse(query.messages.find(m=>m.role==='tool')!.content)[0];
+ expect(hit.text).toContain('北门钥匙放在南塔木柜');expect(hit.text.isWellFormed()).toBe(true);expect(original.includes(hit.text)).toBe(true);
+ const exported=await(await call('/api/sessions/'+s.id+'/export')).text();const lines=exported.trim().split('\n').map(line=>JSON.parse(line)),snapshot=lines.at(-1).extra.tavern_agent;
+ expect(JSON.parse(JSON.parse(snapshot.steps_json)[0].result)[0]).toEqual(hit);expect(lines[1].mes).toBe(original);
+ expect((await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId})).json() as {replayed:boolean}).replayed).toBe(true);expect(aiRun).toHaveBeenCalledTimes(3);
+});
 it('stops different native queries that return the same excerpt instead of allowing a retrieval loop',async()=>{
  const {s}=await seed();sessionDb.prepare('UPDATE messages SET content=? WHERE session_id=?').run('铜钥匙在北门。',s.id);
  aiRun.mockResolvedValueOnce(tool('search_memory',{query:'铜钥匙'},'keys')).mockResolvedValueOnce(tool('search_memory',{query:'铜钥匙 北门'},'again'));

@@ -51,11 +51,18 @@ export function mergeMemory(history:MemoryHit[],lore:MemoryHit[]):MemoryHit[]{
 }
 export function searchMemory(history:Message[],query:string):MemoryHit[]{
  if(!query.trim()||[...query].length>160)throw Error('query需为1–160字');
- const normalized=query.toLocaleLowerCase(),parts=normalized.match(/[a-z0-9]+|[\p{Script=Han}]+/gu)??[];
- const terms=[...new Set(parts.flatMap(p=>/\p{Script=Han}/u.test(p)&&p.length>2?[p,...Array.from({length:p.length-1},(_,i)=>p.slice(i,i+2))]:[p]))];
+ const normalized=query.toLowerCase(),parts=normalized.match(/[a-z0-9]+|[\p{Script=Han}]+/gu)??[];
+ const terms=[...new Set(parts.flatMap(p=>{const chars=[...p];return /\p{Script=Han}/u.test(p)&&chars.length>2?[p,...chars.slice(1).map((_,i)=>chars.slice(i,i+2).join(''))]:[p];}))];
  const selected=storyMessages(history);
- const scored=selected.map(m=>{const text=m.content.toLocaleLowerCase();const score=terms.reduce((n,t)=>n+(text.includes(t)?t.length:0),0);return {m,score};}).filter(x=>x.score>0).sort((a,b)=>b.score-a.score||b.m.ordinal-a.m.ordinal).slice(0,3).sort((a,b)=>a.m.ordinal-b.m.ordinal);
- return scored.map(({m})=>{const lower=m.content.toLocaleLowerCase(),at=Math.max(0,Math.min(...terms.map(t=>lower.indexOf(t)).filter(n=>n>=0))-100);return {id:m.id,text:[...m.content.slice(at)].slice(0,600).join(''),source:{messageId:m.id,ordinal:m.ordinal,role:m.role}};});
+ const scored=selected.map(m=>{const text=m.content.toLowerCase();const score=terms.reduce((n,t)=>n+(text.includes(t)?t.length:0),0);return {m,score};}).filter(x=>x.score>0).sort((a,b)=>b.score-a.score||b.m.ordinal-a.m.ordinal).slice(0,3).sort((a,b)=>a.m.ordinal-b.m.ordinal);
+ return scored.map(({m})=>{
+  const lower=m.content.toLowerCase(),chars=[...m.content];
+  const matches=terms.map(term=>({at:lower.indexOf(term),length:[...term].length})).filter(match=>match.at>=0).sort((a,b)=>b.length-a.length||a.at-b.at);
+  // Lowercase can expand characters (e.g. İ); map its UTF-16 offset back to original code points.
+  let offset=0,index=0;while(index<chars.length&&offset+chars[index].toLowerCase().length<=matches[0].at){offset+=chars[index].toLowerCase().length;index++;}
+  const start=Math.max(0,index-100);
+  return {id:m.id,text:chars.slice(start,start+600).join(''),source:{messageId:m.id,ordinal:m.ordinal,role:m.role}};
+ });
 }
 export type ToolCall={id:string;type:'function';function:{name:string;arguments:string}};
 export class ToolCallStream {
