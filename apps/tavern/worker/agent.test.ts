@@ -26,7 +26,7 @@ it('anchors excerpts at the longest matching term instead of an earlier partial 
 it('maps expanding lowercase offsets back to original Unicode characters without empty or split excerpts',()=>{
  for(const prefix of ['İ'.repeat(800),'😀'.repeat(61)+'a']){
   const content=prefix+'南塔钥匙藏在木柜。',hit=searchMemory([m('unicode',0,content)],'南塔钥匙')[0];
-  expect(hit.text).toContain('南塔钥匙藏在木柜');expect(hit.text.isWellFormed()).toBe(true);expect(content.includes(hit.text)).toBe(true);expect([...hit.text].length).toBeLessThanOrEqual(600);
+  expect(hit.text).toContain('南塔钥匙藏在木柜');expect(hit.text).not.toMatch(/[\uD800-\uDFFF]/u);expect(content.includes(hit.text)).toBe(true);expect([...hit.text].length).toBeLessThanOrEqual(600);
  }
  const prefix='😀'.repeat(251)+'a',hit=searchMemory([m('emoji',0,prefix+'南塔钥匙藏在木柜。')],'南塔钥匙')[0];
  expect([...hit.text].slice(0,100).join('')).toBe([...prefix].slice(-100).join(''));

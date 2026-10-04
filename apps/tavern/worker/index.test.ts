@@ -246,7 +246,7 @@ it('sends an intact exact-query excerpt after earlier partial matches and expand
  aiRun.mockResolvedValueOnce(tool('search_memory',{query:'北门钥匙'},'keys')).mockResolvedValueOnce(completion('北门钥匙放在南塔木柜。'));
  const requestId=crypto.randomUUID(),wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'核对旧事'})).text();await Promise.all(work);expect(wire).not.toContain('"type":"error"');
  const query=aiRun.mock.calls[1][0].query as {messages:{role:string;content:string}[]},hit=JSON.parse(query.messages.find(m=>m.role==='tool')!.content)[0];
- expect(hit.text).toContain('北门钥匙放在南塔木柜');expect(hit.text.isWellFormed()).toBe(true);expect(original.includes(hit.text)).toBe(true);
+ expect(hit.text).toContain('北门钥匙放在南塔木柜');expect(hit.text).not.toMatch(/[\uD800-\uDFFF]/u);expect(original.includes(hit.text)).toBe(true);
  const exported=await(await call('/api/sessions/'+s.id+'/export')).text();const lines=exported.trim().split('\n').map(line=>JSON.parse(line)),snapshot=lines.at(-1).extra.tavern_agent;
  expect(JSON.parse(JSON.parse(snapshot.steps_json)[0].result)[0]).toEqual(hit);expect(lines[1].mes).toBe(original);
  expect((await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId})).json() as {replayed:boolean}).replayed).toBe(true);expect(aiRun).toHaveBeenCalledTimes(3);
