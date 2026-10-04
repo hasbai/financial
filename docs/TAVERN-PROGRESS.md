@@ -1,5 +1,20 @@
 # Tavern 交付状态
 
+## 会话DO清理与梗概分工（2026-10-05，已上线）
+
+按用户要求，删除会话先持久化清理意图与alarm，确认D1删除标记/释放世界书绑定，再await deleteAll原子清空对应DO私有存储与alarm，成功后才返回；失败由同一意图、重复DELETE或alarm恢复。构造函数不建表，删除后旧请求不能重建；正文/body与capacity准备阶段的迟到生成返回404，生成收尾未结束仍409。D1删除标记永久阻止旧来源复活，DO不再永久保留tombstone。实例随运行时关闭释放，不声称内存立即销毁或D1旧迁移来源物理擦除。
+
+独立整体梗概接受可靠非空结果，不要求短来源的总结必须更短；仅构建局部使用宽松条件，正文/Director局部压缩及旧梗概递归缩容仍要求缩短并检查进展。解决上一批短开场导致候选跳过的真实样本；不增加重试、模型入口或迁移。
+
+- 139项相关检查通过。真实workerd/SQLite验收deleteAll后无业务表/alarm，重启、重复DELETE、旧生成及读写不能重建，其他会话正常；本地空SQLite基础页显示4096，不把该指标当作Cloudflare计费存储或声称0字节。自动化另覆盖D1/deleteAll失败、两阶段恢复、body/capacity等待竞态、收尾409。固定Linux28流程84图通过，81逐像素一致，桌面三图24/27/1像素既有差异保留原基线；设备模拟不是真机。
+- [PR #55](https://github.com/hasbai/financial/pull/55) head `3afc9785f7b78ecd2dcd90ee7fcc57a6bb945e11`，Check `37215647759`、Blog `37215647688`、Zboard `37215647618`、Tavern `37215647620` 的八项必需状态成功，各一次统一等待。包含最新main，squash `962e4c718cfea7a0133d5d04eb494b9b2f6aaaa1`。
+- 自动Build `70e8a9ac-99a9-4603-9504-1a1c56244ad2` success、push_event/main及commit_hash一致；deployment `544c90e0-2a72-4e22-9a59-ff971dbfa022` version `5238821f-c5ed-4e2f-9730-b02c6379f704` 流量100%，Node fetch health200同版本。没有手动部署。
+- 真实Universal Login/PKCE/JWT三轮正文13/12/25字，均completed/stop/三候选、刷新及UUID回放一致。短开场1字，第二轮整体梗概26字且Director实际发起并返回三条，日志 `01M43VAFCT75HRCKPTYQCEMPGQ`；混合回合 `e40574e9-8ac4-43ea-b251-a6e7dac9d8b2` 两次正文、两次真实BGE-M3，三来源包含最新用户更正与世界书锚点，独立Director未带tools/tool_choice，完整payload/三项metadata核对通过。
+- 线上DELETE及重复DELETE为200；删除后GET/export/PATCH/generate均404，列表不含目标，另一临时会话原文不变。临时两会话/世界书/角色4/4清理，全局设置未变，私人历史未改。生产故障注入与生成等待删除竞态未另诱导，以自动化/workerd为证。
+- Cloudflare账户级namespace对象列表未反映刚创建的临时对象，不能可靠关联其hasStoredData变化，未声称这层直接物理观测通过。首个验收脚本在身份关联失败后的清理阶段错误引用尚未创建的对照会话，目标会话已删、遗留临时角色随后清理；修正为不依赖该列表的应用链路验收后通过，无业务代码/CI/部署重跑。物理清空契约与运行证据以上述deleteAll/workerd结果为准。
+
+本批证据位于忽略目录 `apps/tavern/.local-visual/delete-synopsis` 与 `mixed-recall/delete-runtime-final.log`，无Token。当前方案与后续有条件迭代见Agent文档，下面保留各历史阶段证据。
+
 ## 架构对照与混合检索（2026-10-04，已上线）
 
 对照固定提交的 DSH Tavern/NextTavern 后，修复历史前三条吞掉世界书结果，以及非法/重复工具调用先发生外部索引/向量请求的问题。两源有命中时保留已召回历史中的最新两条和最优世界书一条，按完整来源身份去重；工具调用整批纯校验后才外部检索。当前 Director、调用次数与摘要契约同步方案，后续按锚点读原文、候选独立恢复、后台状态结算的收益与验收条件见 Agent 方案。
