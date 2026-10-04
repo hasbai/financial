@@ -8,7 +8,7 @@
 
 <svelte:head>
   <title>{site.name} — 写下此刻，留给以后。</title>
-  <meta name="description" content={site.name + "，公开阅读文章与手记，统一登录后使用经授权的个人工具。"} />
+  <meta name="description" content={site.name + "，记录思考与日常。"} />
   <link rel="canonical" href={site.origin} />
 </svelte:head>
 
@@ -17,11 +17,7 @@
   <div class="hero-center">
     <span class="hero-seal hero-rise" aria-hidden="true"><SnowflakeMark size={55} /></span>
     <h1 class="hero-exit-text"><span class="hero-greeting">Hi, 这里是 <em>{site.name}</em><span class="hero-wave" aria-hidden="true"><SnowflakeMark size={20} strokeWidth={2.2} /></span></span><span class="hero-statement">把 <em>想法</em> 写成文字，留下日常。</span></h1>
-    <div class="hero-description hero-rise hero-exit-meta">
-      <p>{site.name}是个人博客与工具站。文章和手记公开阅读；写作、个人记账、节点管理和 AI 文字对话需登录并获得授权。</p>
-      <p>Google 登录使用账号标识、名称、头像和邮箱确认身份、管理访问权限。数据处理与删除方式见<a href="/privacy">隐私政策</a>。</p>
-      <p>AI 功能用于文字对话，不提供私密影像生成；禁止制作或传播未经本人同意的私密影像。</p>
-    </div>
+    <p class="hero-description hero-rise hero-exit-meta">写一点思考，记一些日常，让值得留下的文字慢慢生长。</p>
   </div>
   <div class="hero-whisper hero-rise hero-exit-meta">
     <p>「写下此刻，留给以后。」</p>
