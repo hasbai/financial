@@ -1,6 +1,7 @@
 import { capabilities, modelInput, recordFeedback, type Capability } from './models';
-import { candidateDelimiter, BODY_TASK, CANDIDATE_TASK, CandidateStream, recoveryCandidates, validateCandidates } from '../shared/candidates';
+import { candidateDelimiter, BODY_TASK, CandidateStream } from '../shared/candidates';
 import { roleplayGatewayOptions } from './gateway';
+import { DirectorAgent, DirectorContextError, DIRECTOR_RESPONSE_FORMAT, prepareSynopsis } from './director';
 import { InferenceMetrics } from './metrics';
 import { parseBook, parseCard } from '../shared/cards';
 import {LoreIndex,embeddings} from './lore';
@@ -60,7 +61,7 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
   await owns();store.start(assistantId,regenerate||continuing?undefined:userMessage,{id:assistantId,role:'assistant',content:prefix,status:'pending',ordinal:assistantOrdinal,requestId,createdAt:messageTime+1});ready=true;
   store.beginState(assistantId,before);
  }catch(error){clearInterval(stopWatcher);abort.abort();store.release(assistantId);await onSettled(assistantId);if(error instanceof Error&&error.message.includes('上下文上限'))throw new HttpError(400,error.message);throw error;}
- let disconnected=false;let output=prefix;let finishReason:FinishReason='interrupted';let model='';let gatewayLogId:string|null=null;let metrics=new InferenceMetrics();let firstModelStarted:number|null=null;let modelRequests=0;let firstBodyAt:number|null=null;let candidates:string[]=[];const parser=new CandidateStream(candidateDelimiter());let parserFinished=false;let candidateOutcome='not-started';let bodyModel='';let bodyGatewayLogId:string|null=null;let bodyFinishedAt:number|null=null;let candidateStartedAt:number|null=null;let candidateFirstAt:number|null=null;let candidateFinishedAt:number|null=null;let bodyRequests=0;let candidatePrefixRebuilds=0;let bodyMetrics:ReturnType<InferenceMetrics['snapshot']>|null=null;
+ let disconnected=false;let output=prefix;let finishReason:FinishReason='interrupted';let model='';let gatewayLogId:string|null=null;let metrics=new InferenceMetrics();let firstModelStarted:number|null=null;let modelRequests=0;let firstBodyAt:number|null=null;let candidates:string[]=[];const parser=new CandidateStream(candidateDelimiter());let parserFinished=false;let candidateOutcome='not-started';let bodyModel='';let bodyGatewayLogId:string|null=null;let bodyFinishedAt:number|null=null;let candidateStartedAt:number|null=null;let candidateFirstAt:number|null=null;let candidateFinishedAt:number|null=null;let bodyRequests=0;let director:DirectorAgent|undefined;let synopsisRequests=0;let synopsisSource='not-started';let synopsisCovered=0;let synopsisMetrics:ReturnType<InferenceMetrics['snapshot']>|null=null;let synopsisGatewayLogId:string|null=null;let synopsisModel='';let synopsisElapsedMs=0;let directorStartedAt:number|null=null;let bodyMetrics:ReturnType<InferenceMetrics['snapshot']>|null=null;
 
  const stream=new TransformStream<Uint8Array,Uint8Array>(); const writer=stream.writable.getWriter(),encoder=new TextEncoder();
  const send=async(event:unknown)=>{await writer.write(encoder.encode('data: '+JSON.stringify(event)+'\n\n'));};
@@ -123,54 +124,24 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
    if(output.slice(storyAtStart)===requestOutput)storyProjection={key:await contentHash([projectionContext,committedHistory.map(m=>[m.id,m.content])]),messages:[...prompt.messages,{role:'assistant',content:requestOutput}]};
    await owns();if(!store.saveOutput(assistantId,output))throw new Error('生成已停止');
    await send({type:'candidates_pending',messageId:assistantId});
-   syncOutput(storyAtStart);
-   // Append to the actual final body request; do not rebuild its system/history.
-   const candidateTranscript:PromptMessage[]=[...(toolTranscript.length?[conversation.storyFragment(requestOutput)]:[]),{role:'user',content:CANDIDATE_TASK}];
-   prompt=conversation.extend(prompt,[{role:'assistant',content:requestOutput},{role:'user',content:CANDIDATE_TASK}]);
    candidateStartedAt=Date.now();candidateOutcome='generating';
-   const rebuildCandidatePrompt=async(limit?:number)=>{
-    const before=prompt.estimatedTokens;if(limit){conversation.contextTokens=limit;await conversation.compress();}
-    prompt=await conversation.fit('',{protocol:AGENT_RULE,formatReminder:''},[...toolTranscript,...candidateTranscript]);
-    if(limit&&prompt.estimatedTokens>=before)throw new Error('会话压缩未缩短输入');
-    candidatePrefixRebuilds++;await saveSummary();
-   };
    try{
-    while(candidates.length<3){
-     const previousCount=candidates.length;let candidateText='';
-     for(;;){
-      if(prompt.needsCompression)await rebuildCandidatePrompt();await owns();
-      const options=roleplayGatewayOptions(env,username,requestId);modelRequests++;metrics=new InferenceMetrics();
-      const response=await env.AI.gateway(env.AIG_GATEWAY_ID).run({provider:'compat',endpoint:'chat/completions',headers:{...options.extraHeaders,'Content-Type':'application/json'},query:{model:'dynamic/rp',messages:prompt.messages,tools:AGENT_TOOLS,tool_choice:'none',stream:true,...modelInput(opts)}},{gateway:options.gateway,signal:abort.signal});
-      if(!(response instanceof Response))throw new Error('nonstream');gatewayLogId=response.headers.get('cf-aig-log-id');
-      if(!response.ok){const limit=await inspectLimit(response,env,capability);if(!limit)throw new Error('upstream');await rebuildCandidatePrompt(limit);continue;}
-      if(!response.body||!response.headers.get('Content-Type')?.includes('text/event-stream')){await response.body?.cancel();throw new Error('nonstream');}
-      let reason:string|undefined,chunk='',limit:number|undefined;
-      for await(const data of sseData(response.body,abort.signal)){
-       if(data==='[DONE]')break;const event=JSON.parse(data);metrics.observe(event);if(typeof event.model==='string')model=event.model;
-       if(event.error){limit=contextLimit(event);if(limit)break;throw new Error('upstream');}
-       const choice=event.choices?.[0];if(choice?.finish_reason){if(reason&&reason!==choice.finish_reason)throw new Error('conflicting finish');reason=choice.finish_reason;}
-       if(choice?.delta?.tool_calls?.length)throw new Error('候选不能调用工具');
-       if(typeof choice?.delta?.content==='string'){chunk+=choice.delta.content;if(choice.delta.content.trim())candidateFirstAt??=Date.now();}
-      }
-      await owns();candidateText+=chunk;
-      if(limit||reason==='length'){
-       if(reason==='length'&&!chunk)throw new Error('no progress');
-       const additions:PromptMessage[]=[...(chunk?[{role:'assistant' as const,content:chunk}]:[]),{role:'user',content:'仅从上次中断处接着输出候选，不重复已输出部分，不写正文。'}];
-       candidateTranscript.push(...additions);prompt=conversation.extend(prompt,additions);
-       if(limit)await rebuildCandidatePrompt(limit);continue;
-      }
-      if(reason!=='stop')throw new Error('incomplete');
-      candidates=validateCandidates([...candidates,...recoveryCandidates(candidateText)]);
-      if(candidates.length===previousCount){candidateOutcome='no-progress';break;}
-      if(candidates.length<3){
-       const additions:PromptMessage[]=[{role:'assistant',content:chunk},{role:'user',content:`只补充${3-candidates.length}条不同的用户续聊台词或行动，各一行且不超过120字，不输出正文或说明。已有候选：${JSON.stringify(candidates)}`}];
-       candidateTranscript.push(...additions);prompt=conversation.extend(prompt,additions);
-      }
-      break;
-     }
-     if(candidateOutcome==='no-progress')break;
-    }
-    if(candidates.length===3)candidateOutcome='completed';
+    const synopsisOptions={contextTokens:conversation.contextTokens,inputRatio:capability.inputRatio,infer:async(messages:PromptMessage[])=>{
+     await owns();synopsisRequests++;modelRequests++;synopsisGatewayLogId=null;const started=Date.now(),observations=new InferenceMetrics();
+     try{const result=await summarizeWithModel(env,username,requestId,opts,messages,abort.signal,(event,logId)=>{observations.observe(event);synopsisGatewayLogId=logId;const value=event as {model?:unknown};if(typeof value.model==='string')synopsisModel=value.model;});await owns();return result;}finally{synopsisElapsedMs+=Date.now()-started;synopsisMetrics=observations.snapshot();}
+    }};
+    const overview=await prepareSynopsis(committedHistory,store.synopsis(),conversation.summary?JSON.stringify(conversation.summary):null,synopsisOptions);
+    synopsisSource=overview.source;synopsisCovered=overview.summary?.covered.length??0;
+    if(overview.summary){await owns();if(!store.saveSynopsis(assistantId,overview.summary))throw Error('生成已停止');}
+    director=new DirectorAgent(JSON.parse(row.character_json),opts,agent.state,committedHistory,synopsisOptions.contextTokens,capability.inputRatio,overview.summary?.text??'');
+    directorStartedAt=Date.now();candidates=await director.run(async messages=>{
+     const options=roleplayGatewayOptions(env,username,requestId);modelRequests++;
+     const response=await env.AI.gateway(env.AIG_GATEWAY_ID).run({provider:'compat',endpoint:'chat/completions',headers:{...options.extraHeaders,'Content-Type':'application/json'},query:{model:'dynamic/rp',messages,response_format:DIRECTOR_RESPONSE_FORMAT,stream:true,...modelInput({...opts,thinkingEnabled:false})}},{gateway:options.gateway,signal:abort.signal});
+     if(!(response instanceof Response))throw Error('Director非响应');director!.gatewayLogId=response.headers.get('cf-aig-log-id');
+     if(!response.ok){const limit=await inspectLimit(response,env,capability);if(limit)throw new DirectorContextError(limit);throw Error('Director上游错误');}
+     return response;
+    },abort.signal,owns,synopsisOptions);
+    candidateOutcome=director.outcome;candidateFirstAt=director.firstAt;model=director.model||model;gatewayLogId=director.gatewayLogId;metrics=director.metrics;
    }catch(error){if(abort.signal.aborted)throw error;candidateOutcome='error';}
    candidateFinishedAt=Date.now();
    break;
@@ -178,12 +149,15 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
   }catch{if(candidateStartedAt!==null)candidateOutcome=abort.signal.aborted?abortReason:'error';if(abort.signal.aborted)finishReason=abortReason;else if(finishReason==='stop')finishReason='upstream';status=['stopped','disconnected','timeout'].includes(finishReason)?'aborted':'error';failure=generationNotice(finishReason);}
   finally{
    if(candidateStartedAt!==null)candidateFinishedAt??=Date.now();
+   if(director)candidateFirstAt=director.firstAt;
+   const phaseMetrics=director?.requests?director.metrics.snapshot():synopsisRequests?synopsisMetrics:metrics.snapshot();
+   if(director?.requests){gatewayLogId=director.gatewayLogId;model=director.model;}else if(synopsisRequests){gatewayLogId=synopsisGatewayLogId;model=synopsisModel;}
    finishing=true;clearInterval(stopWatcher);
    if(!parserFinished)output+=parser.finish().body;
    request.signal.removeEventListener('abort',onDisconnect);
    try{
     const saved=store.finish(assistantId,output,status,finishReason,candidates,agent.state,storyProjection);await onSettled(assistantId);
-    console.info('tavern-generation-outcome',{messageId:assistantId,requestId,gatewayLogId,finishReason:saved?.finish_reason,status:saved?.status,model,modelRequests,metricsScope:candidateStartedAt===null?'last-body-request':'last-candidate-request',...metrics.snapshot(),firstBodyMs:firstBodyAt===null?null:firstBodyAt-started,modelFirstBodyMs:firstBodyAt===null||firstModelStarted===null?null:firstBodyAt-firstModelStarted,promptBudget:prompt.budget,estimatedInputTokens:prompt.estimatedTokens,chars:output.length,bodyModel,bodyGatewayLogId,bodyRequests,candidateRequests:modelRequests-bodyRequests,bodyMetricsScope:'last-body-request',bodyMetrics,bodyCompleteMs:bodyFinishedAt===null?null:bodyFinishedAt-started,candidateFirstMs:candidateFirstAt===null||candidateStartedAt===null?null:candidateFirstAt-candidateStartedAt,candidateElapsedMs:candidateFinishedAt===null||candidateStartedAt===null?null:candidateFinishedAt-candidateStartedAt,candidatePrefixRebuilds,candidateOutcome,candidateCount:saved?.candidates_json?JSON.parse(saved.candidates_json).length:0,elapsedMs:Date.now()-started});
+    console.info('tavern-generation-outcome',{messageId:assistantId,requestId,gatewayLogId,finishReason:saved?.finish_reason,status:saved?.status,model,modelRequests,metricsScope:director?.requests?'last-candidate-request':synopsisRequests?'last-synopsis-request':'last-body-request',...phaseMetrics,firstBodyMs:firstBodyAt===null?null:firstBodyAt-started,modelFirstBodyMs:firstBodyAt===null||firstModelStarted===null?null:firstBodyAt-firstModelStarted,promptBudget:prompt.budget,estimatedInputTokens:prompt.estimatedTokens,chars:output.length,bodyModel,bodyGatewayLogId,bodyRequests,candidateRequests:director?.requests??0,synopsisRequests,synopsisSource,synopsisCovered,synopsisMetricsScope:'last-synopsis-request',synopsisMetrics,synopsisGatewayLogId,synopsisElapsedMs,directorFirstMs:candidateFirstAt===null||directorStartedAt===null?null:candidateFirstAt-directorStartedAt,bodyMetricsScope:'last-body-request',bodyMetrics,bodyCompleteMs:bodyFinishedAt===null?null:bodyFinishedAt-started,candidateFirstMs:candidateFirstAt===null||candidateStartedAt===null?null:candidateFirstAt-candidateStartedAt,candidateElapsedMs:candidateFinishedAt===null||candidateStartedAt===null?null:candidateFinishedAt-candidateStartedAt,directorContextRebuilds:director?.rebuilds??0,directorEstimatedInputTokens:director?.prompt().estimatedTokens??null,directorIncludedMessages:director?.prompt().includedMessages??null,directorStoryCondensed:director?.prompt().condensed??false,candidateOutcome,candidateCount:saved?.candidates_json?JSON.parse(saved.candidates_json).length:0,elapsedMs:Date.now()-started});
     if(!disconnected&&!leaseLost){if(failure)await send({type:'error',message:failure});await send({type:'done',message:message(saved!)});}
    }finally{clearInterval(stopWatcher);await writer.close().catch(()=>{});}
   }

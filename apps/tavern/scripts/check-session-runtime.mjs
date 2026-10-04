@@ -10,13 +10,12 @@ const root=resolve(import.meta.dirname,'..'),persist=mkdtempSync(join(tmpdir(),'
 const source=`
 import {TavernSession} from './worker/session-object';
 export class TestSession extends TavernSession {
- constructor(ctx,env){let bodyMessages;super(ctx,{...env,AI:{gateway:()=>({run:async request=>{
- const input=request.query.messages.at(-1).content;
- if(input.includes('工具抵达北港')&&request.query.messages.at(-1).role!=='tool')return new Response('data: '+JSON.stringify({choices:[{delta:{tool_calls:[{index:0,id:'state-call',type:'function',function:{name:'update_state',arguments:'{"patch":{"scene":"北港"}}'}}]},finish_reason:'tool_calls'}]})+'\\n\\ndata: [DONE]\\n\\n',{headers:{'Content-Type':'text/event-stream'}});
- if(input.startsWith('正文已经完成')){if(JSON.stringify(request.query.messages.slice(0,bodyMessages.length))!==JSON.stringify(bodyMessages))throw new Error('candidate prefix changed');}
- else bodyMessages=structuredClone(request.query.messages);
- if(input.includes('等待'))return new Response(new ReadableStream(),{headers:{'Content-Type':'text/event-stream'}});
- return new Response('data: '+JSON.stringify({choices:[{delta:{content:input.startsWith('正文已经完成')?'我坐下。\\n我问问。\\n我看窗外。':'你好。'},finish_reason:'stop'}]})+'\\n\\ndata: [DONE]\\n\\n',{headers:{'Content-Type':'text/event-stream'}});
+ constructor(ctx,env){super(ctx,{...env,AI:{gateway:()=>({run:async request=>{
+ const director=!!request.query.response_format;const synopsis=request.query.messages[0].content.startsWith('总结已发生剧情');const input=request.query.messages.at(-1).content;
+ if(!director&&input.includes('工具抵达北港')&&request.query.messages.at(-1).role!=='tool')return new Response('data: '+JSON.stringify({choices:[{delta:{tool_calls:[{index:0,id:'state-call',type:'function',function:{name:'update_state',arguments:'{"patch":{"scene":"北港"}}'}}]},finish_reason:'tool_calls'}]})+'\\n\\ndata: [DONE]\\n\\n',{headers:{'Content-Type':'text/event-stream'}});
+ if(director){if(request.query.tools||request.query.tool_choice||request.query.messages.length!==2||request.query.messages.some(m=>m.role==='tool'))throw new Error('Director context polluted');const data=JSON.parse(input);if(!data.state||data.recentStory.length>4)throw new Error('Director data missing');}
+ if(!director&&input.includes('等待'))return new Response(new ReadableStream(),{headers:{'Content-Type':'text/event-stream'}});
+ return new Response('data: '+JSON.stringify({choices:[{delta:{content:director?JSON.stringify({choices:['我坐下。','我问问。','我看窗外。']}):synopsis?'旧事':'你好。'},finish_reason:'stop'}]})+'\\n\\ndata: [DONE]\\n\\n',{headers:{'Content-Type':'text/event-stream'}});
  }})}});}
 }
 export default {async fetch(request,env){const d=await request.json();const stub=env.SESSIONS.getByName(JSON.stringify([d.owner,d.id]));
@@ -37,7 +36,7 @@ try{
  assert.equal((await db.prepare('SELECT generation_id FROM sessions WHERE id=?').bind('a').first()).generation_id,'do:a');
  assert.equal((await(await call('a','read',undefined,'stranger')).json()).status,404);
  const requestId=crypto.randomUUID();const streamed=await(await call('a','generate',{requestId,content:'问候'})).text();assert.match(streamed,/"type":"done"/);assert.doesNotMatch(streamed,/\[TAVERN_NEXT\]/);
- a=await(await call('a','read')).json();assert.equal(a.value.messages.at(-1).content,'你好。');assert.equal((await(await call('b','read')).json()).value.messages.length,0);
+ a=await(await call('a','read')).json();assert.equal(a.value.messages.at(-1).content,'你好。');assert.equal(a.value.messages.at(-1).candidates.length,3);assert.equal((await(await call('b','read')).json()).value.messages.length,0);
  assert.equal((await(await call('a','generate',{requestId})).json()).replayed,true);
  const fork=await(await call('a','fork',{messageId:a.value.messages.at(-1).id,content:'新分支'})).json();assert.equal((await(await call(fork.value.id,'read')).json()).value.messages.at(-1).content,'新分支');
  await(await call('a','generate',{requestId:crypto.randomUUID(),content:'工具抵达北港'})).text();a=await(await call('a','read')).json();assert.equal(a.value.session.state.scene,'北港');
