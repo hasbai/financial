@@ -4,7 +4,7 @@
 
 整体调用、正文与独立候选、动态上下文压缩见 [HTML 架构图](TAVERN-ARCHITECTURE.html)。
 
-后续32K本地模型优化、会话Agent与状态/记忆/工具见[长期方案与优先级](TAVERN-AGENT-PLAN.md)。
+32K本地模型优化、会话Agent与状态/记忆/工具见[实施与优先级](TAVERN-AGENT-PLAN.md)。
 
 代码入口为仓库根下 `apps/tavern`；仓库名 `financial` 不改变应用归属。当前交付状态见 [TAVERN-PROGRESS.md](TAVERN-PROGRESS.md)，模型参数、默认关闭思考、模型选择与续聊候选的实现契约见 [TAVERN-MODEL-SETTINGS.md](TAVERN-MODEL-SETTINGS.md)。
 

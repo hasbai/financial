@@ -4,7 +4,7 @@
 
 整体数据流与预算图见 [HTML 架构图](TAVERN-ARCHITECTURE.html)。
 
-2026-10-04修订见[Agent七步方案](TAVERN-AGENT-PLAN.md)：取消固定32K/12K、回复总输出上限、固定模型请求次数和生成deadline。按发现容量保留历史，超限才自动摘要；模型length自动续写。DO/state/工具后续实施。共享Auth0已改为roles/email/username，用户选择另行统一迁移鉴权；现有guard暂返回403，新的真实模型验收待迁移后补做，不能沿用旧JWT验收代表当前通过。
+2026-10-04修订见[Agent实施与优先级](TAVERN-AGENT-PLAN.md)：取消固定32K/12K、回复总输出上限、固定模型请求次数和生成deadline。按发现容量保留历史，超限才自动摘要；模型length自动续写。DO/state/原生工具/模型投影与世界书RAG已交付；共享Auth0 roles/email/username访问已恢复，本批真实JWT、状态/工具、向量、候选、停止/续写与生产发布证据见交付状态。跨回合KV缓存仍为0，不承诺前缀稳定等于GPU命中。
 
 ## 当前实现与目标差异
 

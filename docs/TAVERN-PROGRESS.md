@@ -1,14 +1,41 @@
 # Tavern 交付状态
 
-## Agent 状态、工具与检索（2026-10-04，实施中）
+## Agent 状态、工具与检索（2026-10-04，已交付）
 
 版本绑定状态快照、search_memory/update_state原生续轮、中文旧事实与更正检索、最新实际模型投影复用、世界书版本分块/关键词+向量渐进检索已实现。兼容D1迁移0008仅增加分支恢复seed；旧消息/ID保留，DO增量新表不覆盖既有对象。停止、失败重生成、中断续写、分支不提交未来事实。
 
-RP真实Gateway原生update_state→工具结果→正常正文已通过；BGE-M3真实REST+default Gateway返回HTTP200、2×1024维、2.23秒，日志`01M42R0RB18DT634MGKFADYCXS`。本地remote binding超时不算应用成功，原生绑定边缘/生产验收继续单列。
+RP真实Gateway原生update_state→工具结果→正常正文已通过；BGE-M3真实REST+default Gateway返回HTTP200、2×1024维、2.23秒，日志`01M42R0RB18DT634MGKFADYCXS`。本地remote binding超时不算应用成功，生产原生绑定验收已完成，见下表。
 
 101项聚焦核心、存储和生成检查覆盖工具0/1/2轮、非法/重复/无进展、取消、失败重生成、工具后length与长正文压缩、候选前缀/禁工具、旧DO升级与分支恢复；Svelte零错误/零警告，真实workerd SQLite工具状态/重启/分支通过。固定Linux桌面/iPhone WebKit28流程84图通过，82图逐像素相同，2图仅1/24像素噪声低于既有50容差，保留全部旧基线。
 
-0008已先在隔离云D1验证旧消息/ID，再应用生产：14条会话与44条迁移来源消息数量保持，nullable seed新增成功，隔离数据库删除。此前0006/0007真实DDL已存在而Wrangler迁移记录缺失，核对原定义后仅补登记，未重放ALTER。PR/自动发布/真实应用与缓存验收尚未完成。
+0008已先在隔离云D1验证旧消息/ID，再应用生产：14条会话与44条迁移来源消息数量保持，nullable seed新增成功，隔离数据库删除。此前0006/0007真实DDL已存在而Wrangler迁移记录缺失，核对原定义后仅补登记，未重放ALTER；Wrangler回读无待应用迁移。
+
+| 层级 | 本批最终证据 |
+| --- | --- |
+| PR/CI | [PR #46](https://github.com/hasbai/financial/pull/46)，head `6e766c252f2785b13a2b4b5205e4cfb4f5416404`含当时最新main；financial/blog/zboard/tavern共八项必需检查成功，squash main `cd4c969dd198eeb5c56c7992a53c0f590e889bfd` |
+| 自动发布 | Build `146446a9-e4e5-4043-8613-b5e40666207c` success且commit_hash/main一致；deployment `9926743a-cbb9-4aa9-ae3b-4b1866482459`，version `c9e82d9c-de3b-4799-b3d8-5fd064c7c080`流量100%，health200匹配；没有手动发布 |
+| 真实JWT/工具 | 共享Universal Login+PKCE身份；正常、state、memory、连续第三轮、切换/返回、重生成与世界书均completed/stop、三候选、原UUID回放与恢复一致、占用释放。state实际update_state，memory实际search_memory；两工具样本`47a69eba-cd34-4feb-a550-5a9d16debabf`真实search→结果→update→正文→候选，共四次RP请求 |
+| 状态版本 | 已提交场景/事实刷新一致；重生成保留正确前态；编辑首用户消息的分支状态为空，无未来事实；JSONL含版本快照与工具步骤。真实stop请求`9408fd38-6800-42a8-817b-7895a338a9fa`先暂存update_state再保存89字中断正文，after=NULL、会话状态未变；续写`8e4490ed-4999-432c-b4e9-b8044c7f3a85`保存1291字、前缀逐字保留、scene最终正常提交 |
+| 世界书RAG | 请求`216b2c84-c5cc-40ca-896a-c492d4d01441`经真实search_memory召回带book/revision/entry锚点的入口/门牌原文；三次RP与两次真实BGE-M3请求，正文66字、三候选、0错误。生产原生AI绑定、1024维校验与完整Gateway请求/响应、三项metadata均通过；此前本地remote binding超时未计成功 |
+| 候选与归属 | 八个成功样本实际候选messages原前缀、tools schema逐字段恒等，tool_choice=none，正文/候选分离。Gateway完整payload与app=tavern/task=roleplay/签名username一致，RP与embedding同归属；没有候选状态工具调用 |
+| 双会话/停止 | 两会话同时发送均完成，7.410/9.070秒；另一会话生成期间取消成功、双方占用释放，取消后新生成4.878秒完成。被取消请求未留下Gateway记录，因此未声称已精确观察其进入GPU排队，也不将有限样本当全局公平调度证明 |
+| 清理 | 三批临时资源5/4/2个均通过删除API逻辑清理；另一个精确字符串断言失败的探针4资源也全清理（模型写“铜钥匙在旅人手里”，属等价表达，不是状态丢失）。全局设置未变，私人历史未改，D1迁移来源与DO tombstone保留 |
+
+### 缓存与性能实测
+
+| 场景 | 首个正文请求输入/缓存tokens | 首次预填耗时 | 候选输入/缓存tokens | 候选预填耗时 |
+| --- | ---: | ---: | ---: | ---: |
+| 状态更新 | 701 / 0 | 1.198s | 1170 / 1094 | 0.551s |
+| 下一轮记忆检索 | 1183 / 0 | 1.611s | 1854 / 1778 | 0.537s |
+| 连续第三轮 | 1863 / 0 | 2.136s | 1973 / 1898 | 0.536s |
+| 切会话后返回 | 1983 / 0 | 2.231s | 2073 / 1997 | 0.530s |
+| 世界书工具后正文 | 1503 / 1259 | 0.506s | 1629 / 1554 | 0.524s |
+
+同轮工具→正文/正文→候选追加缓存成立，候选仅新增约75–76个prefill tokens。跨回合首请求KV缓存仍为0，没有宣称本批解决GPU缓存回退。真实/apply-template与/tokenize分别确认跨回合共享1099/1783 tokens（新请求约93%/96%），证明模型投影及模板前缀稳定；tools none→auto没有破坏前置模板。
+
+线上服务b11200-81bc6b83f、单slot、运行32768。候选完成后下一轮需回退到候选之前的分叉点；[同版源码](https://github.com/ggml-org/llama.cpp/blob/81bc6b83f/tools/server/server-context.cpp#L3217-L3383)在recurrent/SWA缺少合适checkpoint时将n_past归零，高度匹配实测，仍为推断，缺对应服务端日志不能写成确诊。应用保留正确剧情/候选隔离，不强加slot_id或将候选事实塞进下一轮来换缓存；模型服务checkpoint诊断属后续性能工作。
+
+全部请求/恢复/日志/模板及清理证据保存在忽略目录`apps/tavern/.local-visual/agent-tools`，未保存Token。架构复核确认所有确定P1已修复；手机为WebKit模拟，不冒称真机。Agent本批计划实施与发布完成，后续模型服务优化不伪装为已解决。
 
 2026-10-03。线上入口：[tavern.hasbai.xyz](https://tavern.hasbai.xyz)。完整方案、来源依据与后续路线见 [TAVERN.md](TAVERN.md)。
 
