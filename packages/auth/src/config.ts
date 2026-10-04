@@ -1,5 +1,5 @@
 export const authConfig = {
-  domain: "hasbai.eu.auth0.com",
+  domain: "auth.hasbai.xyz",
   clientId: "mdmD7xvX5yay52SRVZeuIOhGHIa0Wdl2",
   audience: "https://financial.hasbai.xyz/api",
   organization: "org_qR4E7HTZE1Zv10go",

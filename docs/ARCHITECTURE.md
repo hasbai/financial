@@ -14,10 +14,10 @@ flowchart LR
 
 ## 接入
 
-- Auth0 tenant：hasbai.eu.auth0.com。
+- Auth0 tenant：`hasbai.eu.auth0.com`；所有北极小站应用的登录域名为 `auth.hasbai.xyz`，共享配置在 `packages/auth/src/config.ts`。新令牌 issuer 为 `https://auth.hasbai.xyz/`；Tavern/Zboard Worker 使用相同域名获取 JWKS 并验证 issuer。
 - 北极小站：SPA，公开 client ID `mdmD7xvX5yay52SRVZeuIOhGHIa0Wdl2`。
 - 财务与博客登录请求固定传入北极小站 Organization `org_qR4E7HTZE1Zv10go`；该 SPA 在新版部署后要求组织登录。Auth0 Organization Branding 为北极小站设置雪花 Logo `https://hasbai.xyz/logo.svg`、主色 `#A55365`、背景色 `#FEFEFB`；东方财富证券 Organization `org_6yvoRRCkzk3eGkBS` 使用官网 Logo、主色 `#C74700`、背景色 `#FFFFFF`。两者的 `display_name` 分别是“北极小站”和“东方财富证券”。主色按白色按钮文字的对比度加深。登录框内部文案为租户通用的“登录”；当前套餐的 Universal Login Page Template API 返回 402。
-- 北极小站组织启用已有 `eastmoney-email` 连接，关闭自动加入成员及注册；现有管理员账号显式加入该组织，并在该组织分配 `superadmin`。组织登录时 Post Login Action 的 `event.authorization.roles` 读取组织角色，原有用户级角色不足以写出顶层 `role`。既有 Google 组织连接保留。
+- 北极小站组织统一提供邮箱、Google、Microsoft Account、GitHub。三个社交连接允许新账号自动加入组织，业务权限另行分配；邮箱准入保持。现有管理员在组织分配 `superadmin`。组织登录时 Post Login Action 读取组织角色。社交提供商回调使用 `https://auth.hasbai.xyz/login/callback`，各应用自己的回调仍是下列 `/auth/callback`。
 - Audience：`https://financial.hasbai.xyz/api`，RS256，Access Token 有效期一小时。
 - Callback：`https://financial.hasbai.xyz/auth/callback`、`http://localhost:5173/auth/callback`。
 - Logout / Web Origins：上述两个 origin。
@@ -25,6 +25,8 @@ flowchart LR
 - Auth0 Access Token 使用顶层 `username`、`email` 与 `_roles`（角色数组）；`role` 为数据库角色字符串。共享财务/博客 audience 中 `_roles` 包含 superadmin 时签发 `role=superadmin`，其他 audience 或账号为 authenticated，Neon Data API 使用 `.role` 切换 PostgreSQL 角色。
 
 Neon 项目 `mute-king-39794724` / neondb。开发分支 `br-proud-bread-b3hl3asf`，production 分支 `br-billowing-violet-b3pkbm3s`。公开的前端配置见 src/lib/config.ts；默认使用生产 endpoint，测试可通过 VITE_DATA_API_URL 替换目标 endpoint。
+
+Neon 现有 Auth0 providers 保留同租户的 `https://hasbai.eu.auth0.com/.well-known/jwks.json` 取钥地址；它不参与浏览器登录跳转。新域真实 JWT 已核验 `iss=https://auth.hasbai.xyz/` 与 `role=superadmin`，财务受保护读取、博客草稿读取及零行 PATCH 权限验证通过，无 token、错误签名和错误 audience 均拒绝。未新增重复 provider 或改动角色映射/数据库权限。
 
 Data API 的 JWT 校验发生在 Neon，PostgreSQL 根据 superadmin 的 schema 和对象授权决定访问。纯前端不意味着允许公开访问数据库。[Neon 外部身份支持](https://neon.com/docs/data-api/custom-authentication-providers)
 

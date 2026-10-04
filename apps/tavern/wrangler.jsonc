@@ -23,7 +23,7 @@
     ]
   },
   "vars": {
-    "AUTH0_DOMAIN": "hasbai.eu.auth0.com",
+    "AUTH0_DOMAIN": "auth.hasbai.xyz",
     "AUTH0_AUDIENCE": "https://financial.hasbai.xyz/api",
     "AIG_GATEWAY_ID": "default"
   },

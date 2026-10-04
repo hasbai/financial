@@ -64,7 +64,7 @@ it("precache is versioned, contains only static app resources, and never interce
     dispatch("https://api.example/rest/v1/account").mock.calls,
   ).toHaveLength(0);
   expect(
-    dispatch("https://hasbai.eu.auth0.com/oauth/token", "POST").mock.calls,
+    dispatch("https://auth.hasbai.xyz/oauth/token", "POST").mock.calls,
   ).toHaveLength(0);
   expect(
     dispatch("https://financial.hasbai.xyz/index.html", "GET", true).mock.calls,
