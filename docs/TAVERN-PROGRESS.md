@@ -1,10 +1,19 @@
 # Tavern 交付状态
 
-## Director 与整体剧情梗概（2026-10-04，本批待发布）
+## Director 与整体剧情梗概（2026-10-04，已上线）
 
 按用户最新要求替换完整前缀候选：Director是独立TypeScript模块，system只保留候选协议；核心卡片、用户persona、系统故事约束、整体剧情梗概、本轮最新state与最近四条纯剧情作为JSON数据。工具定义/调用/结果、正文投影、世界书全文与作者扩展不进入Director。三条choices使用严格JSON Schema，服务端完整stop后三条原子校验；无效/length/摘要故障保留正常正文、空候选。
 
-整体梗概独立于正文checkpoint，使用每会话DO SQLite派生缓存，按版本/角色/正文指纹校验，复用最长有效覆盖并增量总结窗口外剧情。短会话不额外总结。来源变化/分支不会继承未来事实；近期超限时完整摘要而非截尾，原历史与正文摘要/投影保持原样。具体契约见模型设置文档。本地121项相关单测、定向TypeScript和diff检查通过；真实workerd/SQLite隔离资源验证存储/停止/重启（模型为夹具）。固定Linux28流程84图通过，82图逐像素相同，桌面两图仅1/24像素既有噪声，保留旧基线。标准与反向提示两次真实Gateway Schema探测均HTTP200/stop/恰三choices，日志`01M43J0BNBC073WSGW59ESPFX6`与`01M43J3X6GMNCG8K7EVVTGYMVK`；真实JWT读取settings为200。Architect最终代码复核无阻塞。PR完整CI、自动部署与完整应用回合证据完成后补齐；此前下方完整前缀样本仅为历史实现证据。
+整体梗概独立于正文checkpoint，使用每会话DO SQLite派生缓存，按版本/角色/正文指纹校验，复用最长有效覆盖并增量总结窗口外剧情。短会话不额外总结。来源变化/分支不会继承未来事实；近期超限时完整摘要而非截尾，原历史与正文摘要/投影保持原样。具体契约见模型设置文档。本地121项相关单测、定向TypeScript和diff检查通过；真实workerd/SQLite隔离资源验证存储/停止/重启（模型为夹具）。固定Linux28流程84图通过，82图逐像素相同，桌面两图仅1/24像素既有噪声，保留旧基线。标准与反向提示两次真实Gateway Schema探测均HTTP200/stop/恰三choices，日志`01M43J0BNBC073WSGW59ESPFX6`与`01M43J3X6GMNCG8K7EVVTGYMVK`；真实JWT读取settings为200。Architect最终代码复核无阻塞。PR完整CI、自动部署与完整应用回合已完成；此前下方完整前缀样本仅为历史实现证据。
+
+本批最终证据：
+
+- [PR #52](https://github.com/hasbai/financial/pull/52)，head `323e62feb9c0e27de4d3f99b7657cad4b487a545` 八项必需检查全成功；Check `37207813262`、Blog `37207813260`、Zboard `37207813265`、Tavern `37207813266` 各一次统一等待。包含当时最新main，squash `2dfd6001727c1dc5fde5d02bfa96f3545e7f26ac`。
+- main push 自动Workers Build `ebc5c7d7-6b40-4ec5-8020-1cd5cc9e32af` 成功，commit_hash与squash一致；线上 `/health` version `2eec2286-5dcd-4a71-8989-9ef998578ae5` 与100%部署一致。没有手动部署。
+- 真实Universal Login + PKCE/JWT下，状态工具更新、整体梗概、重生成三段均completed/stop/三候选，正文delta与落库一致、刷新与原UUID回放一致、占用释放。Director实际请求仅system/user、strict JSON Schema、没有tools/tool_choice，最新state与最近四条纯剧情正确。第二轮窗口外整体梗概非空；重生成复用有效梗概，无重复摘要请求。
+- 三段Director输入/输出tokens分别440/111、484/94、484/87，对应日志 `01M43M7GTWXA7KMM8CJABK4X69`、`01M43M834QR5Q8F1YVRP3D5RV4`、`01M43M8JNA4D6TXEM778G9MZ0D`；三条候选逐字等于Gateway聚合JSON输出。完整payload/三项metadata归属验证。样本不作为P95或全场景速度承诺。
+- 两次初始验收因脚本误读Gateway聚合字段失败，已分别清理2/2临时资源；修正为delta.content与streamed_data终态后完整验收成功。未改业务代码或重复CI/部署。最终临时角色/会话/分支3/3逻辑清理，用户全局设置不变，既有私人正文未改。证据保存在忽略目录`apps/tavern/.local-visual/director`，无Token。
+- 自动化包含取消、摘要故障/迟到保存拒绝、context恢复与capacity传递、长单条情节压缩及正文checkpoint隔离；本批线上真实模型未另跑停止或超限压力，不将自动化冒称线上或真机验收。
 
 ## Agent 状态、工具与检索（2026-10-04，已交付）
 
