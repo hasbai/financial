@@ -9,7 +9,7 @@ function statement(sql:string,values:unknown[]=[]):D1PreparedStatement {return {
 const ctx={waitUntil:(promise:Promise<unknown>)=>{work.push(promise);}};
 async function call(path:string,method='GET',data?:unknown){return worker.fetch(new Request('https://tavern.test'+path,{method,headers:data?{'Content-Type':'application/json'}:{},body:data===undefined?undefined:JSON.stringify(data)}),env,ctx);}
 beforeEach(()=>{
- beforeRun=undefined;db=new DatabaseSync(':memory:');for(const name of ['0001_schema.sql','0002_source_catalog.sql','0003_generation_outcomes.sql','0004_source_quality.sql','0005_candidates_capabilities.sql','0006_session_summary.sql','0007_session_objects.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));sessionDb=new DatabaseSync(':memory:');sessionDb.exec(SESSION_SCHEMA);files=new Map();work=[];
+ beforeRun=undefined;db=new DatabaseSync(':memory:');for(const name of ['0001_schema.sql','0002_source_catalog.sql','0003_generation_outcomes.sql','0004_source_quality.sql','0005_candidates_capabilities.sql','0006_session_summary.sql','0007_session_objects.sql','0008_branch_state_seed.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));sessionDb=new DatabaseSync(':memory:');sessionDb.exec(SESSION_SCHEMA);files=new Map();work=[];
  aiRun=vi.fn<AiRun>(async request=>{const last=(request.query as {messages:{content:string}[]}).messages.at(-1)!.content;const candidate=last.startsWith('正文已经完成')||last.startsWith('只补充')||last.startsWith('仅从');return new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{reasoning_content:'private'}}]})+'\n\ndata: '+JSON.stringify({choices:[{delta:{content:candidate?'去港口。\n问问来路。\n坐下喝茶。':'欢迎来到港城。'}}]})+'\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));c.close();}});});
  env=Object.assign({} as Env,{DB:{prepare:statement,batch:async(stmts:D1PreparedStatement[])=>{const result=[];db.exec('BEGIN');try{for(const s of stmts)result.push(await s.run());db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');throw e;}}},FILES:{put:async(key:string,bytes:Uint8Array)=>files.set(key,bytes),get:async(key:string)=>files.has(key)?{body:new Response(Uint8Array.from(files.get(key)!)).body}:null,delete:async(keys:string|string[])=>{for(const key of Array.isArray(keys)?keys:[keys])files.delete(key);}},AI:{gateway:(id:string)=>{expect(id).toBe('default');return {run:async(data:AIGatewayUniversalRequest,options?:{gateway?:UniversalGatewayOptions;signal?:AbortSignal})=>{const result=await aiRun(data,options);return result instanceof ReadableStream?new Response(result,{headers:{'Content-Type':'text/event-stream','cf-aig-log-id':'test-log'}}):result;}};}},AUTH0_DOMAIN:'hasbai.eu.auth0.com',AUTH0_AUDIENCE:'https://financial.hasbai.xyz/api',AIG_GATEWAY_ID:'default',CONTEXT_TOKENS:'16000',VERSION:{id:'test'},ASSETS:{fetch:async()=>new Response('assets')}});
  const objects=new Map<string,TavernSession>();
@@ -182,7 +182,7 @@ it.each(['normal','regenerate','continue'])('reminds the %s request once without
  const query=aiRun.mock.calls.at(-1)![0].query as {messages:{role:string;content:string}[]};
  expect(query.messages.filter(m=>m.role==='system')).toHaveLength(1);
  expect(query.messages.at(-1)?.content.endsWith(CANDIDATE_TASK)).toBe(true);
- expect(query.messages.map(m=>m.content).join('').split(BODY_TASK)).toHaveLength(2);
+ expect(query.messages.at(-3)?.content.endsWith(BODY_TASK)).toBe(true);
  expect(aiRun).toHaveBeenCalledTimes(4);
  expect(sessionDb.prepare("SELECT content FROM messages WHERE session_id=? AND role='user' ORDER BY ordinal").all(s.id).map(m=>m.content)).toEqual(mode==='normal'?['原输入','下一轮']:['原输入']);
 });
@@ -192,6 +192,61 @@ it.each(['stop'])('keeps clean prose with invalid candidates on %s',async finish
 });
 
 function completion(content:string,finish='stop') {return new ReadableStream<Uint8Array>({start(c){c.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{content},finish_reason:finish}]})+'\n\ndata: [DONE]\n\n'));c.close();}});}
+function tool(name:string,args:unknown,id='call-1'){return new Response('data: '+JSON.stringify({choices:[{delta:{tool_calls:[{index:0,id,type:'function',function:{name,arguments:JSON.stringify(args)}}]},finish_reason:'tool_calls'}]})+'\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}});}
+it('runs two native tool steps, commits the snapshot atomically and disables candidate tools with the full wire prefix',async()=>{
+ const {s}=await seed();aiRun.mockResolvedValueOnce(tool('search_memory',{query:'你好'})).mockResolvedValueOnce(tool('update_state',{patch:{scene:'北港',facts:{钥匙:'旅人持有'}}},'call-2')).mockResolvedValueOnce(completion('北港灯亮了。'));
+ const requestId=crypto.randomUUID(),wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'我们已经到达北港，钥匙在我手里。'})).text();await Promise.all(work);expect(wire).not.toContain('tool_calls');expect(aiRun).toHaveBeenCalledTimes(4);
+ const body=aiRun.mock.calls[2][0].query as {messages:unknown[];tools:unknown},candidate=aiRun.mock.calls[3][0].query as {messages:unknown[];tools:unknown;tool_choice:string};expect(candidate.messages.slice(0,body.messages.length)).toEqual(body.messages);expect(candidate.tools).toEqual(body.tools);expect(candidate.tool_choice).toBe('none');
+ const restored=await(await call('/api/sessions/'+s.id)).json() as {session:{state:{scene:string;facts:unknown}}};expect(restored.session.state).toMatchObject({scene:'北港',facts:{钥匙:'旅人持有'}});const snapshot=sessionDb.prepare('SELECT * FROM turn_snapshots').get();expect(JSON.parse(snapshot!.before_json as string).scene).toBeNull();expect(JSON.parse(snapshot!.steps_json as string)).toHaveLength(2);
+ expect((await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId})).json() as {replayed:boolean}).replayed).toBe(true);expect(aiRun).toHaveBeenCalledTimes(4);
+});
+it('keeps committed state after failed regeneration and restarts successful regeneration from the original before state',async()=>{
+ const {s}=await seed();aiRun.mockResolvedValueOnce(tool('update_state',{patch:{scene:'北港'}})).mockResolvedValueOnce(completion('到达北港。'));await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'到达北港。'})).text();await Promise.all(work);
+ aiRun.mockResolvedValueOnce(tool('update_state',{patch:{scene:'未来灯塔'}})).mockRejectedValueOnce(Error('offline'));await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),regenerate:true})).text();await Promise.all(work);
+ const failed=await(await call('/api/sessions/'+s.id)).json() as {session:{state:{scene:string}};messages:Message[]};expect(failed.session.state.scene).toBe('北港');expect(failed.messages.at(-1)?.status).toBe('error');
+ aiRun.mockResolvedValueOnce(tool('update_state',{patch:{scene:'新港'}})).mockResolvedValueOnce(completion('到了新港。'));const at=aiRun.mock.calls.length;await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),regenerate:true})).text();await Promise.all(work);
+ const query=aiRun.mock.calls[at][0].query as {messages:{content:string}[]};expect(query.messages.find(m=>m.content.startsWith('当前已确认状态'))!.content).toContain('"scene":null');expect((await(await call('/api/sessions/'+s.id)).json() as {session:{state:{scene:string}}}).session.state.scene).toBe('新港');
+});
+it('rolls back staged state for duplicate tools; candidate failure still preserves completed state',async()=>{
+ const {s}=await seed();aiRun.mockResolvedValueOnce(tool('update_state',{patch:{scene:'北港'}})).mockResolvedValueOnce(tool('update_state',{patch:{scene:'北港'}},'again'));
+ await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'到达北港'})).text();await Promise.all(work);expect(sessionDb.prepare('SELECT after_json FROM turn_snapshots').get()?.after_json).toBeNull();
+ aiRun.mockResolvedValueOnce(tool('update_state',{patch:{scene:'北港'}})).mockResolvedValueOnce(completion('已到北港。')).mockRejectedValueOnce(Error('candidate unavailable'));
+ await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'确认抵达北港'})).text();await Promise.all(work);expect((await(await call('/api/sessions/'+s.id)).json() as {session:{state:{scene:string}}}).session.state.scene).toBe('北港');
+});
+it('preserves ordered tool results through body length and candidate context rebuilds',async()=>{
+ const {s}=await seed();let bodies=0,candidates=0;aiRun.mockImplementation(async request=>{const q=request.query as {messages:{role:string;content:string}[]};
+  if(q.messages.at(-1)?.content===CANDIDATE_TASK){if(++candidates===1)return Response.json({error:{message:'maximum context length is 4096 tokens'}},{status:400});const tool=q.messages.findIndex(m=>m.role==='tool'),first=q.messages.findIndex(m=>m.content==='第一段。'),last=q.messages.findIndex(m=>m.content==='第二段。');expect(tool).toBeLessThan(first);expect(first).toBeLessThan(last);return completion('我问问。\n我坐下。\n我看窗外。');}
+  if(q.messages[0].content.startsWith('压缩会话记忆'))return completion('此前问候。');
+  if(++bodies===1)return tool('update_state',{patch:{scene:'旅店'}});if(bodies===2)return completion('第一段。','length');const result=q.messages.findIndex(m=>m.role==='tool'),first=q.messages.findIndex(m=>m.content==='第一段。');expect(result).toBeLessThan(first);return completion('第二段。');
+ });
+ await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'继续当前场景'})).text();await Promise.all(work);expect((await(await call('/api/sessions/'+s.id)).json() as {messages:Message[]}).messages.at(-1)?.content).toBe('第一段。第二段。');
+});
+it('appends to a successful actual model projection and invalidates it for changed worldbook activation',async()=>{
+ const {s}=await seed();await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'第一次问候'})).text();await Promise.all(work);const original=(aiRun.mock.calls[0][0].query as {messages:unknown[]}).messages;
+ await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'第二次问候'})).text();await Promise.all(work);const next=(aiRun.mock.calls[2][0].query as {messages:unknown[]}).messages;expect(next.slice(0,original.length)).toEqual(original);expect(sessionDb.prepare('SELECT count(*) n FROM model_projections').get()?.n).toBe(1);
+});
+it('compresses only the model projection of long tool-assisted prose while retaining full persisted body',async()=>{
+ const {s}=await seed();db.prepare('UPDATE model_capabilities SET value_json=?').run(JSON.stringify({contextTokens:2048,inputRatio:1.2,source:'llama.cpp:n_ctx'}));let bodies=0;
+ aiRun.mockImplementation(async request=>{const q=request.query as {messages:{content:string}[]};if(q.messages[0].content.startsWith('压缩会话记忆'))return completion('已经到达港口。');if(q.messages.at(-1)?.content===CANDIDATE_TASK)return completion('我问问。\n我坐下。\n我看窗外。');if(++bodies===1)return tool('update_state',{patch:{scene:'港口'}});if(bodies===2)return completion('正文'.repeat(2200),'length');expect(q.messages.some(m=>m.content.includes('已发生正文摘要'))).toBe(true);return completion('结尾。');});
+ await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'抵达港口'})).text();await Promise.all(work);expect(sessionDb.prepare('SELECT content,status FROM messages WHERE session_id=? ORDER BY created_at DESC LIMIT 1').get(s.id)).toMatchObject({content:'正文'.repeat(2200)+'结尾。',status:'completed'});
+});
+it('retains a stopped prefix once when continuation calls a tool then finishes through length',async()=>{
+ const {s}=await seed();sessionDb.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at,finish_reason) VALUES('stopped',?,'assistant','独有事实：铜钥匙在掌柜口袋。','aborted',1,?,'stopped')").run(s.id,Date.now());
+ aiRun.mockResolvedValueOnce(tool('update_state',{patch:{scene:'旅店'}})).mockResolvedValueOnce(completion('她取出钥匙。','length')).mockResolvedValueOnce(completion('灯亮了。'));
+ await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),continue:true})).text();await Promise.all(work);for(const [request]of aiRun.mock.calls){const q=request.query as {messages:{content:string}[]};expect(q.messages.map(m=>m.content).join('\n').split('独有事实：铜钥匙在掌柜口袋。')).toHaveLength(2);}
+});
+it('retains cumulative prose before the first tool when length precedes tool and another length',async()=>{
+ const {s}=await seed();aiRun.mockResolvedValueOnce(completion('先前正文事实。','length')).mockResolvedValueOnce(tool('update_state',{patch:{scene:'港口'}})).mockResolvedValueOnce(completion('随后正文。','length')).mockResolvedValueOnce(completion('结尾。'));
+ await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'开始'})).text();await Promise.all(work);const q=aiRun.mock.calls[3][0].query as {messages:{content:string}[]};expect(q.messages.map(m=>m.content).join('\n').split('先前正文事实。')).toHaveLength(2);expect(sessionDb.prepare('SELECT content,status FROM messages ORDER BY created_at DESC LIMIT 1').get()).toMatchObject({content:'先前正文事实。随后正文。结尾。',status:'completed'});
+});
+it('rejects invalid tool parameters without committing state and preserves a stopped version before-state for continuation',async()=>{
+ const {s}=await seed();aiRun.mockResolvedValueOnce(tool('update_state',{patch:{scene:'旅店'}})).mockResolvedValueOnce(tool('update_state',{patch:{scene:{sql:'unsafe'}}},'bad'));
+ await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'记录当前位置'})).text();await Promise.all(work);expect(sessionDb.prepare('SELECT after_json FROM turn_snapshots').get()?.after_json).toBeNull();
+ let controller!:ReadableStreamDefaultController<Uint8Array>;aiRun.mockResolvedValueOnce(tool('update_state',{patch:{scene:'未完成灯塔'}})).mockResolvedValueOnce(new ReadableStream({start(c){controller=c;}}));
+ const response=await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'去灯塔'}),reader=response.body!.getReader();await reader.read();await vi.waitFor(()=>expect(aiRun).toHaveBeenCalledTimes(4));controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"半句正文"}}]}\n\n'));await reader.read();
+ const generationId=sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id;await call('/api/sessions/'+s.id+'/stop','POST',{generationId});while(!(await reader.read()).done){}await Promise.all(work);expect(sessionDb.prepare('SELECT after_json FROM turn_snapshots WHERE message_id=?').get(generationId as string)?.after_json).toBeNull();
+ const at=aiRun.mock.calls.length;await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),continue:true})).text();await Promise.all(work);const q=aiRun.mock.calls[at][0].query as {messages:{content:string}[]};expect(q.messages.find(m=>m.content.startsWith('当前已确认状态'))!.content).toContain('"scene":null');
+});
 it('automatically continues through more than three length finishes with one parser and UUID',async()=>{
  const {s}=await seed(),requestId=crypto.randomUUID();
  for(const content of ['她说：','你好。','\n[TAV','ERN_NEXT]\n去港口','。\n坐下喝茶。'])aiRun.mockResolvedValueOnce(completion(content,'length'));

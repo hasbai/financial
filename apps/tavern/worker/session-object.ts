@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { SessionStore, SESSION_SCHEMA } from './session-store';
+import { storyMessages } from './agent';
 import { body, HttpError, json } from './http';
 import { currentMessages, getSession, message, ownedBooks, session, settings, type MessageRow, type SessionRow } from './store';
 import { generate } from './generation';
@@ -54,7 +55,7 @@ export class TavernSession extends DurableObject<Env> {
   if(!this.store){const row=this.ctx.storage.sql.exec<SessionRow & Record<string,SqlStorageValue>>('SELECT * FROM sessions LIMIT 1').toArray()[0];if(!row)return;await this.load(row.owner,row.id);}
   try{await this.sync();}catch{await this.ctx.storage.setAlarm(Date.now()+10000);}
  }
- private async read(owner:string,id:string){const store=await this.load(owner,id);return {session:session(store.get(),true),messages:currentMessages(store.messages())};}
+ private async read(owner:string,id:string){const store=await this.load(owner,id);return {session:{...session(store.get(),true),state:store.state()},messages:currentMessages(store.messages())};}
  private async stop(owner:string,id:string,generationId:string){
   if(!this.store){
    const old=await getSession(this.env,owner,id);
@@ -81,16 +82,19 @@ export class TavernSession extends DurableObject<Env> {
  private async fork(owner:string,id:string,data:Record<string,unknown>){
   const store=await this.load(owner,id),row=store.idle();const text=string(data.content).trim();if(!text||text.length>24000)throw new HttpError(400,'消息需为 1–24000 字符');
   const all=currentMessages(store.messages()),index=all.findIndex(m=>m.id===data.messageId);if(index<0)throw new HttpError(404,'消息不存在');
-  const next=crypto.randomUUID(),now=Date.now(),copied=[...all.slice(0,index),{...all[index],content:text,status:'completed' as const}];
+  const prior=storyMessages(store.messages()).filter(m=>m.ordinal<all[index].ordinal);
+  const next=crypto.randomUUID(),now=Date.now(),copied=[...prior,{...all[index],content:text,status:'completed' as const}];
+  const ids=copied.map(()=>crypto.randomUUID());
+  const snapshots=prior.flatMap((m,i)=>{const s=store.snapshot(m.id);return s?[{...s,message_id:ids[i],steps_json:'[]'}]:[];});
   const result=await this.env.DB.batch([
-   this.env.DB.prepare("INSERT INTO sessions(id,owner,title,character_json,character_name,settings_json,book_ids_json,created_at,updated_at,storage_backend,generation_id,generation_until) SELECT ?,?,?,?,?,?,?,?,?,'do',?,? WHERE (SELECT count(*) FROM worldbooks WHERE owner=? AND id IN(SELECT value FROM json_each(?)))=json_array_length(?)").bind(next,owner,row.title+' · 分支',row.character_json,row.character_name,row.settings_json,row.book_ids_json,now,now,'do:'+next,Number.MAX_SAFE_INTEGER,owner,row.book_ids_json,row.book_ids_json),
-   ...copied.map((m,i)=>this.env.DB.prepare('INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at,finish_reason) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM sessions WHERE id=?)').bind(crypto.randomUUID(),next,m.role,m.content,m.status,i,now+i,m.finishReason??null,next))
+   this.env.DB.prepare("INSERT INTO sessions(id,owner,title,character_json,character_name,settings_json,book_ids_json,created_at,updated_at,storage_backend,generation_id,generation_until,agent_seed_json) SELECT ?,?,?,?,?,?,?,?,?,'do',?,?,? WHERE (SELECT count(*) FROM worldbooks WHERE owner=? AND id IN(SELECT value FROM json_each(?)))=json_array_length(?)").bind(next,owner,row.title+' · 分支',row.character_json,row.character_name,row.settings_json,row.book_ids_json,now,now,'do:'+next,Number.MAX_SAFE_INTEGER,JSON.stringify(snapshots),owner,row.book_ids_json,row.book_ids_json),
+   ...copied.map((m,i)=>this.env.DB.prepare('INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at,finish_reason) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM sessions WHERE id=?)').bind(ids[i],next,m.role,m.content,m.status,i,now+i,m.finishReason??null,next))
   ]);
   if(!result[0].meta.changes)throw new HttpError(409,'世界书状态已改变，请重试');
   const saved=await callSession(this.env,owner,next,'read');return saved.session;
  }
  private async remove(owner:string,id:string){const store=await this.load(owner,id);store.remove();await this.scheduleSync();return {ok:true};}
- private async export(owner:string,id:string){const store=await this.load(owner,id),row=store.get();return {row,messages:store.messages()};}
+ private async export(owner:string,id:string){const store=await this.load(owner,id),row=store.get();return {row,messages:store.messages(),snapshots:store.snapshots()};}
  async invoke(owner:string,id:string,method:SessionMethod,data:Record<string,unknown>={}){
   const mutation=['update','fork','remove'].includes(method);
   try{
@@ -123,7 +127,7 @@ export class TavernSession extends DurableObject<Env> {
 export type SessionResults={
  read:{session:ReturnType<typeof session>;messages:ReturnType<typeof message>[]};
  stop:{ok:boolean};update:ReturnType<typeof session>;fork:ReturnType<typeof session>;remove:{ok:boolean};
- export:{row:SessionRow;messages:ReturnType<typeof message>[]};
+ export:{row:SessionRow;messages:ReturnType<typeof message>[];snapshots:ReturnType<SessionStore['snapshots']>};
 };
 export type SessionMethod=keyof SessionResults;
 export async function callSession<K extends SessionMethod>(env:Env,owner:string,id:string,method:K,data:Record<string,unknown>={}):Promise<SessionResults[K]>{

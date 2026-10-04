@@ -96,7 +96,7 @@ export default {
     }
     if(method==='POST'&&chat[2]==='stop')return json(await callSession(env,owner,id,'stop',await body(request)));
     if(method==='GET'&&chat[2]==='export'){
-     const {row,messages}=await callSession(env,owner,id,'export');const lines=[{user_name:JSON.parse(row.settings_json).userName,character_name:row.character_name,create_date:new Date(row.created_at).toISOString()},...messages.map(m=>({name:m.role==='user'?JSON.parse(row.settings_json).userName:row.character_name,is_user:m.role==='user',is_system:false,send_date:new Date(m.createdAt).toISOString(),mes:m.content,extra:{tavern_status:m.status,tavern_finish_reason:m.finishReason??null,ordinal:m.ordinal}}))];
+     const {row,messages,snapshots}=await callSession(env,owner,id,'export');const lines=[{user_name:JSON.parse(row.settings_json).userName,character_name:row.character_name,create_date:new Date(row.created_at).toISOString()},...messages.map(m=>({name:m.role==='user'?JSON.parse(row.settings_json).userName:row.character_name,is_user:m.role==='user',is_system:false,send_date:new Date(m.createdAt).toISOString(),mes:m.content,extra:{tavern_status:m.status,tavern_finish_reason:m.finishReason??null,ordinal:m.ordinal,...(snapshots.find(s=>s.message_id===m.id)?{tavern_agent:snapshots.find(s=>s.message_id===m.id)}:{})}}))];
      return new Response(lines.map(l=>JSON.stringify(l)).join('\n')+'\n',{headers:{'Content-Type':'application/x-ndjson','Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(row.title+'.jsonl')}`,'Cache-Control':'no-store'}});
     }
     if(method==='POST'&&chat[2]==='fork')return json(await callSession(env,owner,id,'fork',await body(request)),201);
