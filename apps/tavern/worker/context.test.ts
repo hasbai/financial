@@ -21,6 +21,17 @@ it('compresses explicitly marked story fragments without ever summarizing long c
  const story=c.storyFragment('正文'.repeat(3000)),candidate='未来候选行动'.repeat(2000),suffix:PromptMessage[]=[{role:'tool',tool_call_id:'call',content:'{"ok":true}'},story,{role:'assistant',content:candidate}];
  await c.compressProjection(suffix);expect(story.content).toContain('已发生正文摘要');expect(suffix.at(-1)?.content).toBe(candidate);expect(infer.mock.calls.every(args=>!JSON.stringify(args).includes('未来候选行动'))).toBe(true);
 });
+it('keeps Unicode whole when halving tool prose, generated prose and recursive summary sources',async()=>{
+ const original='😀'.repeat(2201),inputs:PromptMessage[][]=[],infer=async(messages:PromptMessage[])=>{inputs.push(messages);expect(messages.map(m=>m.content).join('')).not.toMatch(/[\uD800-\uDFFF]/u);return '港口';};
+ const tool=new ConversationContext([message('u','user','出发')],card,[],DEFAULT_SETTINGS,32768,options,infer),fragment=tool.storyFragment(original);
+ await tool.compressProjection([{role:'tool',content:'{"ok":true}',tool_call_id:'t'},fragment]);expect(fragment.content).not.toMatch(/[\uD800-\uDFFF]/u);expect(fragment.content.endsWith('😀'.repeat(1100))).toBe(true);
+ const generated=new ConversationContext([message('u','user','出发')],card,[],DEFAULT_SETTINGS,32768,options,infer);generated.appendOutput(message('a','assistant',''),original,false);await generated.compress();expect(generated.history.at(-1)?.content).toBe('😀'.repeat(1100));
+ const recursive=vi.fn(async(messages:PromptMessage[])=>{expect(messages.map(m=>m.content).join('')).not.toMatch(/[\uD800-\uDFFF]/u);if(messages[1].content.includes('😀😀😀'))throw new SummaryRetry();return '港';});
+ expect(await summarizeStory('',[message('a','assistant','😀'.repeat(5))],{contextTokens:null,inputRatio:1.2,infer:recursive})).toBe('港');expect(recursive.mock.calls.length).toBeGreaterThan(1);expect(inputs).toHaveLength(2);
+});
+it('stops splitting a single supplementary character instead of repeating the same oversized source',async()=>{
+ const infer=vi.fn(async()=>{throw new SummaryRetry();});await expect(summarizeStory('',[message('a','assistant','😀')],{contextTokens:null,inputRatio:1.2,infer})).rejects.toThrow('无法容纳');expect(infer).toHaveBeenCalledTimes(1);
+});
 it('does not summarize below discovered capacity or when unknown, and checkpoints overflow without editing source',async()=>{
  const history=[message('u','user','中'.repeat(1800)),message('a','assistant','未承诺出发。'.repeat(400)),message('new','user','现在呢？')],before=JSON.stringify(history);
  const infer=vi.fn(async()=>'此前未承诺出发。');const c=new ConversationContext(structuredClone(history),card,[],DEFAULT_SETTINGS,null,options,infer);

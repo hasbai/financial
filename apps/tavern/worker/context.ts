@@ -37,6 +37,7 @@ export class SummaryRetry extends Error {
  constructor(readonly contextTokens?: number) { super('会话摘要需要更小的输入'); }
 }
 const SUMMARY_RULE = '压缩会话记忆。只保留已发生事件、人物关系、约定和未决线索；保留否定、更正与时间顺序，不推测、不续写、不输出候选。简洁记录，显著短于原文。';
+function halveStory(text:string):[string,string]{const chars=[...text];if(chars.length<2)throw Error('模型上下文无法容纳会话摘要');const middle=Math.ceil(chars.length/2);return [chars.slice(0,middle).join(''),chars.slice(middle).join('')];}
 export class ConversationContext {
  summary: Summary | null = null;
  private generatedMemory = '';
@@ -83,7 +84,7 @@ export class ConversationContext {
    const plain=suffix.filter(m=>this.storyFragments.has(m)&&m.content.length>1);
    const largest=plain.sort((a,b)=>b.content.length-a.content.length)[0];
    const historyCost=this.history.slice(this.summary?.covered.length??0).filter(m=>m.id!==this.generatedId).reduce((n,m)=>n+estimateTokens(m.content),0);
-   if(largest&&estimateTokens(largest.content)>historyCost){const split=Math.floor(largest.content.length/2);const text=await this.summarize('',[{id:'projection',role:'assistant',content:largest.content.slice(0,split),status:'completed',ordinal:0,requestId:null,createdAt:0}]);largest.content='已发生正文摘要：'+text+'\n'+largest.content.slice(split);this.wireProjection=null;return;}
+   if(largest&&estimateTokens(largest.content)>historyCost){const [older,recent]=halveStory(largest.content);const text=await this.summarize('',[{id:'projection',role:'assistant',content:older,status:'completed',ordinal:0,requestId:null,createdAt:0}]);largest.content='已发生正文摘要：'+text+'\n'+recent;this.wireProjection=null;return;}
   }
   await this.compress();
  }
@@ -100,9 +101,9 @@ export class ConversationContext {
   } else {
    const last = this.history.at(-1);
    if (last?.id === this.generatedId && last.role === 'assistant' && last.content.length > 1) {
-    const split = Math.floor(last.content.length / 2);
-    const text = await this.summarize(this.generatedMemory, [{ ...last, content: last.content.slice(0, split) }]);
-    this.generatedMemory = text; last.content = last.content.slice(split);
+    const [older,recent]=halveStory(last.content);
+    const text = await this.summarize(this.generatedMemory, [{ ...last, content: older }]);
+    this.generatedMemory = text; last.content = recent;
    } else if (this.summary) {
     this.summary = { ...this.summary, text: await this.summarize('', [{ ...remaining[0], role: 'user', content: this.summary.text }]) };
    } else throw new Error('当前输入与角色设定超过模型上下文，无法压缩历史');
@@ -145,11 +146,11 @@ export async function summarizeStory(previous:string,history:Message[],options:{
    return summarizeStory(first, history.slice(middle), options);
   }
   const m = history[0];
-  if(m?.content.length===1 && previous){const shorter=await compressPrevious(previous);return summarizeStory(shorter,history, options);}
-  if (!m || m.content.length < 2) throw new Error('模型上下文无法容纳会话摘要');
-  const middle = Math.ceil(m.content.length / 2);
-  const first = await summarizeStory(previous, [{ ...m, content: m.content.slice(0, middle) }], options);
-  return summarizeStory(first, [{ ...m, content: m.content.slice(middle) }], options);
+  if(m&&[...m.content].length===1 && previous){const shorter=await compressPrevious(previous);return summarizeStory(shorter,history, options);}
+  if (!m) throw new Error('模型上下文无法容纳会话摘要');
+  const [older,recent]=halveStory(m.content);
+  const first = await summarizeStory(previous, [{ ...m, content: older }], options);
+  return summarizeStory(first, [{ ...m, content: recent }], options);
 }
 
 export async function summarizeWithModel(env: Env, username: string, requestId: string, settings: Settings, messages: PromptMessage[], signal: AbortSignal, observe?:(event:Parameters<import('./metrics').InferenceMetrics['observe']>[0],logId:string|null)=>void) {
