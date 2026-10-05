@@ -1,11 +1,19 @@
 # Tavern 交付状态
 
-## 同次正文工具与Unicode压缩（2026-10-05，交付中）
+## 同次正文工具与Unicode压缩（2026-10-05，已上线）
 
 已复现同一响应长正文+tool_calls的超限失败：正文未标为可压缩，原回合unsupported/error，无摘要请求，原文部分保留、state不提交。修复以实际解析剧情与wire比对，允许CRLF及空白缓冲差异；仅确定剧情可局部压缩，工具调用/结果顺序不改，未来候选协议不入摘要。工具/length/流式超限路径统一此判断。压缩中点改按Unicode字符，避免切断emoji；不可再拆单字符报真实失败，不重复递归同源。
 
 - context/index/director相关134项检查及定向TypeScript通过。覆盖同次长正文工具、CRLF/末尾换行、三种候选协议隔离、三处Unicode分割/单字符进展、完整正文/状态保存；修复前同次长正文回归明确失败。
-- 真实workerd/SQLite2048窗口下同次2201个emoji+tool_calls正常局部压缩，调用与结果相邻、全文/三候选/港口state/重启/UUID回放保留；模型为夹具。固定Linux28流程84图通过，81个PNG文件与基线一致，当前Playwright比较器全部通过，保留原基线；设备模拟不是真机。Architect代码/跨请求缓冲复核无阻塞。CI、自动发布及生产验收待完成。
+- 真实workerd/SQLite2048窗口下同次2201个emoji+tool_calls正常局部压缩，调用与结果相邻、全文/三候选/港口state/重启/UUID回放保留；模型为夹具。固定Linux28流程84图通过，81个PNG文件与基线一致，当前Playwright比较器全部通过，保留原基线；设备模拟不是真机。Architect代码/跨请求缓冲复核无阻塞。
+- [PR #58](https://github.com/hasbai/financial/pull/58) head `24ca03ea18e05d1ac1a3cc4770868db8233f8583`，Check `37221246401`、Blog `37221246295`、Zboard `37221246255`、Tavern `37221246175`各一次统一等待，八项必需状态成功，包含最新main后squash `3bd05f99430ccd0a1188637f881a8180fc67ead7`。
+- 主代理安全读取Builds API核验自动Build `02412b5c-5ba9-4a75-b2ff-d910043b3953` success、push_event/main/commit_hash精确匹配squash；补齐交付代理仅OAuth未取得的Build证据。deployment `84c9d4c6-78d2-4002-abab-e3779fc2a42f`的version `505d6ba0-891c-47a7-a8aa-a8167779abf7`流量100%，health200同版本，无手动部署。
+- 真实Universal Login/PKCE/JWT正常回合 `d7fa3598-3354-4740-ba96-e43a92d5856d`：模型同次输出28字正文和update_state，再带完整call/result续写；两次正文、一次独立Director，全文74字、completed/stop/三候选，state/步骤导出/刷新/UUID回放/占用释放通过。Gateway三条完整payload、三项metadata、候选逐字等于JSON核对，临时角色/会话2/2清理，全局设置未变。此回合没有超限，不冒称压缩验收。
+- 实际Unicode压力回合 `3aef42e6-5f22-459e-accc-65b8758a2048`：开场70028个UTF-16单元/35027个Unicode码点，正文历史与Director局部各两次摘要；四次摘要真实输入17589/17605/17619/17665 tokens，压缩后正文两次模型请求的输入tokens为697/800，Director输入489 tokens。所有实际模型请求都是合法Unicode，原始开场逐字保留；正常同次61字正文+工具后续写、总正文82字、state及三候选/刷新/UUID回放通过。七条Gateway完整payload/三项metadata/工具顺序/三候选JSON核验，两个临时资源清理，全局设置及私人历史未改。
+- 上述线上压力证明历史及Director局部Unicode压缩；尚未在线上诱导同次超长正文+tool_calls再压缩，该形状以workerd/自动化为证。候选协议隔离、单字符递归退出和中断故障同样不冒称生产诱导验证。
+- 首次17001emoji样本仅17684/17765输入tokens，未触发压缩，不能算压力通过；日志读请求ETIMEDOUT后清理未完成，主代理通过独立普通JWT DELETE两资源200恢复并保留证据。验收脚本为非生成API/日志增加30秒超时，生成仍无总超时；扩大样本后完成上方真实压缩验收，不重复旧模型请求。旧样本记录保存在`tool-prose-pressure/first-17001`。
+
+本批证据位于忽略目录`apps/tavern/.local-visual/tool-prose`、`tool-prose-pressure`及Linux`2026-10-04T17-31-31.058Z`，没有Token。持续架构迭代按已确认方案和实际样本推进。
 
 ## 检索片段的匹配与Unicode边界（2026-10-05，已上线）
 
