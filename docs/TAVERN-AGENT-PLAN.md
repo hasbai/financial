@@ -223,8 +223,8 @@ update_state暂存于本回合并可供工具续轮读取；最终正文正常�
 
 主代理修改并提交任务文件，默认可见文字变化先生成Linux截图、审阅/import；新子代理推分支/PR等待全部必需状态，包含最新main后squash。核验Workers Builds自动发布SHA与health版本，不重复手动部署。DO/state阶段补隔离存储验证与兼容迁移，不只推前端遗漏数据。
 
-## SSE背压下停止与收尾（2026-10-05，待PR发布）
+## SSE背压下停止与收尾（2026-10-05，已上线）
 
 直接DO测试已复现旧实现的三种阻塞：start/delta/candidates_pending暂停读取后，停止无法释放generation_id。修复让发送与abort竞速，终态入队后terminate，取消不再续租。没有新增整轮deadline、数据库迁移或界面变更。
 
-114项Worker/session-object检查及TypeScript通过；新增阶段命中断言、停止正文保存/状态回滚/回放/删除、正常完成停读done、request.signal断连停读delta。真实workerd在对象内部暂停读取四阶段，锁释放后先删除再drain，验证done终态、无业务表/alarm；模型是夹具，不是线上推理。固定Linux28流程/84截图完成，82张逐字节一致，两张在既有50像素门槛内，无新基线。PR/CI、自动构建SHA与线上JWT验收待交付。
+114项Worker/session-object检查及TypeScript通过；新增阶段命中断言、停止正文保存/状态回滚/回放/删除、正常完成停读done、request.signal断连停读delta。真实workerd在对象内部暂停读取四阶段，锁释放后先删除再drain，验证done终态、无业务表/alarm；模型是夹具，不是线上推理。固定Linux28流程/84截图完成，82张逐字节一致，两张在既有50像素门槛内，无新基线。PR59八项CI、自动构建SHA/100%版本/health200及真实JWT停止、回放、同会话后续生成和删除已核验；线上网络缓冲未证明真实背压，确定性背压以workerd为证。详见交付状态首节。

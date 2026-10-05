@@ -1,5 +1,16 @@
 # Tavern 交付状态
 
+## SSE背压下停止与DO释放（2026-10-05，已上线）
+
+修复客户端暂停读取SSE时停止被writer.write卡住的问题：开始、正文和候选等待事件均响应abort；取消后不继续续租。先保存终态并释放DO活跃状态，再将最多error/done两帧入队并结束流，正常完成也不等待最终reader；主动结束不误判断连。没有增加整轮deadline、数据库迁移或界面。
+
+- 同一组直接DO回归在修复前3/3卡在generation_id释放断言；修复后Worker/session-object共114项及TypeScript通过。覆盖阶段真实write命中、保存已生成正文、停止state不提交、UUID回放、删除；另验正常完成停读done及request.signal在blocked delta断连。Architect实现与补验复核无阻塞。
+- 真实workerd在对象内部暂停读取start/delta/candidates_pending/completed四阶段，锁释放后先remove、再drain；验证done终态、业务表清空/alarm为空（SQLite基础页仍4096字节）。模型是夹具，不当作线上推理或namespace物理观测。固定Linux28流程/84截图通过，82张PNG与基线一致，其余两张当前Playwright比较器在既有50像素门槛内，未导入基线；设备模拟不是真机。
+- [PR #59](https://github.com/hasbai/financial/pull/59) head `06b2b2aec1d4986df3b76c3061c0202447e08259`，Check `37262026241`、Blog `37262026157`、Zboard `37262026118`、Tavern `37262026116`各一次统一等待，八项必需状态成功；包含最新main后squash `e885d773248fe6bd40938a2375927d3091ac45b1`。
+- 自动Build `ba328e33-e17e-4dc2-9a1c-d3c4f621a892` success、push_event/main/commit_hash精确匹配合并SHA；deployment `c0648174-9ea9-4bc4-a2a6-599fa94da229`，version `5abfc718-ab2f-487a-a8ed-abb3819c56f2`流量100%，health200且版本相同。没有手动部署。
+- 真实Universal Login/PKCE/JWT停止请求 `9fa98f16-dbb7-4e93-b405-f74d4174d763`：生成响应暂停读取，发起STOP至GET确认锁释放419ms，此时正文0字符、aborted/stopped，同UUID回放一致。在恢复读取前同会话新请求 `204696ab-5538-4ab7-8a88-77c4c821dc5b` 正常生成2844字符及三候选，completed/stop，delta等于done；随后DELETE成功，再读取原停止流，恰一error/一done与已存消息一致并到EOF。没有证实生产网络路径真正形成writer背压，不能用419ms作为背压性能或P95；已输出正文保留以直接测试为证。
+- 临时会话/角色2/2清理，全局设置逐字保持，私人历史未改。证据在忽略目录`apps/tavern/.local-visual/backpressure`与`backpressure-before-direct.log`/`backpressure-tests.log`/`backpressure-runtime.log`，Linux`2026-10-05T04-00-45.295Z`。持续goal保持active，后续沿已确认方案及实际样本迭代。
+
 ## 同次正文工具与Unicode压缩（2026-10-05，已上线）
 
 已复现同一响应长正文+tool_calls的超限失败：正文未标为可压缩，原回合unsupported/error，无摘要请求，原文部分保留、state不提交。修复以实际解析剧情与wire比对，允许CRLF及空白缓冲差异；仅确定剧情可局部压缩，工具调用/结果顺序不改，未来候选协议不入摘要。工具/length/流式超限路径统一此判断。压缩中点改按Unicode字符，避免切断emoji；不可再拆单字符报真实失败，不重复递归同源。
