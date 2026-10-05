@@ -90,9 +90,41 @@ it('cancels idle upstream when the response reader disconnects and releases the 
  const response=await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'idle'});const reader=response.body!.getReader();await reader.read();await vi.waitFor(()=>expect(aiRun).toHaveBeenCalled());await reader.cancel();await Promise.all(work);
  expect(cancel).toHaveBeenCalled();expect(sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id).toBeNull();expect(sessionDb.prepare("SELECT status FROM messages WHERE request_id IS NOT NULL AND role='assistant'").get()?.status).toBe('aborted');
 });
+it.each(['start','delta','candidates_pending'])('settles stop during %s backpressure without waiting for the response reader',async phase=>{
+ const {s}=await seed(),requestId=crypto.randomUUID(),writes=vi.spyOn(WritableStreamDefaultWriter.prototype,'write');
+ const target=(env.SESSIONS as unknown as {getByName(name:string):TavernSession}).getByName(JSON.stringify(['auth0|owner',s.id]));
+ const response=await target.fetch(new Request('https://session/generate',{method:'POST',headers:{'X-Tavern-Owner':'auth0|owner','X-Tavern-Session':s.id,'X-Tavern-Username':encodeURIComponent('月石'),'Content-Type':'application/json'},body:JSON.stringify({requestId,content:'你好'})})),reader=response.body!.getReader();
+ try{
+  if(phase!=='start')await reader.read();
+  if(phase==='candidates_pending')await reader.read();
+  await vi.waitFor(()=>expect(writes.mock.calls.some(([chunk])=>new TextDecoder().decode(chunk as Uint8Array).includes('\"type\":\"'+phase+'\"'))).toBe(true));
+  const id=sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id as string;
+  expect((await call('/api/sessions/'+s.id+'/stop','POST',{generationId:id})).status).toBe(200);
+  await vi.waitFor(()=>expect(sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id).toBeNull(),{timeout:200});
+  await Promise.all(work);let wire='';for(;;){const next=await reader.read();if(next.done)break;wire+=new TextDecoder().decode(next.value);}
+  expect(wire).toContain('"type":"done"');expect(wire).toContain('"status":"aborted"');expect(wire).toContain('"finishReason":"stopped"');expect(sessionDb.prepare('SELECT content FROM messages WHERE id=?').get(id)?.content).toBe(phase==='start'?'':'欢迎来到港城。');expect(sessionDb.prepare('SELECT after_json FROM turn_snapshots WHERE message_id=?').get(id)?.after_json).toBeNull();
+  expect((await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId})).json() as {replayed:boolean}).replayed).toBe(true);
+  expect((await call('/api/sessions/'+s.id,'DELETE')).status).toBe(200);
+ }finally{await reader.cancel();await Promise.allSettled(work);writes.mockRestore();}
+});
+it.each(['completed','disconnected'])('settles %s transport without a terminal reader',async outcome=>{
+ const {s}=await seed(),requestId=crypto.randomUUID(),abort=new AbortController(),writes=vi.spyOn(WritableStreamDefaultWriter.prototype,'write');
+ const target=(env.SESSIONS as unknown as {getByName(name:string):TavernSession}).getByName(JSON.stringify(['auth0|owner',s.id]));
+ const response=await target.fetch(new Request('https://session/generate',{method:'POST',signal:abort.signal,headers:{'X-Tavern-Owner':'auth0|owner','X-Tavern-Session':s.id,'Content-Type':'application/json'},body:JSON.stringify({requestId,content:'你好'})})),reader=response.body!.getReader();
+ try{
+  await reader.read();
+  if(outcome==='completed'){await reader.read();await reader.read();}else{await vi.waitFor(()=>expect(writes.mock.calls.some(([chunk])=>new TextDecoder().decode(chunk as Uint8Array).includes('"type":"delta"'))).toBe(true));abort.abort();}
+  await vi.waitFor(()=>expect(sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id).toBeNull(),{timeout:200});await Promise.all(work);
+  let wire='';for(;;){const next=await reader.read();if(next.done)break;wire+=new TextDecoder().decode(next.value);}
+  const saved=sessionDb.prepare("SELECT status,finish_reason,content FROM messages WHERE request_id=? AND role='assistant'").get(requestId);
+  expect(saved).toMatchObject({status:outcome==='completed'?'completed':'aborted',finish_reason:outcome==='completed'?'stop':'disconnected',content:'欢迎来到港城。'});
+  if(outcome==='completed')expect(wire).toContain('"type":"done"');else expect(wire).not.toContain('"type":"done"');
+  expect((await call('/api/sessions/'+s.id,'DELETE')).status).toBe(200);
+ }finally{await reader.cancel();await Promise.allSettled(work);writes.mockRestore();}
+});
 it('stops an idle upstream without waiting for another model chunk',async()=>{
  const {s}=await seed(),cancel=vi.fn();aiRun.mockImplementation(async()=>new ReadableStream({cancel}));
- const response=await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'idle'});const reader=response.body!.getReader();await reader.read();const generationId=sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id;
+ const response=await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'idle'});const reader=response.body!.getReader();await reader.read();await vi.waitFor(()=>expect(aiRun).toHaveBeenCalled());const generationId=sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id;
  expect((await call('/api/sessions/'+s.id+'/stop','POST',{generationId})).status).toBe(200);while(!(await reader.read()).done){}await Promise.all(work);expect(cancel).toHaveBeenCalled();expect(sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id).toBeNull();
 });
 

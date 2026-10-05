@@ -30,7 +30,7 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
  if(!store.claim(assistantId,now))throw new HttpError(409,'当前会话正在生成');
  const abort=new AbortController();let checking=false;let leaseLost=false;let ready=false;let finishing=false;let abortReason:FinishReason='stopped';onClaim(assistantId,abort);
  const owns=async()=>{if(abort.signal.aborted)throw new Error('生成已停止');if(!store.owns(assistantId)){leaseLost=true;abort.abort();throw new Error('会话生成已接管');}};
- const stopWatcher=setInterval(()=>{if(checking||finishing)return;checking=true;try{if(!store.renew(assistantId)){leaseLost=true;abort.abort();return;}if(ready&&!store.pending(assistantId)){abortReason='stopped';abort.abort();}}catch{leaseLost=true;abortReason='upstream';abort.abort();}finally{checking=false;}},1000);
+ const stopWatcher=setInterval(()=>{if(checking||finishing||abort.signal.aborted)return;checking=true;try{if(!store.renew(assistantId)){leaseLost=true;abort.abort();return;}if(ready&&!store.pending(assistantId)){abortReason='stopped';abort.abort();}}catch{leaseLost=true;abortReason='upstream';abort.abort();}finally{checking=false;}},1000);
  let prefix='';let row=initial;let prompt:ReturnType<typeof buildPrompt>;let conversation:ConversationContext;let agent:AgentTurn;
  const toolTranscript:PromptMessage[]=[];
  let projectionContext:unknown;let storyProjection:ModelProjection|undefined;let lore:LoreIndex;
@@ -63,9 +63,17 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
  }catch(error){clearInterval(stopWatcher);abort.abort();store.release(assistantId);await onSettled(assistantId);if(error instanceof Error&&error.message.includes('上下文上限'))throw new HttpError(400,error.message);throw error;}
  let disconnected=false;let output=prefix;let finishReason:FinishReason='interrupted';let model='';let gatewayLogId:string|null=null;let metrics=new InferenceMetrics();let firstModelStarted:number|null=null;let modelRequests=0;let firstBodyAt:number|null=null;let candidates:string[]=[];const parser=new CandidateStream(candidateDelimiter());let parserFinished=false;let candidateOutcome='not-started';let bodyModel='';let bodyGatewayLogId:string|null=null;let bodyFinishedAt:number|null=null;let candidateStartedAt:number|null=null;let candidateFirstAt:number|null=null;let candidateFinishedAt:number|null=null;let bodyRequests=0;let director:DirectorAgent|undefined;let synopsisRequests=0;let synopsisSource='not-started';let synopsisCovered=0;let synopsisMetrics:ReturnType<InferenceMetrics['snapshot']>|null=null;let synopsisGatewayLogId:string|null=null;let synopsisModel='';let synopsisElapsedMs=0;let directorStartedAt:number|null=null;let bodyMetrics:ReturnType<InferenceMetrics['snapshot']>|null=null;
 
- const stream=new TransformStream<Uint8Array,Uint8Array>(); const writer=stream.writable.getWriter(),encoder=new TextEncoder();
- const send=async(event:unknown)=>{await writer.write(encoder.encode('data: '+JSON.stringify(event)+'\n\n'));};
- const onDisconnect=()=>{disconnected=true;abortReason='disconnected';abort.abort();};request.signal.addEventListener('abort',onDisconnect,{once:true});if(request.signal.aborted)onDisconnect();void writer.closed.catch(onDisconnect);
+ let transport!:TransformStreamDefaultController<Uint8Array>,ending=false;
+ const stream=new TransformStream<Uint8Array,Uint8Array>({start(controller){transport=controller;}});
+ const writer=stream.writable.getWriter(),encoder=new TextEncoder();
+ const frame=(event:unknown)=>encoder.encode('data: '+JSON.stringify(event)+'\n\n');
+ const send=async(event:unknown)=>{
+  if(abort.signal.aborted)throw new Error('生成已停止');
+  let stop!:()=>void;
+  const cancelled=new Promise<never>((_,reject)=>{stop=()=>reject(new Error('生成已停止'));abort.signal.addEventListener('abort',stop,{once:true});});
+  try{await Promise.race([writer.write(frame(event)),cancelled]);}finally{abort.signal.removeEventListener('abort',stop);}
+ };
+ const onDisconnect=()=>{if(ending)return;disconnected=true;abortReason='disconnected';abort.abort();};request.signal.addEventListener('abort',onDisconnect,{once:true});if(request.signal.aborted)onDisconnect();void writer.closed.catch(onDisconnect);
  const work=(async()=>{
   let status:Message['status']='completed';let failure='';
   try{
@@ -158,12 +166,13 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
    if(director?.requests){gatewayLogId=director.gatewayLogId;model=director.model;}else if(synopsisRequests){gatewayLogId=synopsisGatewayLogId;model=synopsisModel;}
    finishing=true;clearInterval(stopWatcher);
    if(!parserFinished)output+=parser.finish().body;
-   request.signal.removeEventListener('abort',onDisconnect);
    try{
     const saved=store.finish(assistantId,output,status,finishReason,candidates,agent.state,storyProjection);await onSettled(assistantId);
     console.info('tavern-generation-outcome',{messageId:assistantId,requestId,gatewayLogId,finishReason:saved?.finish_reason,status:saved?.status,model,modelRequests,metricsScope:director?.requests?'last-candidate-request':synopsisRequests?'last-synopsis-request':'last-body-request',...phaseMetrics,firstBodyMs:firstBodyAt===null?null:firstBodyAt-started,modelFirstBodyMs:firstBodyAt===null||firstModelStarted===null?null:firstBodyAt-firstModelStarted,promptBudget:prompt.budget,estimatedInputTokens:prompt.estimatedTokens,chars:output.length,bodyModel,bodyGatewayLogId,bodyRequests,candidateRequests:director?.requests??0,synopsisRequests,synopsisSource,synopsisCovered,synopsisMetricsScope:'last-synopsis-request',synopsisMetrics,synopsisGatewayLogId,synopsisElapsedMs,directorFirstMs:candidateFirstAt===null||directorStartedAt===null?null:candidateFirstAt-directorStartedAt,bodyMetricsScope:'last-body-request',bodyMetrics,bodyCompleteMs:bodyFinishedAt===null?null:bodyFinishedAt-started,candidateFirstMs:candidateFirstAt===null||candidateStartedAt===null?null:candidateFirstAt-candidateStartedAt,candidateElapsedMs:candidateFinishedAt===null||candidateStartedAt===null?null:candidateFinishedAt-candidateStartedAt,directorContextRebuilds:director?.rebuilds??0,directorEstimatedInputTokens:director?.prompt().estimatedTokens??null,directorIncludedMessages:director?.prompt().includedMessages??null,directorStoryCondensed:director?.prompt().condensed??false,candidateOutcome,candidateCount:saved?.candidates_json?JSON.parse(saved.candidates_json).length:0,elapsedMs:Date.now()-started});
-    if(!disconnected&&!leaseLost){if(failure)await send({type:'error',message:failure});await send({type:'done',message:message(saved!)});}
-   }finally{clearInterval(stopWatcher);await writer.close().catch(()=>{});}
+    // Terminal frames are bounded and must not retain the generation while a reader is paused.
+    if(!disconnected&&!leaseLost){if(failure)transport.enqueue(frame({type:'error',message:failure}));transport.enqueue(frame({type:'done',message:message(saved!)}));}
+   }finally{ending=true;clearInterval(stopWatcher);request.signal.removeEventListener('abort',onDisconnect);try{transport.terminate();}catch{/* The reader may already have cancelled. */}}
+
   }
  })();
  ctx.waitUntil(work.catch(()=>{console.error('tavern-generation-persist-failed',{messageId:assistantId});abort.abort();}));
