@@ -201,6 +201,8 @@ DO的revision/synced_revision记录待同步目录，alarm幂等重试，正文�
 
 短事务领取占用，外部模型await期间允许stop进入；不持有blockConcurrencyWhile。重复requestId回放已有结果，同会话其他请求明确冲突。重启未完成回合可标记中断，不自动重复模型请求。
 
+客户端暂停读取SSE时，start/delta/candidates_pending写入必须响应停止与断连；中止后不续租。先保存回合终态并释放DO活跃状态，再将最多error/done两帧直接入队并结束流，正常完成的done也不等待reader。主动结束流不能被误判断连；持久化异常同样结束传输。停止后的未确认state不提交，保存正文与UUID回放沿用现有事务；删除可在reader继续读取之前清空DO存储及alarm。标准TransformStream构造器按当前兼容日期启用，依据[兼容标志](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#standard-transformstream-constructor)。
+
 update_state暂存于本回合并可供工具续轮读取；最终正文正常完成时，与message/快照/revision同DO事务提交。尚未最终stop的续写、取消/断流/工具失败不提交推测状态。重生成从被替换回合前态开始，新成功版本才切选中状态；分支创建新DO，只复制分支点之前的有效state/摘要，不能继承未来剧情。续写保留部分正文，不预提交其未完成叙事状态。
 
 ## 摘要与记忆检索
@@ -220,3 +222,9 @@ update_state暂存于本回合并可供工具续轮读取；最终正文正常�
 首批精简候选协议曾漏候选，完整前缀两阶段已被当前独立Director替代；正文保留最新user提醒，候选只读取剧情数据。摘要checkpoint、每会话DO、state、按需记忆检索与多轮工具均已发布；旧26版本迁移与真实模型/超限摘要已验收，Director与整体梗概证据见交付状态首节。各步区分代码、自动化/固定Linux视觉、真实JWT/API、真实模型/cache、生产发布。默认提示只升级精确匹配已知旧默认，不覆盖自定义。
 
 主代理修改并提交任务文件，默认可见文字变化先生成Linux截图、审阅/import；新子代理推分支/PR等待全部必需状态，包含最新main后squash。核验Workers Builds自动发布SHA与health版本，不重复手动部署。DO/state阶段补隔离存储验证与兼容迁移，不只推前端遗漏数据。
+
+## SSE背压下停止与收尾（2026-10-05，待PR发布）
+
+直接DO测试已复现旧实现的三种阻塞：start/delta/candidates_pending暂停读取后，停止无法释放generation_id。修复让发送与abort竞速，终态入队后terminate，取消不再续租。没有新增整轮deadline、数据库迁移或界面变更。
+
+114项Worker/session-object检查及TypeScript通过；新增阶段命中断言、停止正文保存/状态回滚/回放/删除、正常完成停读done、request.signal断连停读delta。真实workerd在对象内部暂停读取四阶段，锁释放后先删除再drain，验证done终态、无业务表/alarm；模型是夹具，不是线上推理。固定Linux28流程/84截图完成，82张逐字节一致，两张在既有50像素门槛内，无新基线。PR/CI、自动构建SHA与线上JWT验收待交付。
