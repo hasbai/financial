@@ -245,8 +245,19 @@ update_state暂存于本回合并可供工具续轮读取；最终正文正常�
 
 PR61八项CI通过，squash5b86f0dbb73e6a2032c451fb609a68fe313ac9ab；自动Build b1dd2ed5-1ca9-4a1e-a2fb-9c94cdaf228c成功并匹配SHA，100%版本32f2bf45-2bb9-4628-8e9e-2685f4f52ab1与health200一致。真实JWT requestId c93295d8-34aa-4910-a6c7-9358f0771595仍error/interrupted0字，临时角色/会话2/2清理。此时已通过HTTP2xx及SSE检查，不是旧HTTP400；唯一对应时间/输入/用户名的Workers AI日志50c4b253612a009cb686774ed60816cad9f7158a7ddd9f294d1f87c309773934保存完整OAI SSE，现有解析器离线可读36帧/36字/stop。日志三项metadata及完整payload存在，但event_id为空，不能把时间匹配当事件关联验收。未证明完整入口修复。
 
-## 空工具增量（2026-10-08，待发布）
+## 空工具增量（2026-10-08，已发布）
 
 Gemma正文delta含tool_calls:null。旧ToolCallStream在处理同帧正文前拒绝null，因此完整模型输出仍落库0字。仅把顶层null等同undefined视为无工具增量；不放松真实调用结构、参数、索引或终态。null可穿插真实工具分片，字符串/对象/[null]/调用内非法字段仍拒绝，tool_calls终态没有实际工具仍失败。
 
-失败复现2failed/118passed；修复后156项相关单元、TypeScript、真实workerd SQLite（模型夹具）通过，覆盖正文delta/done/Director/持久化/UUID回放及停止、清理。固定Linux28流程84图通过，81PNG一致、3在既有50像素门槛内，基线保持；PR/自动部署及真实生成待验收。原生Workers AI日志event_id缺失仍是独立待解决问题，不额外添加metadata，不换route、不删参数重试。
+失败复现2failed/118passed；修复后156项相关单元、TypeScript、真实workerd SQLite（模型夹具）通过，覆盖正文delta/done/Director/持久化/UUID回放及停止、清理。固定Linux28流程84图通过，81PNG一致、3在既有50像素门槛内，基线保持；PR与自动部署及真实普通生成验收结果如下，工具功能仍待后续修复。原生Workers AI日志event_id缺失仍是独立待解决问题，不额外添加metadata，不换route、不删参数重试。
+
+
+PR62八项CI通过，squash cfad63693d43db885df2737cc817cba231c6b8aa；自动Build03c813c0-e2b9-4e43-bd16-4e9c180acc1c成功精确匹配SHA，100%版本dd19a63a-a64d-4e58-bfe6-60d6ebcc6ca3与health200一致。真实JWT普通47f577b2-9a21-4fc0-8d85-e55314b76046完成53字/三候选；a420aba3-b3d4-4ab5-8280-1ee1ec2bf77a停止保存52字，e00d504f-cc4e-4fa6-bfd8-8d9ea194bee5显式续聊完成984字/三候选，delta与保存/刷新/UUID回放一致、占用释放、两资源清理。唯一夹具及验证用户名匹配六份完整payload，三正文/两Director/一梗概，三项metadata正确，但event_id均空；这是内容核验，不是事件关联验收。
+
+真实工具回合e4e1de72-bcc3-439a-8ee0-640d52e7e380仍24字/interrupted，临时资源2/2清理。日志a7ebfca8ed6cadce7c9fb8b2a7cc5484ca0833eaff9226cb24334dde18379c87显示index1首帧携带调用ID/name，次帧id/name为null而arguments是完整patch；下述可选字段修复前不能宣称工具功能恢复。
+
+## 工具分片可选字段（2026-10-08，待发布）
+
+[官方OpenAI Chat Completion Chunk类型](https://raw.githubusercontent.com/openai/openai-python/main/src/openai/types/chat/chat_completion_chunk.py)定义tool call的id/type/function及function内name/arguments为可空，index为必需。原解析器把真实后续分片的null ID/name判错。统一只在读取可选字段时跳过null，不覆盖已累计内容，不递归清洗arguments字符串或业务patch中的null；保留索引、字段类型、最终身份、重复ID、工具参数与空终态校验。先到空字段后补有效字段仍保留未完成索引，缺字段不能伪装无工具。
+
+修复前2failed/121passed，修复后159项相关单元与TypeScript通过；真实workerd使用index1分帧及空字段，工具执行/步骤/状态、后续正文/候选/回放/重启/停止/删除清空通过（模型为夹具）。固定Linux28流程84图完成，82PNG一致、2在既有50像素门槛内，保留原基线；PR、自动部署与真实工具回合待验收。原生Gateway event_id遗漏及其修复所需鉴权/兼容发布仍独立待解决。

@@ -98,5 +98,15 @@ it('preflights a whole batch without consuming calls or partially staging state'
 
 it('ignores null tool deltas between real fragments without accepting malformed calls',()=>{
  const stream=new ToolCallStream();stream.push(null);expect(stream.size).toBe(0);stream.push([{index:0,id:'c',type:'function',function:{name:'update_',arguments:'{"patch":'}}]);stream.push(null);stream.push([{index:0,function:{name:'state',arguments:'{"scene":"港口"}}'}}]);stream.push(null);expect(stream.finish()).toEqual([{id:'c',type:'function',function:{name:'update_state',arguments:'{"patch":{"scene":"港口"}}'}}]);
- for(const bad of [false,0,'',{},[null],[{index:0,function:null}],[{index:0,function:{arguments:null}}]])expect(()=>new ToolCallStream().push(bad)).toThrow();
+ for(const bad of [false,0,'',{},[null],[{index:null}],[{index:0,function:false}],[{index:0,function:{arguments:1}}]])expect(()=>new ToolCallStream().push(bad)).toThrow();
+});
+
+it('assembles nullable optional tool fields without losing earlier identity or argument fragments',()=>{
+ const stream=new ToolCallStream();stream.push([{index:1,id:'c',type:'function',function:{name:'update_state',arguments:''}}]);stream.push([{index:1,id:null,type:null,function:null}]);stream.push([{index:1,id:null,type:'function',function:{name:null,arguments:'{"patch":'}}]);stream.push([{index:1,id:null,type:null,function:{name:null,arguments:null}}]);stream.push([{index:1,function:{name:null,arguments:'{"scene":"北港"}}'}}]);expect(stream.finish()).toEqual([{id:'c',type:'function',function:{name:'update_state',arguments:'{"patch":{"scene":"北港"}}'}}]);
+ for(const bad of [[{index:null}],[{index:0,id:1}],[{index:0,type:0}],[{index:0,function:false}],[{index:0,function:{name:false}}],[{index:0,function:{arguments:1}}]])expect(()=>new ToolCallStream().push(bad)).toThrow();
+ const incomplete=new ToolCallStream();incomplete.push([{index:0,id:null,type:null,function:{name:null,arguments:null}}]);expect(()=>incomplete.finish()).toThrow('不完整');
+});
+
+it('retains an initially empty index until later fields complete it and preserves null in JSON arguments',()=>{
+ const stream=new ToolCallStream();stream.push([{index:1,id:null,type:null,function:{name:null,arguments:null}}]);expect(stream.size).toBe(1);expect(()=>stream.finish()).toThrow();stream.push([{index:1,id:'later',type:'function',function:{name:'update_state',arguments:'{"patch":{"facts":{"钥匙":null}}}'}}]);stream.push([{index:1,id:null,type:null,function:{name:null,arguments:null}}]);expect(stream.finish()).toEqual([{id:'later',type:'function',function:{name:'update_state',arguments:'{"patch":{"facts":{"钥匙":null}}}'}}]);
 });

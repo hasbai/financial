@@ -71,9 +71,9 @@ export class ToolCallStream {
   if(value===undefined||value===null)return;if(!Array.isArray(value)||value.length>8)throw Error('工具协议无效');
   for(const d of value){if(!object(d)||!Number.isSafeInteger(d.index)||Number(d.index)<0||Number(d.index)>7)throw Error('工具索引无效');
    const i=Number(d.index),call=this.calls.get(i)??{id:'',type:'function' as const,function:{name:'',arguments:''}};
-   if(d.id!==undefined){if(typeof d.id!=='string'||d.id.length>200)throw Error('工具ID无效');call.id=d.id;}
-   if(d.type!==undefined&&d.type!=='function')throw Error('工具类型无效');
-   if(d.function!==undefined){if(!object(d.function))throw Error('工具内容无效');for(const key of ['name','arguments'] as const){const text=d.function[key];if(text!==undefined){if(typeof text!=='string')throw Error('工具字段无效');call.function[key]+=text;}}}
+   if(d.id!==undefined&&d.id!==null){if(typeof d.id!=='string'||d.id.length>200)throw Error('工具ID无效');call.id=d.id;}
+   if(d.type!==undefined&&d.type!==null&&d.type!=='function')throw Error('工具类型无效');
+   if(d.function!==undefined&&d.function!==null){if(!object(d.function))throw Error('工具内容无效');for(const key of ['name','arguments'] as const){const text=d.function[key];if(text!==undefined&&text!==null){if(typeof text!=='string')throw Error('工具字段无效');call.function[key]+=text;}}}
    if(call.function.arguments.length>16384||call.function.name.length>80)throw Error('工具参数过长');this.calls.set(i,call);
   }
  }
