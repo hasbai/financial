@@ -236,8 +236,17 @@ update_state暂存于本回合并可供工具续轮读取；最终正文正常�
 已复现最终保存抛错时跳过onSettled，使UI永久显示占用；以及初始快照失败留下无任务的pending消息。按上述事务/恢复约定修复，并补冷实例直接删除、首次恢复失败再试、旧恢复ID和停止原因保护。123项index/session-object检查与TypeScript通过；真实workerd用SQLite触发器注入初始化/最终/持续写入故障，移除触发器后同实例恢复、UUID及删除通过，模型为夹具。固定Linux28流程84图，81PNG一致、3在当前50像素门槛内，保留基线。PR60八项CI通过，squash cf3760d71e67088e0a4a8a26dfda494e6bf4282c；自动Build a544a495-634a-4d27-9ece-50d5f5305858成功并匹配SHA，100%版本736057ef-f8ac-46f4-8f96-87b01e9d3567与health200一致。真实JWT普通生成遇上游400（requestId 905e6391-5a0d-4bf3-99aa-9a31c7badfd1，Gateway日志01M4CPVQZ3BVJN9HV285TBJWQ9），两项临时资源均清理；正常链路仍待下述调用入口修复后的验收，不在生产注入存储故障。
 
 
-## 原生动态路由绑定（2026-10-08，待发布验收）
+## 原生动态路由绑定（2026-10-08，已发布，线上验收未通过）
 
 旧绑定实际命中workers-ai/@cf/google/gemma-4-26b-a4b-it并返回400；同一失败request_head通过compat HTTP和现代REST接口均200，完整采样参数与工具亦成功。此证据定位调用路径差异，不能单凭旧入口deprecated或预览网络超时宣称根因已确定。
 
 正文、Director、摘要共享runRoleplay原生AI.run入口，固定dynamic/rp及Gateway；returnRawResponse:true原样返回Response，让错误检查、SSE、取消和响应内日志ID沿用。完整参数、关闭思考、完整payload/eventId/三项metadata与单次请求约定保持，embedding不变。直接验证三个原生参数、200/400未消费响应、取消不重试；139项相关单元和TypeScript通过，真实workerd SQLite故障恢复、停止/回放/删除清空通过（模型夹具）。固定Linux28流程84图通过，82PNG一致、2在既有50像素门槛内，保留基线。生产生成、工具、Director、摘要、完整日志形状待验收。
+
+
+PR61八项CI通过，squash5b86f0dbb73e6a2032c451fb609a68fe313ac9ab；自动Build b1dd2ed5-1ca9-4a1e-a2fb-9c94cdaf228c成功并匹配SHA，100%版本32f2bf45-2bb9-4628-8e9e-2685f4f52ab1与health200一致。真实JWT requestId c93295d8-34aa-4910-a6c7-9358f0771595仍error/interrupted0字，临时角色/会话2/2清理。此时已通过HTTP2xx及SSE检查，不是旧HTTP400；唯一对应时间/输入/用户名的Workers AI日志50c4b253612a009cb686774ed60816cad9f7158a7ddd9f294d1f87c309773934保存完整OAI SSE，现有解析器离线可读36帧/36字/stop。日志三项metadata及完整payload存在，但event_id为空，不能把时间匹配当事件关联验收。未证明完整入口修复。
+
+## 空工具增量（2026-10-08，待发布）
+
+Gemma正文delta含tool_calls:null。旧ToolCallStream在处理同帧正文前拒绝null，因此完整模型输出仍落库0字。仅把顶层null等同undefined视为无工具增量；不放松真实调用结构、参数、索引或终态。null可穿插真实工具分片，字符串/对象/[null]/调用内非法字段仍拒绝，tool_calls终态没有实际工具仍失败。
+
+失败复现2failed/118passed；修复后156项相关单元、TypeScript、真实workerd SQLite（模型夹具）通过，覆盖正文delta/done/Director/持久化/UUID回放及停止、清理。固定Linux28流程84图通过，81PNG一致、3在既有50像素门槛内，基线保持；PR/自动部署及真实生成待验收。原生Workers AI日志event_id缺失仍是独立待解决问题，不额外添加metadata，不换route、不删参数重试。

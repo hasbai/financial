@@ -141,7 +141,7 @@ RP真实Gateway原生update_state→工具结果→正常正文已通过；BGE-M
 - 世界书关键词/副关键词/常驻/扫描深度/递归/优先级/排序/预算，用户 persona、角色、世界设定与历史提示组装。
 - D1/R2、JWT superadmin访问、会话快照、生成幂等与锁、SSE、部分内容落盘、停止、重新生成、编辑分支、JSONL导出。
 - TheatreLM原始5011条，经本轮质量隔离后5002条可用；revision `eb8597aec4e3e114b2d28b86c3e2496dd48c5af3`；worlds.json SHA256 `6acddc549996246cca97a3bda0560b9fbafe188920703815adeb33d3459b165a`。来源、署名、许可和转换标记随角色保存。
-- 固定 `AI.gateway('default').run` 调用 `dynamic/rp`（compat/chat/completions）；不接受前端覆盖模型或密钥，无隐式重试或备用模型。
+- 首版曾固定 `AI.gateway('default').run` 调用 `dynamic/rp`（compat/chat/completions）；2026-10-08代码已迁原生AI.run，最新验收限制见[原生动态路由绑定](TAVERN-AGENT-PLAN.md#原生动态路由绑定2026-10-08已发布线上验收未通过)。固定RP白名单，不接受前端覆盖模型或密钥，无应用隐式重试或备用模型。
 
 ## 首版验收证据（修订前）
 

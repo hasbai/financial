@@ -68,7 +68,7 @@ export type ToolCall={id:string;type:'function';function:{name:string;arguments:
 export class ToolCallStream {
  private calls=new Map<number,ToolCall>();
  push(value:unknown){
-  if(value===undefined)return;if(!Array.isArray(value)||value.length>8)throw Error('工具协议无效');
+  if(value===undefined||value===null)return;if(!Array.isArray(value)||value.length>8)throw Error('工具协议无效');
   for(const d of value){if(!object(d)||!Number.isSafeInteger(d.index)||Number(d.index)<0||Number(d.index)>7)throw Error('工具索引无效');
    const i=Number(d.index),call=this.calls.get(i)??{id:'',type:'function' as const,function:{name:'',arguments:''}};
    if(d.id!==undefined){if(typeof d.id!=='string'||d.id.length>200)throw Error('工具ID无效');call.id=d.id;}
