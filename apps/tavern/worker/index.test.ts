@@ -42,6 +42,38 @@ it('keeps inline candidate protocol out of deltas and stored story before an ind
  expect(frames.find(e=>e.type==='done').message).toMatchObject({content:'灯？',status:'completed',candidates:['我问问往事。','我坐下喝茶。','我看向窗外。']});
  expect(sessionDb.prepare("SELECT content,candidates_json FROM messages WHERE role='assistant' AND request_id=?").get(requestId)).toEqual({content:'灯？',candidates_json:JSON.stringify(['我问问往事。','我坐下喝茶。','我看向窗外。'])});expect(aiRun).toHaveBeenCalledTimes(2);
 });
+it('recovers a failed final transaction without a restart or repeating model inference',async()=>{
+ const {s}=await seed(),requestId=crypto.randomUUID();let failed=false;
+ beforeRun=sql=>{if(!failed&&sql.startsWith('UPDATE messages SET content=?,candidates_json=')){failed=true;throw Error('temporary final storage failure');}};
+ const response=await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'出发'});await response.text();await Promise.all(work);expect(failed).toBe(true);beforeRun=undefined;
+ const read=await(await call('/api/sessions/'+s.id)).json() as {session:{generationId:string|null};messages:Message[]};
+ expect(read.session.generationId).toBeNull();expect(read.messages.at(-1)).toMatchObject({status:'aborted',finishReason:'interrupted',content:'欢迎来到港城。'});
+ expect((await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId})).json() as {replayed:boolean}).replayed).toBe(true);expect(aiRun).toHaveBeenCalledTimes(2);
+ expect((await call('/api/sessions/'+s.id,'DELETE')).status).toBe(200);
+});
+it.each(['read','delete','generate'])('recovers after storage is unavailable through settlement via %s',async action=>{
+ const {s}=await seed(),requestId=crypto.randomUUID();let unavailable=false;
+ beforeRun=sql=>{if(sql.startsWith('UPDATE messages SET content=?,candidates_json='))unavailable=true;if(unavailable&&sql.startsWith('UPDATE messages'))throw Error('storage unavailable');};
+ const response=await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'出发'});await response.text();await Promise.all(work);expect(unavailable).toBe(true);beforeRun=undefined;
+ expect(sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id).toBeTruthy();
+ if(action==='delete'){expect((await call('/api/sessions/'+s.id,'DELETE')).status).toBe(200);return;}
+ if(action==='generate'){await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'下一轮'})).text();await Promise.all(work);}
+ const read=await(await call('/api/sessions/'+s.id)).json() as {session:{generationId:string|null};messages:Message[]};expect(read.session.generationId).toBeNull();
+ expect(read.messages.find(m=>m.requestId===requestId&&m.role==='assistant')).toMatchObject({content:'欢迎来到港城。',status:'aborted',finishReason:'interrupted'});expect(sessionDb.prepare('SELECT after_json FROM turn_snapshots WHERE message_id=(SELECT id FROM messages WHERE request_id=? AND role=?)').get(requestId,'assistant')?.after_json).toBeNull();
+});
+it('rolls back message creation with a failed initial state snapshot and permits the same UUID retry',async()=>{
+ const {s}=await seed(),requestId=crypto.randomUUID();beforeRun=sql=>{if(sql.startsWith('INSERT INTO turn_snapshots'))throw Error('snapshot failure');};
+ expect((await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'出发'})).status).toBe(500);await Promise.all(work);beforeRun=undefined;
+ expect(sessionDb.prepare('SELECT count(*) n FROM messages WHERE request_id=?').get(requestId)?.n).toBe(0);expect(sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id).toBeNull();expect(aiRun).not.toHaveBeenCalled();
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'出发'})).text();await Promise.all(work);expect(wire).toContain('"status":"completed"');expect(sessionDb.prepare('SELECT count(*) n FROM messages WHERE request_id=?').get(requestId)?.n).toBe(2);
+});
+it('retains a persisted stop reason when the final transaction fails',async()=>{
+ const {s}=await seed();aiRun.mockResolvedValueOnce(completion('正文。')).mockImplementationOnce(async()=>new ReadableStream());
+ const response=await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'出发'}),drain=response.text();await vi.waitFor(()=>expect(aiRun).toHaveBeenCalledTimes(2));const id=sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id as string;
+ let failed=false;beforeRun=sql=>{if(!failed&&sql.startsWith('UPDATE messages SET content=?,candidates_json=')){failed=true;throw Error('final unavailable');}};
+ expect((await call('/api/sessions/'+s.id+'/stop','POST',{generationId:id})).status).toBe(200);await drain;await Promise.all(work);expect(failed).toBe(true);beforeRun=undefined;
+ const read=await(await call('/api/sessions/'+s.id)).json() as {session:{generationId:string|null};messages:Message[]};expect(read.session.generationId).toBeNull();expect(read.messages.at(-1)).toMatchObject({content:'正文。',status:'aborted',finishReason:'stopped'});
+});
 it('keeps user messages on model failure and never auto-retries',async()=>{const {s}=await seed();aiRun.mockRejectedValue(new Error('secret upstream error'));const r=await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'留下这句'});const text=await r.text();await Promise.all(work);expect(text).toContain('生成失败，请重试');expect(text).not.toContain('secret');expect(sessionDb.prepare("SELECT content FROM messages WHERE role='user'").get()?.content).toBe('留下这句');expect(sessionDb.prepare("SELECT status FROM messages WHERE role='assistant' AND request_id IS NOT NULL").get()?.status).toBe('error');});
 it('aborts a stopped generation and refuses stale stop or concurrent send',async()=>{const {s}=await seed();let controller:ReadableStreamDefaultController<Uint8Array>;aiRun.mockResolvedValue(new ReadableStream({start(c){controller=c;}}));
  const response=await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'出发'});const reader=response.body!.getReader();await reader.read();const generationId=sessionDb.prepare('SELECT generation_id FROM sessions WHERE id=?').get(s.id)?.generation_id;

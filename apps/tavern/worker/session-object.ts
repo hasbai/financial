@@ -15,13 +15,16 @@ export class TavernSession extends DurableObject<Env> {
  private syncing?:Promise<void>;
  private mutating=false;
  private removed?:{owner:string;id:string};
+ private recoveryId?:string;
  private active?:{requestId:string;id:string;abort:AbortController};
  constructor(ctx:DurableObjectState,env:Env){super(ctx,env);}
  private hasSchema(){return this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'").toArray().length>0;}
+ /** A settled task must not require object eviction to recover an uncommitted turn. */
+ private recoverIdle(store:SessionStore){if(!this.active&&this.recoveryId){store.recover(this.recoveryId);this.recoveryId=undefined;}}
  private available(store:SessionStore){if(this.removed||this.store!==store||store.deleted())throw new HttpError(404,'会话不存在');}
  private async load(owner:string,id:string):Promise<SessionStore>{
   if(this.removed)throw new HttpError(404,'会话不存在');
-  if(this.store){if(this.store.id!==id||this.store.directory()?.owner!==owner||this.store.deleted())throw new HttpError(404,'会话不存在');return this.store;}
+  if(this.store){if(this.store.id!==id||this.store.directory()?.owner!==owner||this.store.deleted())throw new HttpError(404,'会话不存在');this.recoverIdle(this.store);return this.store;}
   if(this.loading){await this.loading;return this.load(owner,id);}
   this.loading=(async()=>{
    const directory=await getSession(this.env,owner,id);if(directory.deleted_at)throw new HttpError(404,'会话不存在');
@@ -38,7 +41,7 @@ export class TavernSession extends DurableObject<Env> {
     store.import(row,messages);
    }
    if(store.directory()?.owner!==owner)throw new HttpError(404,'会话不存在');
-   this.store=store;if(store.deleted())throw new HttpError(404,'会话不存在');store.recover();await this.scheduleSync();return store;
+   if(store.deleted())throw new HttpError(404,'会话不存在');store.recover();this.store=store;await this.scheduleSync();return store;
   })();
   try{return await this.loading;}finally{this.loading=undefined;}
  }
@@ -64,7 +67,7 @@ export class TavernSession extends DurableObject<Env> {
   })();
   try{await this.syncing;}finally{this.syncing=undefined;}
  }
- private async settled(id:string){if(this.active?.id===id)this.active=undefined;if(this.removed||this.store?.deleted())return;await this.scheduleSync();this.ctx.waitUntil(this.sync().catch(()=>{}));}
+ private async settled(id:string){if(this.active?.id===id){this.recoveryId=id;this.active=undefined;if(this.store)this.recoverIdle(this.store);}if(this.removed||this.store?.deleted())return;await this.scheduleSync();this.ctx.waitUntil(this.sync().catch(()=>{}));}
  async alarm(){
   if(this.removed)return;
   if(!this.store){if(!this.hasSchema())return;const row=this.ctx.storage.sql.exec<SessionRow & Record<string,SqlStorageValue>>('SELECT * FROM sessions LIMIT 1').toArray()[0];if(!row)return;const stored=new SessionStore(this.ctx.storage,row.id);if(stored.deleted())this.store=stored;else await this.load(row.owner,row.id);}
@@ -114,13 +117,13 @@ export class TavernSession extends DurableObject<Env> {
   const directory=await getSession(this.env,owner,id);
   if(this.removed){if(this.removed.owner!==owner||this.removed.id!==id)throw new HttpError(404,'会话不存在');return {ok:true};}
   let store=this.store;
-  if(!store&&this.hasSchema()){const stored=new SessionStore(this.ctx.storage,id);if(stored.exists())store=stored;}
+  if(!store&&this.hasSchema()){const stored=new SessionStore(this.ctx.storage,id);if(stored.exists())store=stored.deleted()?stored:await this.load(owner,id);}
   if(!store){
    if(directory.deleted_at){await this.ctx.storage.deleteAll();this.removed={owner,id};return {ok:true};}
    store=await this.load(owner,id);
   }
   if(store.id!==id||store.directory()?.owner!==owner)throw new HttpError(404,'会话不存在');
-  this.store=store;if(!store.deleted())store.remove();await this.scheduleSync();await this.purge(store);return {ok:true};
+  this.store=store;if(!store.deleted()){this.recoverIdle(store);store.remove();}await this.scheduleSync();await this.purge(store);return {ok:true};
  }
  private async export(owner:string,id:string){const store=await this.load(owner,id),row=store.get();return {row,messages:store.messages(),snapshots:store.snapshots()};}
  async invoke(owner:string,id:string,method:SessionMethod,data:Record<string,unknown>={}){

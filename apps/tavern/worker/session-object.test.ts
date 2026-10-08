@@ -31,6 +31,19 @@ it('recovers interrupted occupancy on a new object instance and retains complete
  seed();await invoke('read');const name=sessionName('owner','s'),store=new SessionStore(storage(name),'s');store.claim('pending',Date.now());store.start('pending',undefined,{id:'pending',role:'assistant',content:'部分正文',status:'pending',ordinal:1,requestId:'r',createdAt:4});objects.delete(name);
  const result=await invoke('read');expect(result.value.messages.at(-1)).toMatchObject({id:'pending',content:'部分正文',status:'aborted',finishReason:'interrupted'});expect(result.value.session.generationId).toBeNull();
 });
+it('recovers a cold interrupted object when the first request deletes it',async()=>{
+ seed();await invoke('read');const name=sessionName('owner','s'),store=new SessionStore(storage(name),'s');store.claim('pending',Date.now());store.start('pending',undefined,{id:'pending',role:'assistant',content:'部分正文',status:'pending',ordinal:1,requestId:'r',createdAt:4});objects.delete(name);
+ expect((await invoke('remove')).ok).toBe(true);expect(sqlDbs.get(name)!.prepare("SELECT count(*) n FROM sqlite_master WHERE type='table'").get()?.n).toBe(0);expect(alarms.has(name)).toBe(false);
+});
+it('retries a failed initial recovery before caching the imported store',async()=>{
+ seed();await invoke('read');const name=sessionName('owner','s'),store=new SessionStore(storage(name),'s');store.claim('pending',Date.now());store.start('pending',undefined,{id:'pending',role:'assistant',content:'部分正文',status:'pending',ordinal:1,requestId:'r',createdAt:4});objects.delete(name);
+ const recover=vi.spyOn(SessionStore.prototype,'recover').mockImplementationOnce(()=>{throw Error('storage unavailable');});
+ try{await expect(invoke('read')).rejects.toThrow('storage unavailable');const result=await invoke('read');expect(result.value.session.generationId).toBeNull();expect(result.value.messages.at(-1)).toMatchObject({status:'aborted',finishReason:'interrupted',content:'部分正文'});}finally{recover.mockRestore();}
+});
+it('does not let an old recovery marker clear an unrelated generation',async()=>{
+ seed();await invoke('read');const store=new SessionStore(storage(sessionName('owner','s')),'s');store.claim('new',Date.now());store.start('new',undefined,{id:'new',role:'assistant',content:'活跃',status:'pending',ordinal:1,requestId:'new-r',createdAt:4});Object.assign(target(),{recoveryId:'old'});
+ const result=await invoke('read');expect(result.value.session.generationId).toBe('new');expect(result.value.messages.at(-1).status).toBe('pending');expect((await invoke('remove')).status).toBe(409);
+});
 it('isolates both owners and sessions in independent SQLite storage',async()=>{
  seed();seed('other');expect((await invoke('read',{},'stranger')).status).toBe(404);await invoke('read');await invoke('read',{},'owner','other');await invoke('update',{title:'改变'});
  expect((await invoke('read',{},'owner','other')).value.session.title).toBe('旅店');expect(sqlDbs.get(sessionName('owner','other'))!.prepare('SELECT id FROM messages').all()).toEqual([{id:'m-other'}]);
