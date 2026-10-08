@@ -104,7 +104,7 @@ length自动继续同一assistant消息、UUID和SSE，正文兼容标记可以�
 
 ## 官方契约依据
 
-- [Cloudflare动态路由](https://developers.cloudflare.com/ai-gateway/features/dynamic-routing/usage/)（文档示例为AI.run）与[官方SDK动态unified示例](https://github.com/cloudflare/ai/blob/main/packages/ai-gateway-provider/README.md)：结合本轮edge-preview实证，当前入口为 `env.AI.gateway('default').run`，`provider:'compat'`、`endpoint:'chat/completions'`，query指定 `model:'dynamic/rp'`。通过Gateway路由并记录日志，不携带推理密钥，不使用REST ai/run或直接指定@cf模型。
+- [Cloudflare动态路由](https://developers.cloudflare.com/ai-gateway/features/dynamic-routing/usage/)：当前代码通过 `env.AI.run('dynamic/rp', inputs, {gateway:{id:'default',...},returnRawResponse:true,signal})` 调用。RP白名单和完整输入保持，HTTP错误与日志头由每次Response读取，不依赖绑定实例的可变日志ID。2026-10-08旧universal绑定400而同输入HTTP探测成功，原生绑定的线上修复结论仍待发布验收；不携带推理密钥、不直连@cf模型、不删参数重试。
 - [llama.cpp服务契约](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)：`/props`运行容量及`chat_template_kwargs`；当前模板实际使用enable_thinking，关闭时预填充空think，开启时等待思考内容。reasoning_format:none不是关闭思考。
 
 正文与Director各自拥有独立system；Director故事约束放在JSON数据，输出协议保持独立。通知复用共享`@hasbai/ui/notice`；项目原则见[AGENTS.md](../AGENTS.md#项目实现原则)。真实模型及发布证据见交付状态。
@@ -115,4 +115,4 @@ length自动继续同一assistant消息、UUID和SSE，正文兼容标记可以�
 
 全局与当前会话都可编辑 System Prompt，并独立恢复默认提示；全局用于新会话，现有会话保留自身快照。默认鼓励3–6段、约300–600字的自然对白与场景细节，仍由用户控制自己的行动；长度是提示目标，不设应用输出上限。只精确升级旧默认字符串，用户自定义内容不覆盖；用户提示始终进入system，角色卡提示附加，含 `{{original}}` 时替换且不重复插入。正文兼容分隔符不含UUID；Director使用JSON Schema，不承诺跨阶段缓存命中。
 
-Gateway 当前通过 universal 绑定调用动态路由；原始流继续实时传送，Gateway日志同时聚合 `choices[0].delta.content` 并保留 `streamed_data`。不在应用端回写 response 或借 metadata 存正文，不增第二次推理，也不改为非流式。旧 `/run` 记录不能追溯改写成聚合格式。
+2026-10-03 universal绑定曾实时传送原始流，Gateway日志聚合 `choices[0].delta.content` 并保留 `streamed_data`。2026-10-08统一迁至原生AI.run，继续要求完整请求/回复收集；当前日志分类与聚合格式须独立线上核验。不在应用端回写response或借metadata存正文，不增第二次推理、不改为非流式；历史记录不追溯改写。

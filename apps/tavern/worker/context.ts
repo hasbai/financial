@@ -1,7 +1,7 @@
 import { buildPrompt, estimateTokens, type PromptMessage } from '../shared/prompt';
 import { sseData } from '../shared/sse';
 import type { Book, JsonObject, Message, Settings } from '../shared/types';
-import { roleplayGatewayOptions } from './gateway';
+import { runRoleplay } from './gateway';
 import { modelInput } from './models';
 
 export type Summary = { text: string; covered: string[]; fingerprint: string };
@@ -154,9 +154,7 @@ export async function summarizeStory(previous:string,history:Message[],options:{
 }
 
 export async function summarizeWithModel(env: Env, username: string, requestId: string, settings: Settings, messages: PromptMessage[], signal: AbortSignal, observe?:(event:Parameters<import('./metrics').InferenceMetrics['observe']>[0],logId:string|null)=>void) {
- const opts = roleplayGatewayOptions(env, username, requestId);
- const result = await env.AI.gateway(env.AIG_GATEWAY_ID).run({ provider: 'compat', endpoint: 'chat/completions', headers: { ...opts.extraHeaders, 'Content-Type': 'application/json' },
-  query: { model: 'dynamic/rp', messages, stream: true, ...modelInput({ ...settings, thinkingEnabled: false }) } }, { gateway: opts.gateway, signal });
+ const result = await runRoleplay(env,username,requestId,{messages,stream:true,...modelInput({...settings,thinkingEnabled:false})},signal);
  if (!(result instanceof Response)) throw new Error('会话压缩失败');
  if (!result.ok) {
   const value = await result.json().catch(() => null) as { error?: { message?: string }; message?: string } | null;

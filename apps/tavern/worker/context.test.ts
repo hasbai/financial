@@ -54,7 +54,7 @@ it('keeps a previous checkpoint intact when summarization fails',async()=>{
  const c=new ConversationContext([message('u','user','中'.repeat(2000)),message('a','assistant','答'.repeat(2000)),message('n','user','后来')],card,[],DEFAULT_SETTINGS,4096,options,async()=>{throw new Error('failed');});const original=JSON.stringify(c.history);await expect(c.fit()).rejects.toThrow('failed');expect(c.summary).toBeNull();expect(JSON.stringify(c.history)).toBe(original);
 });
 it('propagates upstream capacity and length to the summary compressor and cancels on stop',async()=>{
- const run=vi.fn();const env={AI:{gateway:()=>({run})},AIG_GATEWAY_ID:'default'} as unknown as Env;const signal=new AbortController();
+ const run=vi.fn();const env={AI:{run},AIG_GATEWAY_ID:'default'} as unknown as Env;const signal=new AbortController();
  run.mockResolvedValueOnce(Response.json({error:{message:'maximum context length is 2048 tokens'}},{status:400}));await expect(summarizeWithModel(env,'用户名','request',DEFAULT_SETTINGS,[],signal.signal)).rejects.toMatchObject({contextTokens:2048});
  run.mockResolvedValueOnce(new Response('data: {"choices":[{"delta":{"content":"摘要"},"finish_reason":"length"}]}\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}}));await expect(summarizeWithModel(env,'用户名','request',DEFAULT_SETTINGS,[],signal.signal)).rejects.toBeInstanceOf(SummaryRetry);
  const cancel=vi.fn();run.mockResolvedValueOnce(new Response(new ReadableStream({cancel}),{headers:{'Content-Type':'text/event-stream'}}));const pending=summarizeWithModel(env,'用户名','request',DEFAULT_SETTINGS,[],signal.signal);await Promise.resolve();signal.abort();await expect(pending).rejects.toThrow();expect(cancel).toHaveBeenCalled();

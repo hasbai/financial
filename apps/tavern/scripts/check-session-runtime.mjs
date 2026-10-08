@@ -40,7 +40,7 @@ export class TestSession extends TavernSession {
   const removed=JSON.parse(await this.invoke(owner,id,'remove',{}));if(!removed.ok)throw Error('active generation retained deletion');
   let wire='';for(;;){const next=await reader.read();if(next.done)break;wire+=decoder.decode(next.value);}return {wire,storage:await this.inspectStorage()};
  }
- constructor(ctx,env){super(ctx,{...env,AI:{gateway:()=>({run:async request=>{
+ constructor(ctx,env){super(ctx,{...env,AI:{run:async(model,query,options)=>{if(model!=='dynamic/rp'||options.returnRawResponse!==true)throw Error('native binding contract missing');const request={query};
  const director=!!request.query.response_format;const synopsis=request.query.messages[0].content.startsWith('总结已发生剧情');const input=request.query.messages.at(-1).content;
  if(request.query.messages.some(m=>!m.content.isWellFormed()))throw new Error('split Unicode in model projection');
  if(!director&&!synopsis&&!request.query.messages[0].content.startsWith('压缩会话记忆')&&request.query.messages.some(m=>m.role==='user'&&m.content.includes('同次长正文工具'))){
@@ -56,7 +56,7 @@ export class TestSession extends TavernSession {
  if(director){if(request.query.tools||request.query.tool_choice||request.query.messages.length!==2||request.query.messages.some(m=>m.role==='tool'))throw new Error('Director context polluted');const data=JSON.parse(input);if(!data.state||data.recentStory.length>4)throw new Error('Director data missing');}
  if(!director&&input.includes('等待'))return new Response(new ReadableStream(),{headers:{'Content-Type':'text/event-stream'}});
  return new Response('data: '+JSON.stringify({choices:[{delta:{content:director?JSON.stringify({choices:['我坐下。','我问问。','我看窗外。']}):synopsis?'旧事':'你好。'},finish_reason:'stop'}]})+'\\n\\ndata: [DONE]\\n\\n',{headers:{'Content-Type':'text/event-stream'}});
- }})}});}
+ }}});}
 }
 export default {async fetch(request,env){const d=await request.json();const stub=env.SESSIONS.getByName(JSON.stringify([d.owner,d.id]));
  if(d.method==='recovery')return Response.json(await stub.checkRecovery(d.owner,d.id,d.data.mode));
