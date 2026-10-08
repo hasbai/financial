@@ -231,6 +231,13 @@ update_state暂存于本回合并可供工具续轮读取；最终正文正常�
 
 114项Worker/session-object检查及TypeScript通过；新增阶段命中断言、停止正文保存/状态回滚/回放/删除、正常完成停读done、request.signal断连停读delta。真实workerd在对象内部暂停读取四阶段，锁释放后先删除再drain，验证done终态、无业务表/alarm；模型是夹具，不是线上推理。固定Linux28流程/84截图完成，82张逐字节一致，两张在既有50像素门槛内，无新基线。PR59八项CI、自动构建SHA/100%版本/health200及真实JWT停止、回放、同会话后续生成和删除已核验；线上网络缓冲未证明真实背压，确定性背压以workerd为证。详见交付状态首节。
 
-## SQLite故障后的回合恢复（2026-10-08，待PR发布）
+## SQLite故障后的回合恢复（2026-10-08，已发布）
 
-已复现最终保存抛错时跳过onSettled，使UI永久显示占用；以及初始快照失败留下无任务的pending消息。按上述事务/恢复约定修复，并补冷实例直接删除、首次恢复失败再试、旧恢复ID和停止原因保护。123项index/session-object检查与TypeScript通过；真实workerd用SQLite触发器注入初始化/最终/持续写入故障，移除触发器后同实例恢复、UUID及删除通过，模型为夹具。固定Linux28流程84图，81PNG一致、3在当前50像素门槛内，保留基线。PR/自动部署与真实JWT正常链路待交付，不在生产注入存储故障。
+已复现最终保存抛错时跳过onSettled，使UI永久显示占用；以及初始快照失败留下无任务的pending消息。按上述事务/恢复约定修复，并补冷实例直接删除、首次恢复失败再试、旧恢复ID和停止原因保护。123项index/session-object检查与TypeScript通过；真实workerd用SQLite触发器注入初始化/最终/持续写入故障，移除触发器后同实例恢复、UUID及删除通过，模型为夹具。固定Linux28流程84图，81PNG一致、3在当前50像素门槛内，保留基线。PR60八项CI通过，squash cf3760d71e67088e0a4a8a26dfda494e6bf4282c；自动Build a544a495-634a-4d27-9ece-50d5f5305858成功并匹配SHA，100%版本736057ef-f8ac-46f4-8f96-87b01e9d3567与health200一致。真实JWT普通生成遇上游400（requestId 905e6391-5a0d-4bf3-99aa-9a31c7badfd1，Gateway日志01M4CPVQZ3BVJN9HV285TBJWQ9），两项临时资源均清理；正常链路仍待下述调用入口修复后的验收，不在生产注入存储故障。
+
+
+## 原生动态路由绑定（2026-10-08，待发布验收）
+
+旧绑定实际命中workers-ai/@cf/google/gemma-4-26b-a4b-it并返回400；同一失败request_head通过compat HTTP和现代REST接口均200，完整采样参数与工具亦成功。此证据定位调用路径差异，不能单凭旧入口deprecated或预览网络超时宣称根因已确定。
+
+正文、Director、摘要共享runRoleplay原生AI.run入口，固定dynamic/rp及Gateway；returnRawResponse:true原样返回Response，让错误检查、SSE、取消和响应内日志ID沿用。完整参数、关闭思考、完整payload/eventId/三项metadata与单次请求约定保持，embedding不变。直接验证三个原生参数、200/400未消费响应、取消不重试；139项相关单元和TypeScript通过，真实workerd SQLite故障恢复、停止/回放/删除清空通过（模型夹具）。固定Linux28流程84图通过，82PNG一致、2在既有50像素门槛内，保留基线。生产生成、工具、Director、摘要、完整日志形状待验收。

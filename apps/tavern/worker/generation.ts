@@ -1,6 +1,6 @@
 import { capabilities, modelInput, recordFeedback, type Capability } from './models';
 import { candidateDelimiter, BODY_TASK, CandidateStream } from '../shared/candidates';
-import { roleplayGatewayOptions } from './gateway';
+import { runRoleplay } from './gateway';
 import { DirectorAgent, DirectorContextError, DIRECTOR_RESPONSE_FORMAT, prepareSynopsis } from './director';
 import { InferenceMetrics } from './metrics';
 import { parseBook, parseCard } from '../shared/cards';
@@ -87,9 +87,9 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
    const storyWire=(raw:string,start:number):PromptMessage=>output.slice(start).trim()===raw.replace(/\r\n?/g,'\n').trim()?conversation.storyFragment(raw):{role:'assistant',content:raw};
    for(;;){
    await owns();const storyAtStart=output.length;let requestOutput='';const toolCalls=new ToolCallStream();
-   finishReason='upstream';const gatewayOptions=roleplayGatewayOptions(env,username,requestId);
+   finishReason='upstream';
    firstModelStarted??=Date.now();modelRequests++;bodyRequests++;metrics=new InferenceMetrics();
-   const result=await env.AI.gateway(env.AIG_GATEWAY_ID).run({provider:'compat',endpoint:'chat/completions',headers:{...gatewayOptions.extraHeaders,'Content-Type':'application/json'},query:{model:'dynamic/rp',messages:prompt.messages,tools:AGENT_TOOLS,tool_choice:'auto',stream:true,...modelInput(opts)}},{gateway:gatewayOptions.gateway,signal:abort.signal});
+   const result=await runRoleplay(env,username,requestId,{messages:prompt.messages,tools:AGENT_TOOLS,tool_choice:'auto',stream:true,...modelInput(opts)},abort.signal);
    if(!(result instanceof Response)){finishReason='unsupported';throw new Error('nonstream');}
    gatewayLogId=result.headers.get('cf-aig-log-id');
    if(!result.ok){const limit=await inspectLimit(result,env,capability);if(limit){conversation.contextTokens=limit;const before=prompt.estimatedTokens;await conversation.compressProjection(toolTranscript);prompt=await conversation.fit(continuation,conversation.options,toolTranscript);if(prompt.estimatedTokens>=before)throw new Error('会话压缩未缩短输入');await saveSummary();continue;}throw new Error('upstream');}
@@ -146,8 +146,8 @@ export async function generate(request:Request,env:Env,ctx:Pick<ExecutionContext
     if(overview.summary){await owns();if(!store.saveSynopsis(assistantId,overview.summary))throw Error('生成已停止');}
     director=new DirectorAgent(JSON.parse(row.character_json),opts,agent.state,committedHistory,synopsisOptions.contextTokens,capability.inputRatio,overview.summary?.text??'');
     directorStartedAt=Date.now();candidates=await director.run(async messages=>{
-     const options=roleplayGatewayOptions(env,username,requestId);modelRequests++;
-     const response=await env.AI.gateway(env.AIG_GATEWAY_ID).run({provider:'compat',endpoint:'chat/completions',headers:{...options.extraHeaders,'Content-Type':'application/json'},query:{model:'dynamic/rp',messages,response_format:DIRECTOR_RESPONSE_FORMAT,stream:true,...modelInput({...opts,thinkingEnabled:false})}},{gateway:options.gateway,signal:abort.signal});
+     modelRequests++;
+     const response=await runRoleplay(env,username,requestId,{messages,response_format:DIRECTOR_RESPONSE_FORMAT,stream:true,...modelInput({...opts,thinkingEnabled:false})},abort.signal);
      if(!(response instanceof Response))throw Error('Director非响应');director!.gatewayLogId=response.headers.get('cf-aig-log-id');
      if(!response.ok){const limit=await inspectLimit(response,env,capability);if(limit)throw new DirectorContextError(limit);throw Error('Director上游错误');}
      return response;
