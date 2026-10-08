@@ -55,7 +55,7 @@ export class TestSession extends TavernSession {
  if(!director&&input.includes('工具抵达北港')&&request.query.messages.at(-1).role!=='tool')return new Response('data: '+JSON.stringify({choices:[{delta:{tool_calls:[{index:0,id:'state-call',type:'function',function:{name:'update_state',arguments:'{"patch":{"scene":"北港"}}'}}]},finish_reason:'tool_calls'}]})+'\\n\\ndata: [DONE]\\n\\n',{headers:{'Content-Type':'text/event-stream'}});
  if(director){if(request.query.tools||request.query.tool_choice||request.query.messages.length!==2||request.query.messages.some(m=>m.role==='tool'))throw new Error('Director context polluted');const data=JSON.parse(input);if(!data.state||data.recentStory.length>4)throw new Error('Director data missing');}
  if(!director&&input.includes('等待'))return new Response(new ReadableStream(),{headers:{'Content-Type':'text/event-stream'}});
- return new Response('data: '+JSON.stringify({choices:[{delta:{content:director?JSON.stringify({choices:['我坐下。','我问问。','我看窗外。']}):synopsis?'旧事':'你好。'},finish_reason:'stop'}]})+'\\n\\ndata: [DONE]\\n\\n',{headers:{'Content-Type':'text/event-stream'}});
+ return new Response('data: '+JSON.stringify({choices:[{delta:{tool_calls:null,content:director?JSON.stringify({choices:['我坐下。','我问问。','我看窗外。']}):synopsis?'旧事':'你好。'},finish_reason:'stop'}]})+'\\n\\ndata: [DONE]\\n\\n',{headers:{'Content-Type':'text/event-stream'}});
  }}});}
 }
 export default {async fetch(request,env){const d=await request.json();const stub=env.SESSIONS.getByName(JSON.stringify([d.owner,d.id]));

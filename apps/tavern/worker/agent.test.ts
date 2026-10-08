@@ -95,3 +95,8 @@ it('preflights a whole batch without consuming calls or partially staging state'
  turn.validate([update,search]);turn.validate([update,search]);expect(turn.execute([update,search]).map(r=>r.tool_call_id)).toEqual(['update','search']);
  expect(turn.state.scene).toBe('港口');expect(()=>turn.validate([search])).toThrow('没有进展');
 });
+
+it('ignores null tool deltas between real fragments without accepting malformed calls',()=>{
+ const stream=new ToolCallStream();stream.push(null);expect(stream.size).toBe(0);stream.push([{index:0,id:'c',type:'function',function:{name:'update_',arguments:'{"patch":'}}]);stream.push(null);stream.push([{index:0,function:{name:'state',arguments:'{"scene":"港口"}}'}}]);stream.push(null);expect(stream.finish()).toEqual([{id:'c',type:'function',function:{name:'update_state',arguments:'{"patch":{"scene":"港口"}}'}}]);
+ for(const bad of [false,0,'',{},[null],[{index:0,function:null}],[{index:0,function:{arguments:null}}]])expect(()=>new ToolCallStream().push(bad)).toThrow();
+});

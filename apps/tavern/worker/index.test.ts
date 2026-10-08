@@ -551,3 +551,13 @@ it('lets ordinary authenticated users manage their own cards and sessions while 
  expect((await call('/api/sessions/'+session.id,'DELETE')).status).toBe(200);
  expect((await call('/api/characters/'+character.id,'DELETE')).status).toBe(200);
 });
+
+it('streams null tool deltas through completion, independent Director, persistence and UUID replay',async()=>{
+ const c=await(await call('/api/characters','POST',{name:'Null delta',first_mes:'你好'})).json() as {id:string},s=await(await call('/api/sessions','POST',{characterId:c.id})).json() as {id:string},requestId=crypto.randomUUID();
+ aiRun.mockImplementation(async request=>{const candidate=!!(request.query as {response_format?:unknown}).response_format;return new Response('data: '+JSON.stringify({choices:[{delta:{content:candidate?JSON.stringify({choices:['去港口。','问问来路。','坐下喝茶。']}):'正文。',tool_calls:null,reasoning_content:null},finish_reason:null}]})+'\n\ndata: '+JSON.stringify({choices:[{delta:{content:'',tool_calls:null},finish_reason:'stop'}]})+'\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}});});
+ const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId,content:'你好'})).text();await Promise.all(work);const frames=wire.split('\n\n').filter(x=>x.startsWith('data: ')).map(x=>JSON.parse(x.slice(6))),done=frames.find(e=>e.type==='done').message;expect(frames.some(e=>e.type==='error')).toBe(false);expect(frames.filter(e=>e.type==='delta').map(e=>e.text).join('')).toBe('正文。');expect(done).toMatchObject({status:'completed',finishReason:'stop',content:'正文。',candidates:['去港口。','问问来路。','坐下喝茶。']});expect(aiRun).toHaveBeenCalledTimes(2);expect((await(await call('/api/sessions/'+s.id)).json() as {messages:Message[]}).messages.at(-1)).toEqual(done);expect(await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId})).json()).toMatchObject({replayed:true,message:done});expect(aiRun).toHaveBeenCalledTimes(2);
+});
+
+it('rejects a tool_calls terminal with only null deltas and no actual calls',async()=>{
+ const c=await(await call('/api/characters','POST',{name:'empty tool',first_mes:'你好'})).json() as {id:string},s=await(await call('/api/sessions','POST',{characterId:c.id})).json() as {id:string};aiRun.mockResolvedValueOnce(new Response('data: '+JSON.stringify({choices:[{delta:{content:'',tool_calls:null},finish_reason:'tool_calls'}]})+'\n\ndata: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}}));const wire=await(await call('/api/sessions/'+s.id+'/generate','POST',{requestId:crypto.randomUUID(),content:'你好'})).text();await Promise.all(work);expect(JSON.parse(wire.trim().split('data: ').at(-1)!).message).toMatchObject({status:'error',finishReason:'unsupported',candidates:[]});expect(aiRun).toHaveBeenCalledTimes(1);
+});
