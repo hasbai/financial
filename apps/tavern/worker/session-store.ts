@@ -62,7 +62,7 @@ export class SessionStore {
  synced(revision:number){this.write('UPDATE session_meta SET synced_revision=? WHERE id=?',revision,this.id);}
  directory(){return this.rows<SessionRow & Record<string,SqlStorageValue>>('SELECT * FROM sessions WHERE id=?',this.id)[0];}
  idle(){const r=this.get();if(r.generation_id)throw new HttpError(409,'请先停止生成');return r;}
- recover(){this.transaction(()=>{this.write("UPDATE messages SET status='aborted',finish_reason='interrupted',candidates_json=NULL WHERE session_id=? AND status='pending'",this.id);this.write('UPDATE sessions SET generation_id=NULL,generation_until=NULL WHERE id=?',this.id);});}
+ recover(assistantId?:string){this.transaction(()=>{if(assistantId&&!this.owns(assistantId))return;this.write("UPDATE messages SET status='aborted',finish_reason='interrupted',candidates_json=NULL WHERE session_id=? AND status='pending'"+(assistantId?' AND id=?':''),this.id,...(assistantId?[assistantId]:[]));this.write('UPDATE sessions SET generation_id=NULL,generation_until=NULL WHERE id=?'+(assistantId?' AND generation_id=?':''),this.id,...(assistantId?[assistantId]:[]));});}
  claim(assistantId:string,now:number){return this.transaction(()=>{
   const r=this.get();if(r.generation_id&&(r.generation_until??0)>now)return false;
   this.write('UPDATE sessions SET generation_id=?,generation_until=?,updated_at=? WHERE id=?',assistantId,now+180000,now,this.id);
@@ -71,10 +71,11 @@ export class SessionStore {
  owns(assistantId:string){return this.get().generation_id===assistantId;}
  renew(assistantId:string){return this.write('UPDATE sessions SET generation_until=? WHERE id=? AND generation_id=?',Date.now()+180000,this.id,assistantId)>0;}
  release(assistantId:string){this.write('UPDATE sessions SET generation_id=NULL,generation_until=NULL WHERE id=? AND generation_id=?',this.id,assistantId);}
- start(assistantId:string,user:Message|undefined,assistant:Message){this.transaction(()=>{
+ start(assistantId:string,user:Message|undefined,assistant:Message,state?:StoryState){this.transaction(()=>{
   if(!this.owns(assistantId))throw new HttpError(409,'会话生成已接管');
   if(user)this.insert({id:user.id,role:user.role,content:user.content,status:user.status,ordinal:user.ordinal,request_id:user.requestId??null,created_at:user.createdAt,finish_reason:null});
   this.insert({id:assistant.id,role:assistant.role,content:assistant.content,status:assistant.status,ordinal:assistant.ordinal,request_id:assistant.requestId??null,created_at:assistant.createdAt,finish_reason:null});
+  if(state)this.beginState(assistantId,state);
  });}
  pending(assistantId:string){return this.owns(assistantId)&&this.findMessage(assistantId)?.status==='pending';}
  saveSummary(assistantId:string,summary:string|null){if(!this.pending(assistantId))return false;return this.write('UPDATE sessions SET summary_json=? WHERE id=? AND generation_id=? AND EXISTS(SELECT 1 FROM messages WHERE id=? AND status=\'pending\')',summary,this.id,assistantId,assistantId)>0;}

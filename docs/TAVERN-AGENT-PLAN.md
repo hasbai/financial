@@ -199,6 +199,8 @@ D1保留角色库、世界书、设置和会话目录，R2保持私有附件。�
 
 DO的revision/synced_revision记录待同步目录，alarm幂等重试，正文终态不等待D1网络。世界书更新先持久标记dirty，再在D1保留旧+新引用并集，DO提交后才同步收窄；失败保留引用，重启后按已提交DO状态清理。删除先持久标记清理意图与alarm，确认D1隐藏目录和释放绑定，最后await deleteAll清空整个私有SQLite/元数据及alarm，成功后才返回。失败以原意图、重复DELETE或alarm继续；构造函数不建表，已删除会话的旧请求不写表或重导入。D1删除标记作为永久防复活依据，迁移前旧原文保留；DO不永久保留tombstone。普通同步不得清除D1删除标记。生成或收尾未结束仍拒绝删除。当前兼容日期支持deleteAll原子取消alarm，不提前取消重试alarm；空存储实例在运行时关闭后释放，不承诺内存立即销毁。依据：[SQLite deleteAll](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/#deleteall)、[DO生命周期](https://developers.cloudflare.com/durable-objects/best-practices/access-durable-objects-storage/#remove-a-durable-objects-storage)。目录失败只影响列表同步，不将已提交正文当失败。
 
+初始化消息与before状态快照必须在同一SQLite事务提交，快照失败回滚新消息且原UUID可重试。最终事务失败仍结束内存任务，并只恢复该任务ID对应的未提交占用：保留已落盘正文，pending变为interrupted，既有stopped/disconnected原因保留，不提交推测state/投影、不伪报done或自动重发模型。持续存储失败保留待恢复ID，后续read/generate/delete在存储恢复后重试；旧ID不清新占用。冷实例删除同样先恢复未完成任务，初始化恢复成功后才发布缓存。
+
 短事务领取占用，外部模型await期间允许stop进入；不持有blockConcurrencyWhile。重复requestId回放已有结果，同会话其他请求明确冲突。重启未完成回合可标记中断，不自动重复模型请求。
 
 客户端暂停读取SSE时，start/delta/candidates_pending写入必须响应停止与断连；中止后不续租。先保存回合终态并释放DO活跃状态，再将最多error/done两帧直接入队并结束流，正常完成的done也不等待reader。主动结束流不能被误判断连；持久化异常同样结束传输。停止后的未确认state不提交，保存正文与UUID回放沿用现有事务；删除可在reader继续读取之前清空DO存储及alarm。标准TransformStream构造器按当前兼容日期启用，依据[兼容标志](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#standard-transformstream-constructor)。
@@ -228,3 +230,7 @@ update_state暂存于本回合并可供工具续轮读取；最终正文正常�
 直接DO测试已复现旧实现的三种阻塞：start/delta/candidates_pending暂停读取后，停止无法释放generation_id。修复让发送与abort竞速，终态入队后terminate，取消不再续租。没有新增整轮deadline、数据库迁移或界面变更。
 
 114项Worker/session-object检查及TypeScript通过；新增阶段命中断言、停止正文保存/状态回滚/回放/删除、正常完成停读done、request.signal断连停读delta。真实workerd在对象内部暂停读取四阶段，锁释放后先删除再drain，验证done终态、无业务表/alarm；模型是夹具，不是线上推理。固定Linux28流程/84截图完成，82张逐字节一致，两张在既有50像素门槛内，无新基线。PR59八项CI、自动构建SHA/100%版本/health200及真实JWT停止、回放、同会话后续生成和删除已核验；线上网络缓冲未证明真实背压，确定性背压以workerd为证。详见交付状态首节。
+
+## SQLite故障后的回合恢复（2026-10-08，待PR发布）
+
+已复现最终保存抛错时跳过onSettled，使UI永久显示占用；以及初始快照失败留下无任务的pending消息。按上述事务/恢复约定修复，并补冷实例直接删除、首次恢复失败再试、旧恢复ID和停止原因保护。123项index/session-object检查与TypeScript通过；真实workerd用SQLite触发器注入初始化/最终/持续写入故障，移除触发器后同实例恢复、UUID及删除通过，模型为夹具。固定Linux28流程84图，81PNG一致、3在当前50像素门槛内，保留基线。PR/自动部署与真实JWT正常链路待交付，不在生产注入存储故障。

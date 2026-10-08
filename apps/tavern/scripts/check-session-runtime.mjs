@@ -11,6 +11,21 @@ const source=`
 import {TavernSession} from './worker/session-object';
 export class TestSession extends TavernSession {
  async inspectStorage(){const tables=this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE type='table'").toArray().map(r=>r.name).filter(n=>!n.startsWith('_cf')&&!n.startsWith('sqlite_'));return {tables,alarm:await this.ctx.storage.getAlarm(),bytes:this.ctx.storage.sql.databaseSize};}
+ async checkRecovery(owner,id,mode){
+  await this.invoke(owner,id,'read',{});
+  const requestId=crypto.randomUUID(),generate=()=>this.fetch(new Request('https://session/generate',{method:'POST',headers:{'X-Tavern-Owner':owner,'X-Tavern-Session':id,'Content-Type':'application/json'},body:JSON.stringify({requestId,content:'问候'})}));
+  this.ctx.storage.sql.exec(mode==='snapshot'?"CREATE TRIGGER fail_write BEFORE INSERT ON turn_snapshots BEGIN SELECT RAISE(ABORT,'snapshot unavailable'); END;":mode==='persistent'?"CREATE TRIGGER fail_write BEFORE UPDATE ON messages BEGIN SELECT RAISE(ABORT,'storage unavailable'); END;":"CREATE TRIGGER fail_write BEFORE UPDATE OF candidates_json ON messages WHEN NEW.status='completed' BEGIN SELECT RAISE(ABORT,'final unavailable'); END;");
+  if(mode==='snapshot'){let rejected=false;try{await generate();}catch{rejected=true;}if(!rejected)throw Error('snapshot failure missing');if(this.ctx.storage.sql.exec('SELECT * FROM messages WHERE request_id=?',requestId).toArray().length)throw Error('initial messages not rolled back');}
+  else{const wire=await(await generate()).text();if(wire.includes('"type":"done"'))throw Error('failed persistence reported done');}
+  // Let the task finish in this object, then recover without evicting it or rerunning the model.
+  for(let n=0;n<100;n++){if(!this.active)break;await new Promise(r=>setTimeout(r,10));}
+  if(this.active)throw Error('failed task retained active');
+  this.ctx.storage.sql.exec('DROP TRIGGER fail_write');
+  let result=JSON.parse(await this.invoke(owner,id,'read',{}));if(result.value.session.generationId!==null)throw Error('failed task retained lock');
+  if(mode==='snapshot'){const wire=await(await generate()).text();if(!wire.includes('"status":"completed"'))throw Error('same UUID failed retry');}
+  else{const saved=result.value.messages.at(-1);if(saved.status!=='aborted'||saved.finishReason!=='interrupted')throw Error('failed task not interrupted');if((await(await generate()).json()).replayed!==true)throw Error('failed task not replayed');}
+  let removed;for(let n=0;n<100;n++){removed=JSON.parse(await this.invoke(owner,id,'remove',{}));if(removed.ok||removed.status!==409)break;await new Promise(r=>setTimeout(r,10));}if(!removed.ok)throw Error('failed task retained deletion');return {mode,recovered:true,storage:await this.inspectStorage()};
+ }
  async checkBackpressure(owner,id,phase){
   const response=await this.fetch(new Request('https://session/generate',{method:'POST',headers:{'X-Tavern-Owner':owner,'X-Tavern-Session':id,'Content-Type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),content:'问候'})})),reader=response.body.getReader();
   const decoder=new TextDecoder();
@@ -44,6 +59,7 @@ export class TestSession extends TavernSession {
  }})}});}
 }
 export default {async fetch(request,env){const d=await request.json();const stub=env.SESSIONS.getByName(JSON.stringify([d.owner,d.id]));
+ if(d.method==='recovery')return Response.json(await stub.checkRecovery(d.owner,d.id,d.data.mode));
  if(d.method==='backpressure')return Response.json(await stub.checkBackpressure(d.owner,d.id,d.data.phase));
  if(d.method==='inspect')return Response.json(await stub.inspectStorage());
  if(d.method==='generate')return stub.fetch(new Request('https://session/generate',{method:'POST',headers:{'X-Tavern-Owner':d.owner,'X-Tavern-Session':d.id,'X-Tavern-Username':'test','Content-Type':'application/json'},body:JSON.stringify(d.data)}));
@@ -56,7 +72,7 @@ async function call(id,method,data,owner='owner'){return runtime.dispatchFetch('
 try{
  let db=await runtime.getD1Database('DB');for(const name of readdirSync(join(root,'migrations')).filter(n=>n.endsWith('.sql')).sort())await db.exec(readFileSync(join(root,'migrations',name),'utf8').replace(/--[^\n]*/g,'').replace(/\n/g,' '));
  const settings={userName:'旅人',persona:'',systemPrompt:'保持角色',modelId:'rp',thinkingEnabled:false,temperature:.9,topP:1,topK:0,frequencyPenalty:0,presencePenalty:0};
- for(const id of ['a','b','memory','tool-prose','pressure-start','pressure-delta','pressure-candidates_pending','pressure-completed'])await db.prepare('INSERT INTO sessions(id,owner,title,character_json,character_name,settings_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,'owner','旅店','{"name":"岚"}','岚',JSON.stringify(settings),1,1).run();
+ for(const id of ['a','b','memory','tool-prose','pressure-start','pressure-delta','pressure-candidates_pending','pressure-completed','recovery-final','recovery-persistent','recovery-snapshot'])await db.prepare('INSERT INTO sessions(id,owner,title,character_json,character_name,settings_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,'owner','旅店','{"name":"岚"}','岚',JSON.stringify(settings),1,1).run();
  await db.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at,finish_reason) VALUES('long-story','memory','assistant',?,'completed',0,1,'stop')").bind('北门早已关闭。'+'İ'.repeat(800)+'😀'.repeat(61)+'a北门钥匙在南塔。'+'风'.repeat(1000)+'银怀表藏在南塔。').run();
  await db.prepare("INSERT INTO messages(id,session_id,role,content,status,ordinal,created_at,finish_reason,candidates_json) VALUES('legacy','a','assistant','旧正文','completed',0,1,'stop','[\"问问。\"]')").run();
  await db.prepare('INSERT INTO model_capabilities VALUES(?,?,?)').bind('rp',JSON.stringify({contextTokens:32768,source:'llama.cpp:n_ctx',inputRatio:1.2}),Date.now()+300000).run();
@@ -69,6 +85,7 @@ try{
  const memoryRequest=crypto.randomUUID(),memoryStream=await(await call('memory','generate',{requestId:memoryRequest,content:'检索两个片段'})).text();assert.doesNotMatch(memoryStream,/"type":"error"/);let recalled=await(await call('memory','read')).json();assert.equal(recalled.value.messages.at(-1).status,'completed');assert.equal(recalled.value.messages.at(-1).candidates.length,3);assert.equal((await(await call('memory','generate',{requestId:memoryRequest})).json()).replayed,true);
  const memoryExport=await(await call('memory','export')).json();const steps=JSON.parse(memoryExport.value.snapshots.at(-1).steps_json);assert.equal(steps.length,2);assert.equal(JSON.parse(steps[0].result)[0].source.messageId,'long-story');assert.equal(JSON.parse(steps[1].result)[0].source.messageId,'long-story');assert.match(JSON.parse(steps[1].result)[0].text,/银怀表藏在南塔/);
  await db.prepare('UPDATE model_capabilities SET value_json=? WHERE id=?').bind(JSON.stringify({contextTokens:2048,source:'llama.cpp:n_ctx',inputRatio:1.2}),'rp').run();const proseRequest=crypto.randomUUID(),proseWire=await(await call('tool-prose','generate',{requestId:proseRequest,content:'同次长正文工具'})).text();assert.doesNotMatch(proseWire,/"type":"error"/);const proseSaved=await(await call('tool-prose','read')).json();assert.equal(proseSaved.value.messages.at(-1).content,'😀'.repeat(2201)+'你好。');assert.equal(proseSaved.value.messages.at(-1).candidates.length,3);assert.equal(proseSaved.value.session.state.scene,'港口');assert.equal((await(await call('tool-prose','generate',{requestId:proseRequest})).json()).replayed,true);await db.prepare('UPDATE model_capabilities SET value_json=? WHERE id=?').bind(JSON.stringify({contextTokens:32768,source:'llama.cpp:n_ctx',inputRatio:1.2}),'rp').run();
+ for(const mode of ['final','persistent','snapshot']){const result=await(await call('recovery-'+mode,'recovery',{mode})).json();assert.equal(result.recovered,true);assert.deepEqual(result.storage.tables,[]);assert.equal(result.storage.alarm,null);}
  for(const phase of ['start','delta','candidates_pending','completed']){const result=await(await call('pressure-'+phase,'backpressure',{phase})).json();assert.match(result.wire,/"type":"done"/);assert.match(result.wire,phase==='completed'?/"status":"completed"/:/"finishReason":"stopped"/);assert.deepEqual(result.storage.tables,[]);assert.equal(result.storage.alarm,null);}
  const fork=await(await call('a','fork',{messageId:a.value.messages.at(-1).id,content:'新分支'})).json();assert.equal((await(await call(fork.value.id,'read')).json()).value.messages.at(-1).content,'新分支');
  await(await call('a','generate',{requestId:crypto.randomUUID(),content:'工具抵达北港'})).text();a=await(await call('a','read')).json();assert.equal(a.value.session.state.scene,'北港');
@@ -83,5 +100,5 @@ try{
  await runtime.dispose();runtime=new Miniflare(convertV4MiniflareOptions(options));assert.equal((await(await call('a','read')).json()).status,404);assert.equal((await(await call('a','remove')).json()).ok,true);empty=await(await call('a','inspect')).json();assert.deepEqual(empty.tables,[]);assert.equal(empty.alarm,null);assert.equal(typeof empty.bytes,'number');
  assert.equal((await(await call('a','generate',{requestId:crypto.randomUUID(),content:'旧会话不能复活'})).json()).message,'会话不存在');empty=await(await call('a','inspect')).json();assert.deepEqual(empty.tables,[]);assert.equal(empty.alarm,null);assert.equal((await(await call('b','read')).json()).ok,true);
  db=await runtime.getD1Database('DB');assert.equal((await db.prepare("SELECT count(*) n FROM messages WHERE id='legacy'").first()).n,1);
- console.log('workerd SQLite: import, fence, isolation, streaming, distinct memory fragments, long Unicode prose with tool_calls, persisted steps, replay, fork, stop with start/delta/candidate/terminal backpressure, restart, deleteAll with no business tables/alarm and stale-request rejection passed (empty SQLite page bytes: '+empty.bytes+')');
+ console.log('workerd SQLite: import, fence, isolation, streaming, distinct memory fragments, long Unicode prose with tool_calls, persisted steps, replay, snapshot/final/persistent storage failure recovery without eviction, fork, stop with start/delta/candidate/terminal backpressure, restart, deleteAll with no business tables/alarm and stale-request rejection passed (empty SQLite page bytes: '+empty.bytes+')');
 }finally{await runtime.dispose();rmSync(persist,{recursive:true,force:true});}
