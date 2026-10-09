@@ -56,6 +56,8 @@ test('SSR, direct Data API navigation, skeleton, canonical URLs and reading stat
   expect(footerNote!.y).toBeGreaterThanOrEqual(footerNavigation!.y + footerNavigation!.height);
   await expect(page).toHaveScreenshot('home.png', { fullPage: true });
   await page.getByRole('button', { name: '切换深色' }).click();
+  await expect(page.locator('.hero-center h1')).toHaveCSS('color', 'rgb(240, 240, 240)');
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await expect(page).toHaveScreenshot('home-dark.png', { fullPage: true });
   await page.getByRole('button', { name: '切换浅色' }).click();
 
