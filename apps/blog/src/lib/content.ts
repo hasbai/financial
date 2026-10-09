@@ -1,3 +1,4 @@
+import { stripFrontmatter } from "@hasbai/markdown/metadata";
 import { z } from "zod";
 
 export const site = { name: "北极小站", origin: "https://hasbai.xyz" };
@@ -112,7 +113,7 @@ export function readMinutes(markdown: string) {
   return Math.max(1, Math.ceil(markdown.replace(/\s/g, "").length / 450));
 }
 export function excerptFromMarkdown(markdown: string) {
-  return markdown
+  return stripFrontmatter(markdown)
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/^[#>*`\-\s]+/gm, "")

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MarkdownContent from "@hasbai/markdown/content";
   import { imagePath, pagePath, site } from "$lib/content";
   let { data } = $props();
 </script>
@@ -17,6 +18,6 @@
     {#if data.page.excerpt}<p class="article-deck">{data.page.excerpt}</p>{/if}
   </header>
   {#if data.page.cover_id}<img class="reader-cover" src={imagePath(data.page.cover_id)} alt={data.page.title} />{/if}
-  <div class="prose">{@html data.html}</div>
+  <MarkdownContent html={data.html} />
   <div class="reader-end"><a href={"/studio/pages/" + data.page.id}>编辑页面</a></div>
 </article>

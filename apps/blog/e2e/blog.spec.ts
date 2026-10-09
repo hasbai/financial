@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 
 test.beforeEach(async ({ request }) => {
   await request.get('http://127.0.0.1:4180/reset');
@@ -240,4 +241,72 @@ test('ordinary logged-in users can read published content but cannot enter the e
   await expect(page).toHaveScreenshot('studio-denied-dark.png', { fullPage: true });
   await page.goto('/articles/hello-world');
   await expect(page.getByRole('heading', { name: 'Hello World，开始记录' })).toBeVisible();
+});
+
+
+test('Markdown extensions render safely and survive editor preview and save', async ({ page, request }) => {
+  test.setTimeout(120_000);
+  const source = readFileSync(new URL('./markdown-extensions.md', import.meta.url), 'utf8');
+  await request.patch('http://127.0.0.1:4180/rest/v1/article?id=eq.20000000-0000-4000-8000-000000000001', { data: { markdown: source } });
+  const ssr = await request.get('/articles/hello-world');
+  const markup = await ssr.text();
+  expect(markup).toContain('class="katex"');
+  expect(markup).not.toContain('title: 不覆盖文章标题');
+  const graphRequests: string[] = [];
+  const manifest: Record<string, { file: string }> = JSON.parse(readFileSync(new URL('../.svelte-kit/output/client/.vite/manifest.json', import.meta.url), 'utf8'));
+  const graphAssets = new Set(Object.entries(manifest).filter(([key]) => /\/(?:mermaid|markmap-lib|markmap-view|@terrastruct\/d2)\//.test(key) || key.endsWith('/markdown/src/diagrams.ts')).map(([, entry]) => '/' + entry.file));
+  expect(graphAssets.size).toBeGreaterThan(3);
+  page.on('request', request => { if (graphAssets.has(new URL(request.url()).pathname)) graphRequests.push(request.url()); });
+  await page.goto('/');
+  expect(graphRequests).toEqual([]);
+  await page.goto('/articles/hello-world');
+  await expect(page.locator('[data-diagram="d2"][data-state="ready"]')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-diagram="mermaid"][data-state="ready"]')).toHaveCount(1);
+  await expect(page.locator('[data-diagram="markmap"][data-state="ready"]')).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveText('mermaid 图表渲染失败');
+  expect(graphRequests.length).toBeGreaterThan(0);
+  await expect(page.locator('.katex')).toHaveCount(2);
+  await expect(page.locator('.markdown-callout')).toHaveCount(2);
+  await expect(page.locator('.footnotes')).toContainText('示例研究文献');
+  await expect(page.locator('input[type="checkbox"]')).toHaveCount(2);
+  const reference = page.locator('a[data-footnote-ref]').first();
+  const target = await reference.getAttribute('href');
+  await reference.click();
+  await expect(page.locator(target!)).toBeVisible();
+  const back = page.locator(target!).getByRole('link', { name: '返回引用' });
+  await back.click();
+  await expect(reference).toBeFocused();
+  await page.getByRole('button', { name: '放大', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: '适应', exact: true }).click();
+  await page.evaluate(() => scrollTo(0, 0));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(page).toHaveScreenshot('markdown-extensions.png', { fullPage: true });
+  await page.getByRole('button', { name: '切换深色' }).click();
+  await expect(page.locator('[data-state="ready"]')).toHaveCount(3, { timeout: 60_000 });
+  await expect(page.getByRole('alert')).toBeVisible();
+  const mermaidImage = page.locator('[data-diagram="mermaid"][data-state="ready"] img');
+  const geometry = await mermaidImage.evaluate(async (image: HTMLImageElement) => {
+    const root = new DOMParser().parseFromString(await (await fetch(image.src)).text(), 'image/svg+xml').documentElement;
+    return root.getAttribute('viewBox')!.split(/[ ,]+/).map(Number);
+  });
+  expect(geometry[0]).toBeGreaterThanOrEqual(0);
+  expect(geometry[2]).toBeGreaterThanOrEqual(240);
+  await expect(page).toHaveScreenshot('markdown-extensions-dark.png', { fullPage: true });
+  await page.goto('/auth/callback?code=fixture&state=fixture');
+  await expect(page).toHaveURL(/\/studio$/);
+  await page.goto('/studio/20000000-0000-4000-8000-000000000001');
+  await expect(page.getByLabel('Markdown 源码')).toHaveValue(source);
+  await page.getByRole('button', { name: '预览', exact: true }).click();
+  await expect(page.locator('[data-state="ready"]')).toHaveCount(3, { timeout: 60_000 });
+  await expect(page).toHaveScreenshot('markdown-preview.png', { fullPage: true });
+  await page.getByRole('button', { name: 'Markdown', exact: true }).click();
+  await expect(page.getByLabel('Markdown 源码')).toHaveValue(source);
+  await page.getByLabel('Markdown 源码').fill(source + '\n新增正文。');
+  const saved = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/rpc/save_article'));
+  await page.getByRole('button', { name: '更新文章', exact: true }).click();
+  expect((await saved).postDataJSON().p_markdown).toBe(source + '\n新增正文。');
+  await expect(page.getByRole('link', { name: '查看', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('Markdown 源码')).toHaveValue(source + '\n新增正文。');
 });
