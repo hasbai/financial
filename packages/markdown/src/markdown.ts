@@ -35,7 +35,8 @@ export function hasMarkdownExtensions(markdown: string): boolean {
 }
 
 function extensions() {
-  return (root: Node, file: { value: unknown }) => {
+  return (tree: unknown, file: { value: unknown }) => {
+    const root = tree as Node;
     const metadata = markdownMetadata(String(file.value));
     const references = Array.isArray(metadata.references) ? metadata.references : [];
     const bibliography = new Map<string, string>();
@@ -96,7 +97,8 @@ function extensions() {
 }
 
 function captions() {
-  return (root: Node) => {
+  return (tree: unknown) => {
+    const root = tree as Node;
     const walk = (node: Node) => {
       if (!node.children) return;
       node.children = node.children.flatMap(child => {
@@ -126,7 +128,7 @@ const processor = parser()
       code: [["className", /^language-./, "math-inline", "math-display"]],
     },
   })
-  .use(rehypeKatex, { trust: false, strict: "ignore", throwOnError: false, maxSize: 20, maxExpand: 1000 })
+  .use(rehypeKatex, { trust: false, strict: "ignore", maxSize: 20, maxExpand: 1000 })
   .use(rehypeStringify);
 
 export async function renderMarkdown(markdown: string) {
