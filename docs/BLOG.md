@@ -56,6 +56,8 @@ R2 bucket `image`，key 精确等于 image.id UUID。metadata 包括 name、sha2
 
 Tiptap 3 WYSIWYG，Markdown 官方扩展；支持标题、粗斜体、列表、引用、代码块、链接、表格、图片、撤销/重做和 Markdown 源码切换。服务端用 remark + rehype-sanitize 渲染，拒绝原始 HTML 和危险 URL。Markdown 表格不支持合并单元格，编辑工具不提供这种操作。文章可管理标签；手记使用同一 Markdown 编辑器，不填写标题或标签。封面可上传/移除，图片 name 作为默认 alt/title。离开未保存文档有确认；失败不清空内容。
 
+YAML 的 SSR 解析固定使用依赖提供的浏览器 ESM 入口，避免 Node/CommonJS 构建注入 `createRequire(import.meta.url)`，导致 Worker 初始化失败。博客固定独立 workerd 开发依赖，保留生产兼容日期，通过 Miniflare 的运行时路径覆盖用于启动检查。生产 `build` 完成后用本地 workerd 启动实际 Worker 并验证 `/api/version`，候选流程和 CI 均执行；Vite/Node 预览不能替代该运行时检查。
+
 ## CI 与发布
 
 Financial `Check`、Blog `Blog` 独立 workflow，均有廉价 changes job。业务应用目录修改只启动该应用检查；shared packages、workspace/lockfile 修改启动两边。PR 为普通检查，main push 不重复验收。有意视觉变更先使用固定 Linux 镜像 `pnpm visual:blog --all` 生成截图，审阅并导入，再由普通 PR 严格比较；全站外壳变化生成全部博客场景。
