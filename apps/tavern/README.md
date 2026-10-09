@@ -1,9 +1,7 @@
 # Tavern · 酒馆
 
-私人角色扮演对话：标准角色卡/世界书、在线搜卡安装、持久会话、流式生成、停止、重新生成与编辑分支。所有模型请求固定 Cloudflare AI Gateway `default` 的 `dynamic/rp`。
+私人角色扮演对话：标准角色卡/世界书、在线搜卡安装、持久会话、流式生成、停止、续写、重新生成与编辑分支。模型请求固定服务端 AI Gateway `default` / `dynamic/rp`。
 
-完整边界、API、来源、路线图与验收见 [方案](../../docs/TAVERN.md)。独立 Worker/D1/R2，Auth0复用北极小站共享配置与JWT claims；不修改财务数据。
+仓库根 `pnpm dev:tavern` 启动前端；本地 API 在此目录 `pnpm exec wrangler dev --port 8787`。独立 Worker/D1/私有 R2 与每会话 SQLite DO，共用北极小站登录。
 
-本地模型的Agent、状态/记忆/工具与缓存优化，按[当前架构与迭代优先级](../../docs/TAVERN-AGENT-PLAN.md)推进。
-
-`pnpm dev:tavern`、`pnpm visual:tavern --all`。完整验收由 Tavern PR workflow 执行。生产自动发布用 Workers Builds，真实配置和验证记录在 [交付状态](../../docs/TAVERN-PROGRESS.md)。
+开发前读[边界与任务路由](../../docs/tavern/README.md)。产品/API/角色来源见[架构](../../docs/tavern/ARCHITECTURE.md)，状态/工具/恢复与删除见[Agent 契约](../../docs/tavern/AGENT.md)，当前未解决的真实模型/日志验收见[PROGRESS](../../docs/tavern/PROGRESS.md)。本地检查、Linux 截图、PR 和自动发布统一见[TESTING](../../docs/TESTING.md)。

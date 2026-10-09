@@ -1,15 +1,8 @@
-# Tavern 模型设置与续聊候选
+# Tavern 模型参数与独立 Director
 
-2026-10-03。状态：已上线，真实JWT生成/候选/Gateway日志通过；运行时上下文探测受上游502影响。入口为 `apps/tavern`，从 [总方案](TAVERN.md) 和 [交付状态](TAVERN-PROGRESS.md) 进入。本次目标是减少回复等待，完整提供参数设置，并在每轮正常回复后提供三条可直接发送的后续输入。
+服务端仅提供白名单逻辑模型，当前 `rp` 对应 Gateway `default` / `dynamic/rp`，实际 provider/model 由 Gateway 配置决定。本文是参数、候选协议及 UI 的维护入口；运行实现见 `apps/tavern/shared/settings.ts`、`worker/director.ts`、`worker/gateway.ts`。不靠 route version/schema/管理 API 探测作为聊天准入，不依赖推理密钥或管理 Token。
 
-整体数据流与预算图见 [HTML 架构图](TAVERN-ARCHITECTURE.html)。
-
-2026-10-04修订见[Agent实施与优先级](TAVERN-AGENT-PLAN.md)：取消固定32K/12K、回复总输出上限、固定模型请求次数和生成deadline。按发现容量保留历史，超限才自动摘要；模型length自动续写。DO/state/原生工具/模型投影与世界书RAG已交付；共享Auth0 roles/email/username访问已恢复，本批真实JWT、状态/工具、向量、候选、停止/续写与生产发布证据见交付状态。跨回合KV缓存仍为0，不承诺前缀稳定等于GPU命中。
-
-## 当前实现与目标差异
-
-已实现参数默认值、全局/会话设置、默认关闭思考、独立 Director 候选、持久化及点击发送。RP 当前指向本地 llama.cpp 的 Qwen 模型；实际 provider/model 交给 Gateway。参数直接透传，不以路由版本、schema 或管理 API 核验作为聊天准入条件。运行时不依赖管理 Token 或推理 API Key。
-现有正常完成、停止、续写、重新生成、分支和预算校验保留。本地上游模型较慢，正文正常结束后，独立 Director 根据系统故事约束、核心角色卡、用户 persona、整体剧情梗概、最新状态和最近四条剧情生成三条候选。Director 结构或内容校验失败不能把正常正文改成失败。
+当前实现和最新真实验收缺口见[PROGRESS](PROGRESS.md)。
 
 ## 设置、默认值与模型边界
 
@@ -54,7 +47,7 @@ roleplay先正文，后独立 Director。正文正常结束并保存后，Direct
 
 正文与候选共用现有生成锁；尾部期间允许编辑自由输入草稿，发送等待本轮完成。正文及候选完成后解锁；梗概和Director期间保留停止按钮和可编辑草稿。发送下一轮、重新生成、切会话、编辑分支或删除后，旧候选退出当前界面，迟到结果不能插入新会话。失败不会清空草稿。保留 Enter 发送、Shift+Enter 换行和中文 IME 保护。
 
-## 正文结束后的 Director Agent（2026-10-04）
+## 正文结束后的 Director Agent
 
 沿用 `POST /api/sessions/:id/generate`、UUID、生成占用和停止信号。正文正常 stop 后先保存完整正文并发送 `candidates_pending`，随后由独立 TypeScript `DirectorAgent` 生成候选；不新增接口、用户设置、路由或调度器。
 
@@ -76,15 +69,11 @@ Director system 只包含候选任务协议；会话 systemPrompt、角色卡 sy
 
 候选仍与所属 message ID 一起保存为现有 nullable 元数据；刷新和 UUID 回放仅读取结果。候选不是剧情消息，不进入正文摘要或模型投影。SSE 与按钮发送契约保持现有 `candidates_pending → done`。
 
-## 按运行容量自动压缩
+## 上下文与恢复
 
-只读 `/props` 发现实际运行n_ctx，D1缓存5分钟并后台刷新；未知容量不猜32K。Unicode字符估算与倍率加模板估算量用于判断输入是否超过已发现容量，不预扣输出额度，不裁掉历史。
+容量发现、超限压缩、checkpoint、模型投影、length 续写、停止/占用和 DO 提交以[AGENT](AGENT.md#上下文与摘要)为准。候选只在可靠 stop 且三条全部有效后原子保存，不拼接 length 的半个 JSON，不补模板。
 
-超过发现窗口或收到明确上下文错误后，按时间顺序摘要较早完整轮次。保存nullable摘要checkpoint，记录来源消息ID与内容指纹；历史原文、导出和版本不变，编辑/重生成只能复用来源仍有效的摘要，分支首次不复制旧摘要。摘要失败保留旧记录。摘要自身超限或length时进一步拆小输入。
-
-length自动继续同一assistant消息、UUID和SSE，正文兼容标记可以跨模型请求；特别长的生成内容仅在当前模型投影中压缩早期片段。最终stop才提交候选。用户停止和断连取消当前正文或摘要；无进展/上游故障保存部分正文。180秒占用持续续租，所有写入以生成ID隔离，不作为回复总时限。
-
-## 实施顺序与验收
+## 验收契约
 
 | 顺序 | 工作 | 必过条件 |
 | --- | --- | --- |
@@ -100,19 +89,19 @@ length自动继续同一assistant消息、UUID和SSE，正文兼容标记可以�
 
 真实 JWT/API 验收单列：RP 默认请求确实关闭思考，开启后也确实可切换；受支持参数实际生效；回复正常完成后候选可生成、点击原文进入下一轮、会话恢复一致。比较相同有限任务关闭/开启时首个正文字符耗时及可用 usage，但不把一次快响应、缺少 reasoning_content 或模型口头承诺当作关闭证明。正文首字、正文完成、候选就绪分别计时；验收正文、梗概和Director的实际请求数与输入来源，候选JSON必须受Schema约束。
 
-实现、CI、自动发布与真实模型验收已完成，证据及上游502时的未知窗口局限见交付状态。
+上表为验收要求，当前入口变更后的已验/未验状态见[PROGRESS](PROGRESS.md)，旧入口成功样本不外推到新入口。
 
 ## 官方契约依据
 
-- [Cloudflare动态路由](https://developers.cloudflare.com/ai-gateway/features/dynamic-routing/usage/)：当前代码通过 `env.AI.run('dynamic/rp', inputs, {gateway:{id:'default',...},returnRawResponse:true,signal})` 调用。RP白名单和完整输入保持，HTTP错误与日志头由每次Response读取，不依赖绑定实例的可变日志ID。2026-10-08旧universal绑定400而同输入HTTP探测成功，原生绑定的线上修复结论仍待发布验收；不携带推理密钥、不直连@cf模型、不删参数重试。
+- [Cloudflare动态路由](https://developers.cloudflare.com/ai-gateway/features/dynamic-routing/usage/)：当前代码通过 `env.AI.run('dynamic/rp', inputs, {gateway:{id:'default',...},returnRawResponse:true,signal})` 调用。RP白名单和完整输入保持，HTTP错误与日志头由每次Response读取，不依赖绑定实例的可变日志ID。当前原生绑定的真实验收限制见[PROGRESS](PROGRESS.md)；不携带推理密钥、不直连@cf模型、不删参数重试。
 - [llama.cpp服务契约](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)：`/props`运行容量及`chat_template_kwargs`；当前模板实际使用enable_thinking，关闭时预填充空think，开启时等待思考内容。reasoning_format:none不是关闭思考。
 
-正文与Director各自拥有独立system；Director故事约束放在JSON数据，输出协议保持独立。通知复用共享`@hasbai/ui/notice`；项目原则见[AGENTS.md](../AGENTS.md#项目实现原则)。真实模型及发布证据见交付状态。
+正文与Director各自拥有独立system；Director故事约束放在JSON数据，输出协议保持独立。通知复用共享`@hasbai/ui/notice`；项目原则见[AGENTS](../../AGENTS.md#全局约束)，证据见[PROGRESS](PROGRESS.md)。
 
-## 对话 UI 与提示词修订（2026-10-03）
+## 对话与默认提示词
 
 消息区采用右侧用户气泡、无气泡角色正文，当前单角色会话隐藏双方姓名与头像，保留无障碍身份。发送/停止使用44px圆形图标按钮；输入框单行起步，按实际内容伸展到200px后内部滚动，发送后复位。复制、编辑与最后一条回答的重新生成放正文末尾；保留键盘、中文输入法、停止、续写和草稿。
 
 全局与当前会话都可编辑 System Prompt，并独立恢复默认提示；全局用于新会话，现有会话保留自身快照。默认鼓励3–6段、约300–600字的自然对白与场景细节，仍由用户控制自己的行动；长度是提示目标，不设应用输出上限。只精确升级旧默认字符串，用户自定义内容不覆盖；用户提示始终进入system，角色卡提示附加，含 `{{original}}` 时替换且不重复插入。正文兼容分隔符不含UUID；Director使用JSON Schema，不承诺跨阶段缓存命中。
 
-2026-10-03 universal绑定曾实时传送原始流，Gateway日志聚合 `choices[0].delta.content` 并保留 `streamed_data`。2026-10-08统一迁至原生AI.run，继续要求完整请求/回复收集；当前日志分类与聚合格式须独立线上核验。不在应用端回写response或借metadata存正文，不增第二次推理、不改为非流式；历史记录不追溯改写。
+当前正文、梗概和 Director 共用 `worker/gateway.ts` 的原生 AI.run，`returnRawResponse:true` 保留各次 HTTP 响应/SSE/取消与响应内日志 ID。Gateway 要求完整请求/回复、eventId、`skipCache:true`、app/task/签名 username，单次请求不自动重试、不删参数换路由；不在应用回写 response 或用 metadata 存正文。历史聚合格式与当前 event_id 差异见 PROGRESS，不追溯改写旧日志。

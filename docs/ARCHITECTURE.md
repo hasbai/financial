@@ -1,91 +1,50 @@
-# 技术架构
+# Monorepo 架构
 
-当前为 pnpm monorepo，财务位于 `apps/financial`，博客位于 `apps/blog`。共享 UI 使用 Luma，Auth0 与 Data API 工厂共享；博客 SSR/匿名访问/图片及独立 CI 见 [BLOG](BLOG.md)。下文的 `src`/`public` 等路径均相对财务应用目录。
+Hasbai 使用 pnpm workspace；`apps/*` 是独立应用，`packages/*` 提供共享能力。仓库名 `financial` 为历史名称。业务 repository、主题和存储契约留在对应应用，不用财务边界约束其他应用。
 
-Svelte 5 + TypeScript + Vite SPA，Bits UI + shadcn-svelte（Luma）+ Tailwind CSS 4 + Lucide，pnpm 管理依赖。Cloudflare Worker 只托管静态资源；业务数据直接调用 Neon Data API（PostgREST 兼容），业务读取视图与保存函数统一在 `financial`。
+## 应用与数据流
+
+| 应用 | 前端 / Worker | 业务存储与调用 |
+| --- | --- | --- |
+| [Financial](financial/ARCHITECTURE.md) | Svelte 5 / Vite SPA；Worker `financial` 托管静态资源 | 浏览器直连 Neon Data API，`financial` 三表、报表视图及写函数 |
+| [Blog](blog/ARCHITECTURE.md) | SvelteKit SSR；Worker `blog`，`hasbai.xyz` / `blog.hasbai.xyz` | 公开内容由 SSR/浏览器直读 Neon Data API，业务表在 `public`；R2 `image` 存公开图片 |
+| [Zboard](zboard/ARCHITECTURE.md) | Svelte 5 / Vite SPA；Worker `zboard` | Worker 验签、D1 用户/节点/模板/报告、订阅与 Node API |
+| [Tavern](tavern/ARCHITECTURE.md) | Svelte 5 / Vite SPA；Worker `tavern` | D1 目录/角色/世界书/设置；每会话 SQLite DO 保存正文与状态；私有 R2；AI Gateway `dynamic/rp` |
 
 ```mermaid
 flowchart LR
- SPA[Svelte 5 SPA / Worker financial] -->|登录| AUTH[Auth0 北极小站]
- SPA -->|Access Token| API[Neon Data API]
- API -->|验证 JWT| AUTH
- API --> DB[financial 三表 / 角色授权 / 原报表 / 保存函数]
+  Apps[四个应用] --> Auth[共享 Auth0 Universal Login]
+  Financial[Financial SPA] --> Neon[Neon Data API]
+  Blog[Blog SSR / 浏览器] --> Neon
+  Blog --> Image[R2 image]
+  Zboard[Zboard SPA] --> ZWorker[Zboard Worker / D1]
+  Tavern[Tavern SPA] --> TWorker[Tavern Worker / D1 / 私有 R2]
+  TWorker --> DO[每会话 SQLite DO]
+  DO --> Gateway[AI Gateway dynamic/rp]
 ```
 
-## 接入
+签名、有效期、audience 和授权执行点见[AUTHORIZATION](AUTHORIZATION.md)；Neon 数据库角色权限与 Worker owner 隔离各自承担业务授权。
 
-- Auth0 tenant：`hasbai.eu.auth0.com`；所有北极小站应用的登录域名为 `auth.hasbai.xyz`，共享配置在 `packages/auth/src/config.ts`。新令牌 issuer 为 `https://auth.hasbai.xyz/`；Tavern/Zboard Worker 使用相同域名获取 JWKS 并验证 issuer。
-- 北极小站：SPA，公开 client ID `mdmD7xvX5yay52SRVZeuIOhGHIa0Wdl2`。
-- 财务与博客登录请求固定传入北极小站 Organization `org_qR4E7HTZE1Zv10go`；该 SPA 在新版部署后要求组织登录。Auth0 Organization Branding 为北极小站设置雪花 Logo `https://hasbai.xyz/logo.svg`、主色 `#A55365`、背景色 `#FEFEFB`；东方财富证券 Organization `org_6yvoRRCkzk3eGkBS` 使用官网 Logo、主色 `#C74700`、背景色 `#FFFFFF`。两者的 `display_name` 分别是“北极小站”和“东方财富证券”。主色按白色按钮文字的对比度加深。登录框内部文案为租户通用的“登录”；当前套餐的 Universal Login Page Template API 返回 402。
-- 北极小站组织统一提供邮箱、Google、Microsoft Account、GitHub。三个社交连接允许新账号自动加入组织，业务权限另行分配；邮箱准入保持。现有管理员在组织分配 `superadmin`。组织登录时 Post Login Action 读取组织角色。社交提供商回调使用 `https://auth.hasbai.xyz/login/callback`，各应用自己的回调仍是下列 `/auth/callback`。
-- Audience：`https://financial.hasbai.xyz/api`，RS256，Access Token 有效期一小时。
-- Callback：`https://financial.hasbai.xyz/auth/callback`、`http://localhost:5173/auth/callback`。
-- Logout / Web Origins：上述两个 origin。
-- `@auth0/auth0-spa-js` 官方 SPA SDK 使用 Authorization Code + PKCE，token 仅在内存；每次请求调用 getTokenSilently，退出清除查询缓存。生产代码不处理密码。
-- Auth0 Access Token 使用顶层 `username`、`email` 与 `_roles`（角色数组）；`role` 为数据库角色字符串。共享财务/博客 audience 中 `_roles` 包含 superadmin 时签发 `role=superadmin`，其他 audience 或账号为 authenticated，Neon Data API 使用 `.role` 切换 PostgreSQL 角色。
+## 共享包
 
-Neon 项目 `mute-king-39794724` / neondb。开发分支 `br-proud-bread-b3hl3asf`，production 分支 `br-billowing-violet-b3pkbm3s`。公开的前端配置见 src/lib/config.ts；默认使用生产 endpoint，测试可通过 VITE_DATA_API_URL 替换目标 endpoint。
+| 包 | 职责 | 不包含 |
+| --- | --- | --- |
+| `packages/ui` | Luma primitives、通知、可复用交互组件 | 应用报表或业务权限 |
+| `packages/auth` | SDK 工厂、公开配置、公共 claims 与 permission helper | 密码、管理凭据、逐轮用户资料查询 |
+| `packages/data` | Neon PostgREST 客户端工厂 | 应用 repository 和业务读取包装视图 |
+| `packages/markdown` | 安全 Markdown 渲染与阅读组件、数学/引用/图表扩展 | 内容自动改写或发布决策 |
 
-Neon 现有 Auth0 providers 保留同租户的 `https://hasbai.eu.auth0.com/.well-known/jwks.json` 取钥地址；它不参与浏览器登录跳转。新域真实 JWT 已核验 `iss=https://auth.hasbai.xyz/` 与 `role=superadmin`，财务受保护读取、博客草稿读取及零行 PATCH 权限验证通过，无 token、错误签名和错误 audience 均拒绝。未新增重复 provider 或改动角色映射/数据库权限。
+视觉与复用要求见[DESIGN](DESIGN.md)。根脚本默认代理财务；财务源码、原脚本与视觉清单中的相对路径以 `apps/financial` 为工作目录，CI 等待脚本位于根 `scripts/wait-ci.mjs`。
 
-Data API 的 JWT 校验发生在 Neon，PostgreSQL 根据 superadmin 的 schema 和对象授权决定访问。纯前端不意味着允许公开访问数据库。[Neon 外部身份支持](https://neon.com/docs/data-api/custom-authentication-providers)
+## 自动构建与运行入口
 
-## 应用结构
+Cloudflare Workers Builds 监听 `main` 自动构建发布。当前 Git remote 为 `hasbai/hasbai`；2026-10-10 只读回查的 Cloudflare repo_connection 名称仍为历史 `hasbai/financial`，交付时按实际 Build 提交核对，不单凭显示名称判断同步结果。仓库根 `wrangler.jsonc` 保留财务静态入口兼容；各应用也有独立 Wrangler 配置。GitHub Actions 不部署。
 
-- `src/pages`：总览、流水、编辑、设置与科目。
-- `src/lib/api.ts`：使用 Neon PostgREST SDK，自动取得 Auth0 token。直接 GET balance、balance_history、cashflow、income_statement、transactions 和 account；数值列取十进制字符串，客户端 Decimal 完成汇总、分类、日期分组和首页结构组装。只有保存使用 RPC。
-- `@tanstack/svelte-query`：通过 Svelte 5 accessor 查询缓存、游标分页与保存后刷新。
-- `src/lib/reports.ts`：报表片段与源行共用 QueryClient 内存缓存；首页从现有报表并发读取，后续明细复用源行，不为一次 HTTP 再拼后端 home 视图。关闭金额时不取余额历史。
-- balance/balance_history 物化视图直接授予 superadmin SELECT；保存完成后在同一事务刷新。外部批量维护使用 scripts/refresh-balances.mjs。
-- 保存使 overview/transactions 及其源行查询失效；科目只读取一次完整列表，首页现金配置与流水标签共同复用。报表、源行、科目及精确截止时点在当前页面会话内保留，不因30秒过期、切页、聚焦或重连重复获取。跨北京时间日期后重新进入页面刷新报表；保存后刷新受影响数据，浏览器刷新重建会话并重新读取，退出清空同一个 QueryClient。历史余额直接读取每日快照，现金图一次按日聚合，不再每六天重复查询。
-- `Repository.overview` 保留核对入口，其余额采用新物化视图，现金和损益使用现有视图；不读取已删除的 balance_sheet/cashflow_statement。
-- Svelte 5 runes：编辑状态与分录数组；快照提交，原分录 ID 和 updated_at 保留。
-- Decimal.js + SQL numeric：金额输入与计算。
-- Svelte SVG：趋势展示及逐日可访问明细；坐标用 Number，仅用于呈现，基础报表金额来自 SQL，页面汇总采用 Decimal。
+| 应用 | 已登记构建入口 | 配置与版本核验入口 |
+| --- | --- | --- |
+| Financial | 应用根 `apps/financial`；`pnpm build` | `apps/financial/wrangler.jsonc`；线上 HTML / 静态资源与构建产物核对 |
+| Blog | 应用根 `apps/blog`；`pnpm build`，含 workerd 启动检查 | `apps/blog/wrangler.jsonc`；`/api/version`、SSR |
+| Zboard | 仓库根；`pnpm --filter zboard build` | `apps/zboard/wrangler.jsonc`；Worker 版本及线上资源 |
+| Tavern | 仓库根；`pnpm --filter tavern build` | `apps/tavern/wrangler.jsonc`；`/health` 与部署版本 |
 
-- `src/lib/auth.svelte.ts`：Auth0 初始化、回调、登录/退出及取 Access Token。SDK 随入口加载，静默恢复超时为3秒；没有恢复会话则自动通过顶层 Auth0 跳转登录，sessionStorage 仅存防循环与主动退出标记，不存 token。主动退出后保留手动登录入口；回调错误不自动重试。
-- `src/lib/router.svelte.ts`：History API 路由、查询字符串、返回与未保存提醒；保持原 SPA 路径。
-- `src/lib/context.ts`：Svelte context 注入 Repository；测试注入替身，不加入生产绕过认证开关。
-- `src/lib/editor.ts`：表单初始化和退款分录输入；SQL 负责最终保存校验。
-- `svelte-check` 同时检查 Svelte 与 TypeScript；TypeScript 6 是当前 svelte-check 声明支持的主版本。
-
-## 发布
-
-`wrangler.jsonc` 配置 Worker financial、dist 静态目录、single-page-application 回退与 financial.hasbai.xyz 自定义域名。`public/_headers` 配置缓存、安全头。推送 main 后由 Cloudflare 后台分别自动构建并部署财务和博客 Worker；两者的仓库连接、应用根目录与路径过滤由用户在 Cloudflare 后台配置。根 Wrangler 配置保留财务原入口，不重复手动部署。
-
-GitHub Actions 只在 PR 创建/更新时进行完整验收（手动 dispatch 保留排障），功能分支 push 和合并后的 main push 不重复运行。主代理修改后按 [TESTING](TESTING.md#运行) 完成本地提交前检查与受影响截图审阅，再提交；完整 WebKit/Chromium Playwright 回归在固定 Linux 镜像的 PR CI 执行并保留截图/trace。新子代理推送功能分支并跟踪 CI，最新提交的必需检查成功且同步 main 后通过 PR 合并。合并与允许直推的边界及基线流程见 [TESTING](TESTING.md)。测试入口不进入生产构建。数据库迁移仍先隔离验证再生产迁移/API核验，不遗漏兼容步骤；PR合并后子代理核验Cloudflare自动部署和线上资源。生产发布状态记录在[PROGRESS](PROGRESS.md)。
-
-回滚优先退回 Worker 版本；数据库不新增字段、不删除原数据。共享 Neon endpoint 的 provider 配置修改前必须核查原消费者；不调整其他 Auth0 application。
-
-## 程序化验证
-
-按用户要求，本地 `.env` 保存 AUTH0_TEST_EMAIL / AUTH0_TEST_PASSWORD，权限600且被Git忽略，不进入构建。`scripts/auth0-token.mjs` 只供本机检查：通过 Auth0 Universal Login 正常账号页/密码页、Cookie 会话、Authorization Code + PKCE 获取本人 Access Token。无需 Auth0 CLI 管理登录、client secret 或临时修改 grant；不改写 `.env`。授权回调严格校验 state，凭据仅提交同一 Auth0 origin，遇 MFA/CAPTCHA 等额外验证时明确停止。生产 SPA 继续使用官方 SDK，测试脚本不进入浏览器。
-
-北极小站共享配置位于 packages/auth/src/config.ts。Tavern 复用相同 audience，普通用户经 JWT 验证后管理本人资源；全站管理权限为 manage:tavern，不使用专属 audience。auth0/login-claims.js 与当前统一 Post Login Action 一致，签发顶层 username/email/_roles，应用通过原生 permissions 授权，_roles 仅保留兼容；财务/博客数据库使用标量 role；不查询逐轮用户资料。Neon 的现有标量角色映射须独立验证，不能把公开内容 HTTP 200 当成管理员授权成功。错误签名、错误 audience 与无 token 均由 Data API 拒绝；业务函数不再重复检查 JWT。
-
-## 首页请求复用
-
-- 冷启动需要六类源 GET（分页超过1000行时有续页）：balance、income_statement、cashflow、transactions质量、account完整科目、balance_history。隐藏金额时省去余额历史，共五类。
-- account不再单查“现金及等价物”ID；完整科目列表供首页配置判断、流水筛选、科目设置及编辑共用，保存科目后全量失效，保存交易不重读科目。
-- 首页资产/损益/每日历史面板复用原始行；cashflow优先复用已缓存且覆盖所需半开时间区间的完整行，再用原有微秒边界裁剪。历史余额缓存按实际请求日期键控。
-- 隐藏后首次显示金额只补余额历史；失败重试只重读失败源。所有源缓存位于应用注入的同一QueryClient，不保存到localStorage，退出清空也覆盖在途查询。
-- Auth0 oauth/token属于登录/续期，Cloudflare cdn-cgi/rum属于性能上报；Google Play log未在项目源码中引入，不能仅凭URL认定其具体发起方。
-
-## iOS PWA
-
-manifest 声明北极账本、standalone、同源 scope/start_url 和图标；同时提供180px Apple Touch Icon。Vite build 完成后 scripts/build-pwa.mjs 按 index、manifest、icons、assets 的内容生成有版本的 sw.js 和静态资源清单。
-
-Service Worker 只预缓存公开应用资源；不拦截跨域Auth0/Neon、非GET、Authorization请求，也不缓存带查询参数的资源或任何运行时API响应。受控导航优先以no-store请求规范根路径/，失败或非HTML成功响应时回退当前完整安装版本的应用壳；不把在线页面写入另一版本缓存。新SW完整预缓存后skipWaiting并clients.claim，后续刷新取得线上版本；不调用页面reload或Client.navigate，不打断正在填写的交易。旧页面仍可能加载旧哈希chunk，因此有打开窗口时保留旧版本静态缓存并按精确资源路径查找；仅激活时确认没有打开窗口才清理旧financial-static缓存，不触碰其他应用缓存。应用启动、回到前台、恢复网络时检查SW更新，合并在途检查，离线失败等待下次事件重试。
-
-账本查询与token继续只放内存，无离线数据库、离线保存队列或后台写入。编辑期间断网保留当前内存输入，禁用保存；网络恢复允许提交，结果不明确仍沿用待核对状态禁止重复写入。冷启动离线只能取得应用壳，登录/读取需要网络。
-
-mobile-viewport.ts 使用 VisualViewport 高度和offsetTop适配键盘；放大时不覆盖系统缩放。仅正常尺寸更新CSS变量，弹层焦点与滚动锁使用Bits UI。手机交易路由只挂载编辑页面，EditorSurface 在手机渲染普通页面、桌面使用Dialog；手机页面及科目选择均适配VisualViewport，避免应用菜单或底栏覆盖编辑操作。PWA standalone中的真实登录、安装、系统返回和键盘行为需单独真机验收，程序化JWT/API不替代此项。
-
-PWA导航缓存使用规范URL `/`，不预取会被Cloudflare重定向的`/index.html`。导航响应的redirected标记需清除后才能用于redirect=manual的浏览器导航。2026-09-15修复版在install阶段重建旧缓存的redirected /index.html响应，保留旧版正文/资源，允许仍活跃的旧SW恢复导航；不等待新SW激活才修复。回归通过真实HTTP307验证，而非仅比对文件内容。
-
-2026-09-16更新修复：原cache-first + waiting策略会使普通刷新继续命中旧应用壳，线上资源与dist一致不能证明已安装PWA已更新。现已增加安装/激活/导航/旧chunk/离线回退的生命周期回归；旧SW首次检测并安装修复版期间仍可能显示旧页，接管后再刷新即可取得新版。真机已安装客户端的状态仍需单独核验。
-
-
-## 2026-10-04 权限统一
-
-当前授权以[北极小站授权规则](AUTHORIZATION.md)为准。自定义 API 已启用 RBAC 与原生 permissions 声明；财务/博客的数据库 role 和 GRANT/RLS 保留，普通酒馆用户无需角色即可管理本人数据，Zboard 管理接口检查 manage:zboard。旧令牌需重新登录或到期后更新。
+2026-10-10 回读的过滤：财务 `apps/financial/*`、博客 `apps/blog/*`，均包含 `packages/*` 和根 workspace/lockfile；Tavern 为 `apps/tavern/**`、`packages/**` 和根 workspace/lockfile；Zboard 当前为 `*`（全仓库），并非只监控应用路径。此次仅记录现状，不修改后台触发器。自动 Build SHA 与线上版本在交付时核对。Tavern/Zboard 本地前端通过 Vite 代理独立 Worker API；细节见应用架构。发布、数据库兼容步骤和回滚验证的执行要求统一见[TESTING](TESTING.md)。

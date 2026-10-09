@@ -1,0 +1,13 @@
+interface:
+  display_name: doc maintenance
+  short_description: 按需读取和维护项目文档，规范职责、入口与引用，保持文档与实现一致。
+  default_prompt: 使用 $doc-maintenance 按需检查并维护项目文档，规范文档分工与入口。
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true

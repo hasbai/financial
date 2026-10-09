@@ -1,5 +1,7 @@
 # Tavern 交付状态
 
+> 历史记录：保留当时的方案、命令与验收证据，不作为当前开发或发布规范。当前入口见[文档导航](../../README.md)。
+
 ## SSE背压下停止与DO释放（2026-10-05，已上线）
 
 修复客户端暂停读取SSE时停止被writer.write卡住的问题：开始、正文和候选等待事件均响应abort；取消后不继续续租。先保存终态并释放DO活跃状态，再将最多error/done两帧入队并结束流，正常完成也不等待最终reader；主动结束不误判断连。没有增加整轮deadline、数据库迁移或界面。
@@ -132,7 +134,7 @@ RP真实Gateway原生update_state→工具结果→正常正文已通过；BGE-M
 
 全部请求/恢复/日志/模板及清理证据保存在忽略目录`apps/tavern/.local-visual/agent-tools`，未保存Token。架构复核确认所有确定P1已修复；手机为WebKit模拟，不冒称真机。Agent本批计划实施与发布完成，后续模型服务优化不伪装为已解决。
 
-2026-10-03。线上入口：[tavern.hasbai.xyz](https://tavern.hasbai.xyz)。完整方案、来源依据与后续路线见 [TAVERN.md](TAVERN.md)。
+2026-10-03。线上入口：[tavern.hasbai.xyz](https://tavern.hasbai.xyz)。完整方案、来源依据与后续路线见 [TAVERN.md](../ARCHITECTURE.md)。
 
 ## 已交付
 
@@ -141,7 +143,7 @@ RP真实Gateway原生update_state→工具结果→正常正文已通过；BGE-M
 - 世界书关键词/副关键词/常驻/扫描深度/递归/优先级/排序/预算，用户 persona、角色、世界设定与历史提示组装。
 - D1/R2、JWT superadmin访问、会话快照、生成幂等与锁、SSE、部分内容落盘、停止、重新生成、编辑分支、JSONL导出。
 - TheatreLM原始5011条，经本轮质量隔离后5002条可用；revision `eb8597aec4e3e114b2d28b86c3e2496dd48c5af3`；worlds.json SHA256 `6acddc549996246cca97a3bda0560b9fbafe188920703815adeb33d3459b165a`。来源、署名、许可和转换标记随角色保存。
-- 首版曾固定 `AI.gateway('default').run` 调用 `dynamic/rp`（compat/chat/completions）；2026-10-08代码已迁原生AI.run，最新验收限制见[原生动态路由绑定](TAVERN-AGENT-PLAN.md#原生动态路由绑定2026-10-08已发布线上验收未通过)。固定RP白名单，不接受前端覆盖模型或密钥，无应用隐式重试或备用模型。
+- 首版曾固定 `AI.gateway('default').run` 调用 `dynamic/rp`（compat/chat/completions）；2026-10-08代码已迁原生AI.run，最新验收限制见[原生动态路由绑定](AGENT-ITERATIONS.md#原生动态路由绑定2026-10-08已发布线上验收未通过)。固定RP白名单，不接受前端覆盖模型或密钥，无应用隐式重试或备用模型。
 
 ## 首版验收证据（修订前）
 
@@ -188,7 +190,7 @@ Chub/CharaVault探针403；Chub保留失败状态与适配器，未声称该源�
 
 ## 模型配置与续聊候选（方案历史）
 
-2026-10-03 已完成 [方案](TAVERN-MODEL-SETTINGS.md)，尚未修改应用或生产数据库：补齐参数默认值、默认关闭思考、白名单模型选择（首个为 RP 动态路由），同一次 roleplay 正文后顺带输出最多三条用户视角候选并支持点击发送，避免再次预填充；短上下文按上游明确能力反馈协商，HTML 架构图见方案。真实 RP 参数能力、关闭思考及候选延迟仍待验收；不能把现有过滤思考输出算作已关闭思考。
+2026-10-03 已完成 [方案](../MODELS.md)，尚未修改应用或生产数据库：补齐参数默认值、默认关闭思考、白名单模型选择（首个为 RP 动态路由），同一次 roleplay 正文后顺带输出最多三条用户视角候选并支持点击发送，避免再次预填充；短上下文按上游明确能力反馈协商，HTML 架构图见方案。真实 RP 参数能力、关闭思考及候选延迟仍待验收；不能把现有过滤思考输出算作已关闭思考。
 
 ## Gateway 归属日志与 JWT 名称（2026-10-03）
 
@@ -299,7 +301,7 @@ Gateway原payload=false解释了只有metadata没有完整请求；现改为true
 
 ## Agent 第一阶段：短提示词与受控预算（2026-10-04）
 
-长期路线见[TAVERN-AGENT-PLAN.md](TAVERN-AGENT-PLAN.md)，首批仅实施第1步，后续DO/state/摘要/工具/世界书RAG尚未上线。当前主目录已切到最新main，酒馆入口为apps/tavern，不再依赖旧工作树定位。
+长期路线见[TAVERN-AGENT-PLAN.md](../AGENT.md)，首批仅实施第1步，后续DO/state/摘要/工具/世界书RAG尚未上线。当前主目录已切到最新main，酒馆入口为apps/tavern，不再依赖旧工作树定位。
 
 精炼默认写作与同次候选协议，只迁移精确匹配两个已知旧默认的设置，保留用户自定义。模型输入软目标12288、用户声明的32K规划上限，发现更小容量优先；未知能力仍报告null，不使用Infinity发送全历史。保护当前输入和上一完整问答；旧历史按起点约2048估算tokens的完整轮次块裁剪，原文不删除，尚无长期记忆。
 

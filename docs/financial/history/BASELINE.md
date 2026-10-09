@@ -1,5 +1,7 @@
 # 现场核查基线
 
+> 历史记录：保留当时的方案、命令与验收证据，不作为当前开发或发布规范。当前入口见[文档导航](../../README.md)。
+
 检查日期：2026-09-13，Asia/Shanghai。采用 Neon MCP SELECT、GitHub CLI、Auth0 CLI 与只读 HTTP 请求；本轮未修改数据库、Auth0、Cloudflare 配置或数据。
 
 本文件是时间点快照，后续实现必须重新检查。只记录结构和聚合质量，不保存个人金额、商户、账户名称、完整流水或凭据。
@@ -95,4 +97,4 @@ ID 的 `column_default` 为空不等于没有自增：实际 identity 已另外�
 
 未核实：Auth0 应用配置、有效用户 token、JWKS/audience、浏览器 CORS、退款业务语义、完整期初/币种、既有导入程序、其他 schema 消费者、Cloudflare 控制台/DNS、生产发布链路。
 
-可重跑的聚合查询见 [只读核查 SQL](sql/inspect-financial.sql)。它仅输出结构/质量计数，不执行写入；必须显式选择 hasbai 的目标分支和 neondb。详细元数据可再查询 information_schema、pg_constraint、pg_policies、pg_indexes 与权限函数。
+可重跑的聚合查询见 [只读核查 SQL](inspect-financial.sql)。它仅输出结构/质量计数，不执行写入；必须显式选择 hasbai 的目标分支和 neondb。详细元数据可再查询 information_schema、pg_constraint、pg_policies、pg_indexes 与权限函数。

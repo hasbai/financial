@@ -1,6 +1,15 @@
 # 北极小站授权规则
 
-2026-10-04。登录统一使用 `packages/auth`、`auth.hasbai.xyz` 与已有北极小站组织。Auth0 负责权限签发；接口验证用户 JWT 后判断对应 `permissions`。普通用户无需 Auth0 `authenticated` 角色。
+适用于四个应用；仓库实现入口是 `packages/auth/src/config.ts`、`auth0/login-claims.js` 和各 Worker 的 auth 模块。Auth0 后台登记基于 2026-10-04 核验，实际操作须回读；本次文档维护不重新配置远端。登录统一使用 `packages/auth`、`auth.hasbai.xyz` 与已有北极小站组织。Auth0 负责权限签发；接口验证用户 JWT 后判断对应 `permissions`。普通用户无需 Auth0 `authenticated` 角色。
+
+## 统一登录与身份字段
+
+- 浏览器共用 `packages/auth` 官方 SPA SDK 工厂，Authorization Code + PKCE，token 只在内存，请求使用 `getTokenSilently`。生产代码不处理密码，退出清除相关查询缓存。
+- 公开配置的登录域名为 `auth.hasbai.xyz`，管理租户为 `hasbai.eu.auth0.com`，北极小站组织、client ID 和默认 audience 从共享配置引用，应用不重复维护。
+- 统一提供邮箱、Google、Microsoft Account、GitHub，不强制 `connection=eastmoney-email`。三个社交连接已登记允许登录时加入组织，业务权限另行分配；邮箱准入保持。不关联原身份、不复制角色。
+- 提供商 callback 为 `https://auth.hasbai.xyz/login/callback`；各应用 callback 仍是自身 `/auth/callback`，localhost origin 以应用开发端口登记。Worker issuer/JWKS 使用自定义域名；Neon 既有同租户 provider/JWKS 取钥地址保留，修改前核查消费者。
+- Action 签发顶层 `username`、`email`、`_roles`（兼容角色数组）、`role`（数据库标量）。共享 audience 下具有 superadmin 角色时 `role=superadmin`，其他账号或 audience 为 authenticated。公共用户名签发不限定 Tavern；保留 blocked、邮箱验证和东方财富组织字段。
+- 应用管理员授权使用原生 `permissions`，不以 `_roles` 回退。数据库的标量 role、GRANT/RLS 与前端 permission 是不同执行点，不能互相替代。旧 token 需重新登录或到期更新。
 
 ## 应用与接口边界
 
@@ -23,7 +32,7 @@
 | eastmoney gateway | `https://eastmoney.hasbai.xyz/` | 其他业务，保留现有权限和分配 | 已开启 | 原有 61 项权限，随原角色分配签发 |
 | Auth0 Management API | 租户 `/api/v2/` | Auth0 系统管理 | 系统 API 保留 | 不向业务用户扩大 Management API 授权 |
 
-四个自定义 API 均使用 `enforce_policies=true` 与 `access_token_authz`。Auth0 原生生成当前 audience 下全部已授予的 `permissions`，不由 Action 手工拼接，不要求 SPA 逐项请求 scope。上述四项新增权限仅授予已有 tenant `superadmin` 角色，原角色、组织成员和东方财富 61 项定义不修改。旧 Access Token 不会被重写；重新登录或令牌到期后取得新声明，应用不以 `_roles` 回退管理员授权。
+2026-10-04 后台登记的四个自定义 API 均使用 `enforce_policies=true` 与 `access_token_authz`。Auth0 原生生成当前 audience 下全部已授予的 `permissions`，不由 Action 手工拼接，不要求 SPA 逐项请求 scope。上述四项新增权限仅授予已有 tenant `superadmin` 角色，原角色、组织成员和东方财富 61 项定义不修改。旧 Access Token 不会被重写；重新登录或令牌到期后取得新声明，应用不以 `_roles` 回退管理员授权。
 
 租户现有 `authenticated` 为东方财富组织角色，包含原内测权限，不能作为北极小站新用户默认角色。顶层 `role=authenticated` 是 Neon 数据库角色字符串，不等于授予 Auth0 同名角色。`_roles` 继续保留兼容；财务/博客 Data API 的数据库 `role`、GRANT/RLS 不能由前端 `permissions` 替代。无数据库迁移、无新增表或字段。
 
@@ -34,3 +43,11 @@
 主代理运行 `node scripts/setup-auth0-rbac.mjs` 只读查看，明确授权后运行 `node scripts/setup-auth0-rbac.mjs --apply`。脚本保留原 scopes，追加应用权限，更新已有自定义 API，并回读验证 API 与 superadmin 分配；不输出凭据、不创建新角色/API、不修改登录连接、其他角色或系统 Management API。
 
 真实 JWT/API、本地相关单元、Linux 视觉、CI 与自动部署分别记录。普通用户不改变生产角色来模拟；负向 JWT 与 owner 隔离由签名测试/接口夹具验证，真实普通用户登录须独立核验。
+
+## 正常登录专项核验
+
+本机财务脚本 `apps/financial/scripts/auth0-token.mjs` 程序化执行正常 Universal Login 账号页/密码页、Cookie 会话、Authorization Code + PKCE，供真实 API 专项检查；生产继续使用官方 SDK，不包含该脚本。
+
+按既有授权，本地忽略的 `.env` 可保存 `AUTH0_TEST_EMAIL` / `AUTH0_TEST_PASSWORD`，权限 600，不使用 `VITE_` 前缀、不进入构建。脚本严格校验 callback state，凭据仅提交同一 Auth0 origin，不需要管理 CLI 登录、client secret、临时 grant 或改写 `.env`；遇 MFA/CAPTCHA 等额外验证明确停止。凭据读取/输出约束见根 [AGENTS](../AGENTS.md#全局约束)。
+
+财务/博客 Data API 的真实读取、草稿或零行 PATCH 权限及无 token/错误签名/audience 拒绝应独立验证，不能拿公开内容 HTTP 200 当管理员写权限成功。合成夹具、真实 JWT/API、第三方完整账号登录和生产部署分别记录，通用流程见[TESTING](TESTING.md#浏览器与真实链路)。

@@ -1,6 +1,6 @@
 # 数据库与 API
 
-仅保留 financial.account、financial.transaction、financial.entry 三张基表及全部原字段、记录、ID。2026-09-15 用户明确：权限使用 Auth0 superadmin 映射数据库角色；页面格式由前端处理。
+业务范围以[财务入口](README.md#用户确认的业务边界)为准。本页维护当前读取、写入与维护契约；脚本路径相对 `apps/financial`，迁移位于仓库根 `database/migrations`。
 
 ## 数据读取
 
@@ -14,9 +14,9 @@
 
 ## 权限
 
-Auth0 的顶层 `_roles` 为角色数组，`role` 为数据库角色字符串。共享财务/博客 audience 中 `_roles` 包含 superadmin 时签发 `role=superadmin`，其他 audience 或账号为 authenticated；Data API 的 jwt_role_claim_key 为 `.role`，验证 JWT 后切换 PostgreSQL 角色。superadmin 是 NOLOGIN/NOSUPERUSER/NOBYPASSRLS 的业务角色，不是 PostgreSQL 超级用户。authenticator 与管理用 neondb_owner 可切换到该角色。
+JWT claims、audience 与应用 `access:financial` 门禁统一见[AUTHORIZATION](../AUTHORIZATION.md)。Data API 验证 JWT 后按 `.role` 切换 PostgreSQL 角色；应用 permission 检查不替代数据库 GRANT，也不增加 SQL 身份重复校验。
 
-superadmin 具有 financial schema USAGE、三表及现有业务视图 SELECT、save_transaction/save_account EXECUTE；没有基表 DML 或直接刷新权限。anonymous、authenticated 和 PUBLIC 的 financial 访问授权撤销。删除 is_owner、personal_read/personal_write，关闭三表 RLS；不再检查固定 subject，不在前端检查角色。
+superadmin 是 NOLOGIN/NOSUPERUSER/NOBYPASSRLS 的业务角色，authenticator 与管理用 neondb_owner 可切换到它。superadmin 具有 schema USAGE、三表及现有业务视图 SELECT，以及公开保存/删除函数 EXECUTE；没有基表 DML 或直接刷新权限。anonymous、authenticated 和 PUBLIC 的 financial 访问授权撤销。旧 is_owner、personal_read/personal_write 已删除，三表 RLS 关闭。
 
 保存函数继续以 financial_writer 执行，固定 search_path，保留借贷/金额校验、updated_at 冲突、分录 ID 及同笔退款。transaction_detail 仅作保存内部返回助手，refresh_balances 仅作内部刷新，两者都不暴露给 superadmin 执行。
 
@@ -32,11 +32,11 @@ balance 的纳入规则仅排除同笔科目缺失，包含已录入未来交易
 
 scripts/test-database.mjs 验证三表字段、退款、精度、保存回滚、角色授权和现金损益。scripts/test-balance-database.mjs 验证历史连续、北京时间边界、回补、pending 与未来交易。所有测试写入均回滚，连接串只从 stdin 获取。首页前端组装由 API/组件测试及 scripts/check-home-api.mjs 验证；原 test-home-database.mjs 随 home 视图移除。
 
-scripts/check-api.mjs 使用真实 Auth0 PKCE 验证顶层 role、直接读取及网关拒绝；DATA_API_URL 指定目标。check-home-api.mjs 用 VITE_DATA_API_URL 指定已迁移分支。迁移先在生产副本验证，生产数据不由开发副本覆盖；数据库/API、前端部署和浏览器验收分别记录。
+scripts/check-api.mjs 使用真实 Auth0 PKCE 验证顶层 role、直接读取及网关拒绝；DATA_API_URL 指定目标。check-home-api.mjs 用 VITE_DATA_API_URL 指定已迁移分支。
 
-生产迁移属于代码交付，隔离验证通过后主动迁移生产并核验 API，再提交推送。main 推送触发前端自动部署，需核验自动构建及线上版本；不额外等待迁移或发布授权。006_role_access.sql 已于2026-09-15应用生产，详见 PROGRESS。
+迁移和生产/API 核验的执行流程只在[共享 TESTING](../TESTING.md#数据迁移与发布核验)维护；006/007 迁移的既有证据见[历史交付](history/DELIVERY.md)。
 
-## 2026-09-18 科目编号与删除
+## 科目编号与删除
 
 007 保留三表和既有字段，`save_account(integer,jsonb)` 的 payload 支持显式五位 ID；p_id 始终是修改前 ID。首位对应资产1、负债2、净资产3、收入4、支出5，中间两位为子类，末两位为序号；已有同名子类保持相同前三位。旧客户端未传新增 ID 时从对应子类分配空闲编号，不再使用与历史编号脱节的 identity 序列。迁移本身不修改既有记录或编号。
 
