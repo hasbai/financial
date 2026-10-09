@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MarkdownContent from "@hasbai/markdown/content";
   import { dateLabel, notePath, site, type Note } from "$lib/content";
   import { ArrowLeft } from "@lucide/svelte";
   let { note, html }: { note: Note; html: string } = $props();
@@ -17,6 +18,6 @@
     <h1 class="serif">手记</h1>
     <time datetime={note.published_at ?? ""}>{dateLabel(note.published_at)}</time>
   </header>
-  <div class="note-sheet"><div class="prose">{@html html}</div></div>
+  <div class="note-sheet"><MarkdownContent {html} /></div>
   <div class="reader-end"><a href="/notes">← 返回手记</a><a href={"/studio/notes/" + note.id}>编辑手记</a></div>
 </article>

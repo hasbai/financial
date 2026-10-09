@@ -26,6 +26,16 @@ pnpm monorepo：`apps/financial` 保留 Svelte 5 SPA、原业务/PWA；`apps/blo
 
 博客域名为 `hasbai.xyz` 与 `blog.hasbai.xyz`，canonical 统一 `https://hasbai.xyz`。复用数据库、Auth0 tenant/application/audience 与 superadmin；现有 Hugo 博客和文章不迁移、不覆盖。博客 Worker 名为 `blog`。
 
+## Markdown 扩展
+
+统一渲染器与阅读组件位于 `packages/markdown`，文章、手记、独立页面和编辑预览共用。支持 GFM（表格、任务列表、删除线、自动链接）、`$…$` / `$$…$$` KaTeX、`> [!NOTE|TIP|IMPORTANT|WARNING|CAUTION]` Callout、`:::note` 等同名 Admonition、YAML Frontmatter、脚注 `[^id]` 与文献引用 `[@id]`。文献由 Frontmatter 的 `references` 数组定义，字段为 `id`、`author`（字符串）、`title`、`year`、`url`，输出编号参考资料与回链；未定义引用保留原文，不伪造来源。Frontmatter 解析为元数据、从正文和自动摘要排除，不自动修改数据库的标题、slug、摘要、标签或发布状态。
+
+`mermaid`、`d2`、`markmap` 围栏在浏览器按需加载本地依赖；服务端首屏保留源码与其余完整正文。D2 使用官方 WASM Worker，同一编译器的请求串行执行；Mermaid 固定 strict 安全级别；两者的 SVG 在图片上下文显示。Markmap 提供缩放、适应和拖动，不执行作者脚本、不加载外部插件资源，节点 HTML 经过清理。单图失败显示局部错误并保留源码；主题切换重新渲染，导航和预览更新清理图实例及临时图片 URL。
+
+普通 Markdown 保留富文本编辑。包含扩展语法的文档使用源码和统一预览，避免 Tiptap 序列化丢失语法；保存、重开与切换预览不改写 Markdown。原始 HTML 与危险 URL 仍拒绝，KaTeX `trust: false`，先清理 Markdown 再生成受控数学标记。全部扩展的夹具、源码保真及手机/桌面浅深色截图登记在 `markdown-extensions` 场景。
+
+2026-10-09 固定 Linux 候选 `2026-10-09T02-53-45.317Z`：11 项流程通过、1 项按设备跳过，50 张截图已比对；审阅并导入新增扩展展示/预览及编辑工具栏的 12 张基线，其他原基线保留。覆盖 WebKit/Chromium 浅深色、真实三类图表渲染、KaTeX SSR、脚注双向跳转、局部图表失败、预览与保存重开保真。Mermaid 使用禁用过渡的临时容器测量，防止全局减少动效样式导致 Chromium 包围盒裁切。完整单测、类型和严格视觉比較由最终 PR CI 执行，设备为模拟。
+
 ## 数据与权限
 
 `0002_content_inheritance.sql` 将 `public.content` 作为 PostgreSQL 继承父表，`public.article` 与 `public.note` 为子表。父表保存 UUID、类型、Markdown、摘要、封面、发布状态和时间；文章另有标题、全站唯一 slug 与独立数字序列，手记没有标题或标签，使用自己的数字序列。`public.article_tag` 直接关联文章与 `public.tag`。旧文章、图片及标签 UUID 不变，旧分类 URL 存入文章 `legacy_path` 供永久重定向。跨分类重名 slug 追加文章 UUID 前缀消歧。`0002` 先保留旧分类列和 `tag_ids` 以兼容旧 Worker，部署新 Worker 并核验后由 `0004_remove_category.sql` 移除 `public.category`、`article.category_id` 与 `article.tag_ids`。父表查询用于 `/contents/:id`，写入始终指向具体子表；PostgreSQL 继承不自动将父表写入路由到子表，也不跨子表继承主键唯一性。

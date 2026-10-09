@@ -24,7 +24,8 @@
     {
       "source": "src/routes/articles/[title]/+page.svelte",
       "scenarios": [
-        "reading"
+        "reading",
+        "markdown-extensions"
       ]
     },
     {
@@ -79,7 +80,8 @@
     {
       "source": "src/routes/studio/[id]/+page.svelte",
       "scenarios": [
-        "writing"
+        "writing",
+        "markdown-extensions"
       ]
     },
     {
@@ -196,6 +198,25 @@
           "snapshots": [
             "studio-denied.png",
             "studio-denied-dark.png"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "markdown-extensions",
+      "kind": "screenshot",
+      "evidence": [
+        {
+          "spec": "e2e/blog.spec.ts",
+          "test": "Markdown extensions render safely and survive editor preview and save",
+          "projects": [
+            "iphone",
+            "desktop"
+          ],
+          "snapshots": [
+            "markdown-extensions.png",
+            "markdown-extensions-dark.png",
+            "markdown-preview.png"
           ]
         }
       ]

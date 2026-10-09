@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { hasMarkdownExtensions, renderMarkdown } from "$lib/markdown";
+  import MarkdownContent from "@hasbai/markdown/content";
   import { Editor } from "@tiptap/core";
   import StarterKit from "@tiptap/starter-kit";
   import { Markdown } from "@tiptap/markdown";
@@ -36,7 +38,11 @@
   let fileInput: HTMLInputElement;
   let editor = $state<Editor>();
   let revision = $state(0);
-  let source = $state(false);
+  let source = $state(hasMarkdownExtensions(value));
+  let preview = $state(false);
+  let previewHtml = $state("");
+  let previewLoading = $state(false);
+  const extended = $derived(hasMarkdownExtensions(value));
   let error = $state("");
   let linkOpen = $state(false);
   let linkUrl = $state("");
@@ -53,7 +59,7 @@
         TableKit.configure({ table: { resizable: false } }),
         Markdown.configure({ markedOptions: { gfm: true } }),
       ],
-      content: value,
+      content: source ? "" : value,
       contentType: "markdown",
       editorProps: {
         attributes: {
@@ -63,7 +69,7 @@
         },
       },
       onUpdate: ({ editor: current }) => {
-        value = current.getMarkdown();
+        if (!source && !preview) value = current.getMarkdown();
       },
       onTransaction: () => revision++,
     });
@@ -71,11 +77,24 @@
     return () => instance.destroy();
   });
   $effect(() => {
-    editor?.setEditable(!disabled);
+    editor?.setEditable(!disabled && !source && !preview);
+  });
+  $effect(() => {
+    const markdown = value;
+    if (!preview) return;
+    let current = true;
+    previewLoading = true;
+    renderMarkdown(markdown).then(html => {
+      if (current) { previewHtml = html; previewLoading = false; }
+    }).catch(() => {
+      if (current) { error = "预览失败"; previewLoading = false; }
+    });
+    return () => { current = false; };
   });
   function toggleSource() {
-    if (source && editor)
-      editor.commands.setContent(value, { contentType: "markdown" });
+    if (preview) { preview = false; source = true; return; }
+    if (source && extended) { preview = true; return; }
+    if (source && editor) editor.commands.setContent(value, { contentType: "markdown", emitUpdate: false });
     source = !source;
   }
   async function addImage(event: Event) {
@@ -125,7 +144,7 @@
     size="icon"
     aria-label="加粗"
     aria-pressed={editor?.isActive("bold") ?? false}
-    disabled={disabled || source}
+    disabled={disabled || source || preview}
     onclick={() => editor?.chain().focus().toggleBold().run()}
     ><Bold size={16} /></Button
   >
@@ -134,20 +153,20 @@
     size="icon"
     aria-label="斜体"
     aria-pressed={editor?.isActive("italic") ?? false}
-    disabled={disabled || source}
+    disabled={disabled || source || preview}
     onclick={() => editor?.chain().focus().toggleItalic().run()}
     ><Italic size={16} /></Button
   >
   <Button
     variant="ghost"
-    disabled={disabled || source}
+    disabled={disabled || source || preview}
     aria-label="二级标题"
     onclick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
     >H2</Button
   >
   <Button
     variant="ghost"
-    disabled={disabled || source}
+    disabled={disabled || source || preview}
     aria-label="三级标题"
     onclick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}
     >H3</Button
@@ -156,7 +175,7 @@
     variant="ghost"
     size="icon"
     aria-label="无序列表"
-    disabled={disabled || source}
+    disabled={disabled || source || preview}
     onclick={() => editor?.chain().focus().toggleBulletList().run()}
     ><List size={16} /></Button
   >
@@ -164,7 +183,7 @@
     variant="ghost"
     size="icon"
     aria-label="有序列表"
-    disabled={disabled || source}
+    disabled={disabled || source || preview}
     onclick={() => editor?.chain().focus().toggleOrderedList().run()}
     ><ListOrdered size={16} /></Button
   >
@@ -172,7 +191,7 @@
     variant="ghost"
     size="icon"
     aria-label="引用"
-    disabled={disabled || source}
+    disabled={disabled || source || preview}
     onclick={() => editor?.chain().focus().toggleBlockquote().run()}
     ><Quote size={16} /></Button
   >
@@ -180,7 +199,7 @@
     variant="ghost"
     size="icon"
     aria-label="代码块"
-    disabled={disabled || source}
+    disabled={disabled || source || preview}
     onclick={() => editor?.chain().focus().toggleCodeBlock().run()}
     ><Code size={16} /></Button
   >
@@ -188,7 +207,7 @@
     variant="ghost"
     size="icon"
     aria-label="插入链接"
-    disabled={disabled || source}
+    disabled={disabled || source || preview}
     onclick={() => {
       linkUrl = editor?.getAttributes("link").href ?? "";
       linkOpen = !linkOpen;
@@ -198,7 +217,7 @@
     variant="ghost"
     size="icon"
     aria-label="插入表格"
-    disabled={disabled || source}
+    disabled={disabled || source || preview}
     onclick={() =>
       editor
         ?.chain()
@@ -210,7 +229,7 @@
     variant="ghost"
     size="icon"
     aria-label="分隔线"
-    disabled={disabled || source}
+    disabled={disabled || source || preview}
     onclick={() => editor?.chain().focus().setHorizontalRule().run()}
     ><Minus size={16} /></Button
   >
@@ -218,14 +237,14 @@
     variant="ghost"
     size="icon"
     aria-label="上传图片"
-    disabled={disabled || source || busy}
+    disabled={disabled || source || preview || busy}
     onclick={() => fileInput.click()}><ImagePlus size={16} /></Button
   >
   <Button
     variant="ghost"
     size="icon"
     aria-label="撤销"
-    disabled={disabled || source || !editor?.can().undo()}
+    disabled={disabled || source || preview || !editor?.can().undo()}
     onclick={() => editor?.chain().focus().undo().run()}
     ><Undo size={16} /></Button
   >
@@ -233,14 +252,19 @@
     variant="ghost"
     size="icon"
     aria-label="重做"
-    disabled={disabled || source || !editor?.can().redo()}
+    disabled={disabled || source || preview || !editor?.can().redo()}
     onclick={() => editor?.chain().focus().redo().run()}
     ><Redo size={16} /></Button
   >
   <Button
     class="ml-auto"
-    variant={source ? "secondary" : "ghost"}
-    aria-pressed={source}
+    variant={preview ? "secondary" : "ghost"}
+    aria-pressed={preview}
+    {disabled}
+    onclick={() => { preview = !preview; if (!preview && extended) source = true; }}>预览</Button>
+  <Button
+    variant={source && !preview ? "secondary" : "ghost"}
+    aria-pressed={source && !preview}
     {disabled}
     onclick={toggleSource}>Markdown</Button
   >
@@ -270,9 +294,14 @@
   >
     正在上传图片…
   </p>{/if}
-{#if source}<textarea
+{#if source && !preview}<textarea
     class="min-h-110 w-full resize-y rounded-lg border bg-background p-4 font-mono text-sm"
     aria-label="Markdown 源码"
     bind:value
     {disabled}></textarea>{/if}
-<div bind:this={element} class:hidden={source}></div>
+{#if preview}
+  <div class="py-4" aria-busy={previewLoading}>
+    {#if previewLoading}<p role="status">正在预览…</p>{:else}<MarkdownContent html={previewHtml} />{/if}
+  </div>
+{/if}
+<div bind:this={element} class:hidden={source || preview}></div>

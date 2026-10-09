@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MarkdownContent from "@hasbai/markdown/content";
   import { articlePath, dateLabel, imagePath, readMinutes, site, type Article, type Tag } from "$lib/content";
   import { ArrowLeft } from "@lucide/svelte";
   let { article, html, tags }: { article: Article; html: string; tags: Tag[] } = $props();
@@ -27,7 +28,7 @@
     {#if article.excerpt}<p class="article-deck">{article.excerpt}</p>{/if}
   </header>
   {#if article.cover_id}<img class="reader-cover" src={imagePath(article.cover_id)} alt={article.title} />{/if}
-  <div class="prose">{@html html}</div>
+  <MarkdownContent {html} />
   {#if tags.length}<div class="reader-tags" aria-label="文章标签">
       {#each tags as tag}<a href={"/tags/" + tag.slug}>#{tag.name}</a>{/each}
     </div>{/if}
