@@ -106,9 +106,9 @@ D1 公共 source_catalog/source_releases 保存固定版本目录，只有完整
 
 ## 开发、CI与发布
 
-`pnpm dev:tavern` 为5176；Worker `pnpm --filter tavern exec wrangler dev --port 8787`；独立 API proxy。本地只做固定 Linux 视觉构建与轻量源码检查；完整测试/typecheck/build在 PR CI。`pnpm visual:tavern --all`生成本地候选，审阅后 `pnpm visual:baseline:import-local <目录> --reviewed`。Tavern manifest覆盖所有页面/状态，iPhone WebKit优先与desktop。
+`pnpm dev:tavern` 为5176；Worker `pnpm --filter tavern exec wrangler dev --port 8787`；独立 API proxy。提交前按 [TESTING](TESTING.md#运行) 在本地完成视觉清单、typecheck、隔离 D1 迁移、完整单测、session-runtime 和生产 build；完整 Playwright 回归留在 PR CI。`pnpm visual:tavern --all`生成本地候选，审阅后 `pnpm visual:baseline:import-local <目录> --reviewed`。Tavern manifest覆盖所有页面/状态，iPhone WebKit优先与desktop。
 
-新 Worker 配置 Cloudflare Workers Builds：同 GitHub仓库，rootDirectory `/`，install `pnpm install --frozen-lockfile`，build `pnpm --filter tavern build`，deploy `pnpm --filter tavern exec wrangler deploy`，生产 main，paths include `apps/tavern/**`、`packages/**`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`、`package.json`。迁移先在独立测试 D1验证，再生产迁移。不手动重复部署。主代理编辑/提交、导入基线后，由新子代理推送/建PR/等待CI/合并/部署核验。
+新 Worker 配置 Cloudflare Workers Builds：同 GitHub仓库，rootDirectory `/`，install `pnpm install --frozen-lockfile`，build `pnpm --filter tavern build`，deploy `pnpm --filter tavern exec wrangler deploy`，生产 main，paths include `apps/tavern/**`、`packages/**`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`、`package.json`。迁移先在独立测试 D1验证，再生产迁移。不手动重复部署。主代理编辑、完成本地检查并审阅导入所需基线后提交，再由新子代理推送/建PR/等待CI/合并/部署核验。
 
 ## 会话DO迁移与恢复（2026-10-04）
 

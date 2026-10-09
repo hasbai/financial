@@ -66,9 +66,9 @@ CI 等待统一使用 `node scripts/wait-ci.mjs <owner/repo> <run-id> <full-sha>
 
 凭据文件（如`.env`）只能通过程序化读取用于已授权请求；禁止用`cat`、`rg`、`sed`等回显配置值，也不得打印完整环境、认证头或令牌管理API响应。诊断只输出预先选定的状态、资源ID、构建SHA等非敏感元数据；子代理交付同样遵守。
 
-完整验收在最终创建 PR 时由 GitHub Actions 执行；本地可运行 `pnpm visual:local`，只生成受影响页面的截图并审阅，使用生产构建与独立浏览器夹具。单元覆盖率和完整视觉比较仍由 CI 执行；本地普通非视觉改动至少运行 `git diff --check` 和直接相关的轻量检查。
+提交前在本地跑完受影响应用的全部非 Playwright 检查，包括 typecheck、完整单测及已配置覆盖率、生产 build、视觉清单与各应用运行时/本地迁移检查；失败先修复再提交。页面改动仍须在固定 Linux 镜像生成并审阅受影响截图。完整 Playwright 回归和全部基线比较留在 PR CI，CI 同时重复非浏览器检查。命令、影响范围与纯文档检查见 [TESTING](docs/TESTING.md#运行)。此规则按 2026-10-09 用户要求取代旧的本地禁跑限制。
 
-前端、共享 UI、API 契约和影响页面结果的改动由主代理修改并提交；本地 Linux 镜像截图审阅完成、需要的基线已导入后，再派新子代理推送功能分支并创建 PR，跟踪该次 CI。失败后由主代理修复，再派新子代理复核。PR 最新提交的 `check`、`visual`、`blog-check`、`blog-visual` 必需状态成功且分支包含最新 main 才能合并；Zboard 改动还须通过对应工作流。仓库只允许 squash 合并，使用 `gh pr merge --squash`。只有确认与前端输出无关且完成相关本地验证的独立改动可由维护者使用 `pnpm direct:push --validated --backend-reviewed --reviewed-path=<文件>` 快进推送 main；每个非文档文件各列一次，纯文档可省略参数。不得强推，不得将混合改动归为非前端。合并或直推后核验 Cloudflare 自动部署及线上版本。不得使用 `--admin` 绕过 PR 失败。
+前端、共享 UI、API 契约和影响页面结果的改动由主代理修改，完成本地检查和 Linux 镜像截图审阅、导入需要的基线后提交；随后再派新子代理推送功能分支并创建 PR，跟踪该次 CI。失败后由主代理修复，再派新子代理复核。PR 最新提交的 `check`、`visual`、`blog-check`、`blog-visual` 必需状态成功且分支包含最新 main 才能合并；Zboard 改动还须通过对应工作流。仓库只允许 squash 合并，使用 `gh pr merge --squash`。只有确认与前端输出无关且完成相关本地验证的独立改动可由维护者使用 `pnpm direct:push --validated --backend-reviewed --reviewed-path=<文件>` 快进推送 main；每个非文档文件各列一次，纯文档可省略参数。不得强推，不得将混合改动归为非前端。合并或直推后核验 Cloudflare 自动部署及线上版本。不得使用 `--admin` 绕过 PR 失败。
 
 功能分支 push 和合并后的 main push 不触发测试；只在准备合并时创建 PR，使完整 CI 通常运行一次。个人账号仓库不支持 GitHub merge queue，故 PR 后更新提交或 main 前进仍会重跑必需检查。页面修改维护 `visual-coverage.json` 的页面、状态和设备证据；新增页面未登记会被门禁拒绝。视觉基线只在有意设计变化时由本地固定 Linux 镜像生成并审阅，使用 `pnpm visual:baseline:import-local <运行目录> --reviewed` 导入。CI 不自动接受变化。详见 docs/TESTING.md。
 数据库验证用 `scripts/test-database.mjs`，连接串从 stdin 传入，所有测试写入在事务中回滚。不得输出凭据。
@@ -77,7 +77,7 @@ CI 等待统一使用 `node scripts/wait-ci.mjs <owner/repo> <run-id> <full-sha>
 
 ## Zboard 应用
 
-`apps/zboard` 为 Svelte 5 SPA / 共享 Luma neutral UI / Auth0 / Worker / D1，业务说明见 `apps/zboard/README.md`。财务三表及 Neon 限制不适用于 zboard。用户确认项目未上线且无旧业务数据，首次 Auth0 登录创建禁用用户，管理员分配权限与节点，不实现旧账户关联。认证必须使用独立 zboard API audience。D1 保留原资源，零流量不上报落库；不得把服务端配置或私钥用于生成用户订阅。`Zboard` workflow 的 zboard-check/zboard-visual 同样必须通过，本地生成并审阅 zboard 截图；本地禁止测试/typecheck/build。发布沿用 Cloudflare Workers Builds，不另行手动重复部署。
+`apps/zboard` 为 Svelte 5 SPA / 共享 Luma neutral UI / Auth0 / Worker / D1，业务说明见 `apps/zboard/README.md`。财务三表及 Neon 限制不适用于 zboard。用户确认项目未上线且无旧业务数据，首次 Auth0 登录创建禁用用户，管理员分配权限与节点，不实现旧账户关联。认证必须使用独立 zboard API audience。D1 保留原资源，零流量不上报落库；不得把服务端配置或私钥用于生成用户订阅。`Zboard` workflow 的 zboard-check/zboard-visual 同样必须通过，本地生成并审阅 zboard 截图；本地提交前检查按 [TESTING](docs/TESTING.md#运行) 执行，包含 typecheck、完整单测、Mihomo 原生校验、隔离 D1 迁移和 build。发布沿用 Cloudflare Workers Builds，不另行手动重复部署。
 
 ## Tavern 应用
 

@@ -1,23 +1,38 @@
 # Monorepo 校验入口
 
-2026-09-23：财务工作目录为 `apps/financial`，以下历史命令在该目录运行；根 `pnpm` 脚本代理财务命令。根 `scripts/wait-ci.mjs` 位置不变。博客独立 `Blog` workflow，必需状态为 `blog-check`、`blog-visual`，财务保留 `check`、`visual`。两个 workflow 均用 changes job 精确决定是否执行；无关应用的 job 合法跳过，失败不得跳过。共享目录及 lockfile 变更验证两边。博客视觉清单为 `apps/blog/visual-coverage.json`，复用同一 manifest/execution gate。
+财务工作目录为 `apps/financial`，以下财务及历史命令在该目录运行；根 `pnpm` 脚本代理财务命令。根 `scripts/wait-ci.mjs` 位置不变。Financial、Blog、Zboard、Tavern 各有独立 workflow，通过 changes job 决定受影响应用；无关应用的 job 合法跳过，失败不得跳过。受影响范围以 `scripts/affected.mjs` 为准，当前 `packages/`、根 workspace 配置及 lockfile 变更验证四个应用。各应用的 `visual-coverage.json` 复用同一 manifest/execution gate。
 
 # 测试规范与覆盖审计
 
 ## 运行
 
-完整覆盖率、类型检查和构建验收由最终 PR 的 GitHub Actions 执行。页面改动可在本地运行 `pnpm visual:local`，它会构建生产包和 e2e 包，再仅生成受影响页面的截图供审阅；不将本机结果称为 PR 验收。
+2026-10-09 用户要求：除完整 Playwright 回归留在 CI 外，提交前必须在本地跑完受影响应用的全部非浏览器检查，包括类型检查、完整单测、已配置的覆盖率门槛、生产构建及 workflow 中的其他检查；失败先修复再提交。此规则取代旧的本地禁跑要求。CI 在最终 PR 上重复这些检查并执行完整 Playwright，不能用本地结果替代 PR 验收。
+
+先在仓库根执行 `pnpm install --frozen-lockfile`，再按下表在对应应用目录运行现有命令。共享改动按 `scripts/affected.mjs` 的范围检查所有受影响应用；纯文档改动执行文档一致性检查与 `git diff --check`。提交前统一执行 `git diff --check`，不因只改一个组件而省略该应用完整单测。
+
+| 应用目录 | 本地提交前检查（不含完整 Playwright） |
+| --- | --- |
+| `apps/financial` | `pnpm test:ci-tools`、`pnpm check:visual-coverage`、`pnpm typecheck`、`pnpm test:coverage`、`pnpm build` |
+| `apps/blog` | `node ../financial/scripts/check-visual-coverage.mjs`、`pnpm typecheck`、`pnpm test`、`pnpm build`（包含真实 workerd Worker 启动检查） |
+| `apps/zboard` | `pnpm check:visual-coverage`、`pnpm typecheck`、隔离本地 D1 迁移、带 `MIHOMO_BIN` 的 `pnpm test`、`pnpm build` |
+| `apps/tavern` | `pnpm check:visual-coverage`、`pnpm typecheck`、隔离本地 D1 迁移、`pnpm test`、`pnpm test:session-runtime`、`pnpm build` |
+
+Zboard 的 `MIHOMO_BIN` 必须指向与 workflow 同版本、已校验 SHA-256 的 Mihomo 二进制，使用适配本机架构的发行包或固定 Linux 容器；未配置时原生用例会跳过，不能称为全部通过。Zboard/Tavern 的 D1 迁移用每次新建的临时目录，执行 `pnpm exec wrangler d1 migrations apply <zboard|tavern> --local --persist-to <临时目录>`，验证后清理；不写生产或既有开发存储。Tavern session-runtime 已自带隔离资源。
+
+例如博客提交前在仓库根运行：
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm test:coverage
-pnpm test:e2e
-pnpm build
+pnpm --dir apps/blog exec node ../financial/scripts/check-visual-coverage.mjs
+pnpm --filter blog typecheck
+pnpm --filter blog test
+pnpm --filter blog build
 git diff --check
 ```
 
-视觉 CI 与本地截图统一使用 `docker/visual-ci/Dockerfile` 构建的 Linux ARM64 镜像，并按镜像 digest 固定 Playwright 1.63.0、Node 24、pnpm 10.33.2 和 CJK 字体。镜像发布工作流是 `.github/workflows/visual-image.yml`；三个应用的视觉 job 使用同一个 digest，单元任务仍运行在 Ubuntu。日常 `pnpm visual:local` 从相对 `origin/main` 的 Financial 页面改动选择清单场景；Blog、Zboard 分别用 `pnpm visual:blog`、`pnpm visual:zboard`。共享组件、样式、夹具或 `packages/` 改动须指定可重复的 `--page <源页面>` 或 `--all`。首次生成 Linux 基线运行 `--all`。审阅图在各应用忽略的 `.local-visual/<时间>/review/`；审阅后从仓库根运行 `pnpm visual:baseline:import-local <该次运行目录> --reviewed`，校验源码和 PNG 后导入本次截图。旧 macOS PNG 已清理；日常只维护 `linux-ci` 基线。
+页面改动还须在本地固定 Linux 镜像生成并审阅受影响截图；`pnpm visual:local` 构建生产包和 e2e 包，仅运行所选 Financial 场景。完整 Playwright 套件与全部基线严格比较仍在 CI 执行。
+
+视觉 CI 与本地截图统一使用 `docker/visual-ci/Dockerfile` 构建的 Linux ARM64 镜像，并按镜像 digest 固定 Playwright 1.63.0、Node 24、pnpm 10.33.2 和 CJK 字体。镜像发布工作流是 `.github/workflows/visual-image.yml`；四个应用的视觉 job 使用同一个 digest，单元任务仍运行在 Ubuntu。日常 `pnpm visual:local` 从相对 `origin/main` 的 Financial 页面改动选择清单场景；Blog、Zboard、Tavern 分别用 `pnpm visual:blog`、`pnpm visual:zboard`、`pnpm visual:tavern`。共享组件、样式、夹具或 `packages/` 改动须指定可重复的 `--page <源页面>` 或 `--all`。首次生成 Linux 基线运行 `--all`。审阅图在各应用忽略的 `.local-visual/<时间>/review/`；审阅后从仓库根运行 `pnpm visual:baseline:import-local <该次运行目录> --reviewed`，校验源码和 PNG 后导入本次截图。旧 macOS PNG 已清理；日常只维护 `linux-ci` 基线。
 
 普通运行使用 `updateSnapshots: none`，缺少图片或超出差异即失败；PR 的 CI 不自动更新、不重试掩盖不稳定。远端候选截图模式已移除；审阅并导入本地 PNG 后，普通 PR 严格比较。额外稳定性复跑只用于已复现抖动或明确排障，并记录原因。报告保留 expected/actual/diff 和失败 trace。有意设计变更须核对差异，不为消除差异提高容差或盲目更新。
 
@@ -25,7 +40,7 @@ git diff --check
 
 ## 推送与合并
 
-主代理编辑/提交后，先在本地完成受影响页审阅；需要新基线时，先在本地固定 Linux 镜像中生成、审阅并导入。准备合并时才创建 PR，完整 CI 在 PR 上运行一次。失败由主代理修复后再派新子代理推送复核；后续 PR 提交或 main 前进仍会重新运行检查。`check`、`visual`、`blog-check`、`blog-visual` 是线上必需状态；Zboard 改动也须通过对应工作流。本地截图不能替代严格比较。合并后核验 main 合并 SHA、Cloudflare 自动部署和线上资源，不重复启动 main 全量 CI。
+主代理编辑后，先完成上述本地检查及受影响页审阅，再提交；需要新基线时，先在本地固定 Linux 镜像中生成、审阅并导入。准备合并时才创建 PR，完整 CI 在 PR 上运行一次。失败由主代理修复后再派新子代理推送复核；后续 PR 提交或 main 前进仍会重新运行检查。`check`、`visual`、`blog-check`、`blog-visual` 是线上必需状态；Zboard 改动也须通过对应工作流。本地截图不能替代严格比较。合并后核验 main 合并 SHA、Cloudflare 自动部署和线上资源，不重复启动 main 全量 CI。
 
 当前 `hasbai/financial` 是个人账号仓库，GitHub 不提供 merge queue；创建 `merge_queue` ruleset 会返回 422。现有保护要求 PR、最新 main 和四个 GitHub Actions 必需状态，故 PR 打开前先把功能分支与最新 main 对齐。仓库设置只允许 squash，合并使用 `gh pr merge --squash`。手动 dispatch 只用于明确排障。PR CI 成功不代表真实 JWT、数据库或生产路由已验收。[GitHub 合并队列说明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
 

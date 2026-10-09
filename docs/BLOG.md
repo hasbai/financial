@@ -60,11 +60,11 @@ YAML 的 SSR 解析固定使用依赖提供的浏览器 ESM 入口，避免 Node
 
 ## CI 与发布
 
-Financial `Check`、Blog `Blog` 独立 workflow，均有廉价 changes job。业务应用目录修改只启动该应用检查；shared packages、workspace/lockfile 修改启动两边。PR 为普通检查，main push 不重复验收。有意视觉变更先使用固定 Linux 镜像 `pnpm visual:blog --all` 生成截图，审阅并导入，再由普通 PR 严格比较；全站外壳变化生成全部博客场景。
+Financial `Check`、Blog `Blog` 独立 workflow，均有廉价 changes job。业务应用目录修改只启动该应用检查；shared packages、workspace/lockfile 修改按 `scripts/affected.mjs` 验证四个应用。PR 为普通检查，main push 不重复验收。有意视觉变更先使用固定 Linux 镜像 `pnpm visual:blog --all` 生成截图，审阅并导入，再由普通 PR 严格比较；全站外壳变化生成全部博客场景。
 
 财务从 `apps/financial` cwd 执行原校验脚本和 visual manifest。根脚本继续代理 `pnpm build` 等财务命令，根 wrangler 配置兼容现有自动构建入口；博客 `pnpm build:blog`。两个 Worker 的 Cloudflare 自动构建连接同一仓库 `hasbai/financial`、生产分支 `main`，财务根目录为 `apps/financial`、博客根目录为 `apps/blog`；各自仅监视本应用、`packages/*`、根 `package.json`、`pnpm-lock.yaml` 和 `pnpm-workspace.yaml`。博客 Worker 使用 `apps/blog/wrangler.jsonc` 中的 R2 `image` 绑定及两个自定义域名。GitHub Actions 不执行部署。
 
-本地不单独运行 typecheck、单测、build 或 Playwright 验收；固定 Linux 镜像中的视觉候选流程可执行所需构建与截图。完整验收由 GitHub Actions 执行。设备测试是 WebKit/Chromium 模拟，不能称作 iOS 真机验收。截图、真实 JWT/API、R2 上传与线上 SSR 属独立验收层。
+提交前在本地完成博客视觉清单检查、typecheck、完整单测和生产 build（含真实 workerd 启动检查）；共享改动同时验证其他受影响应用，命令见 [TESTING](TESTING.md#运行)。页面改动仍在固定 Linux 镜像生成并审阅受影响截图；完整 Playwright 回归由 PR CI 执行，CI 同时重复非浏览器检查。设备测试是 WebKit/Chromium 模拟，不能称作 iOS 真机验收。截图、真实 JWT/API、R2 上传与线上 SSR 属独立验收层。
 
 ## 独立页面迁移（2026-10-04）
 

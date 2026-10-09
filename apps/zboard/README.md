@@ -9,7 +9,7 @@ Svelte 5 SPA、共享 Luma UI（neutral）、共享 Auth0 PKCE 客户端、Cloud
 
 ## 运行与发布
 
-仓库根 `pnpm install`；`pnpm dev:zboard`。本地 API 另从此目录启动 `pnpm exec wrangler dev --port 8787`，Vite 开发代理 API。自动化验收只在 GitHub Actions。`Zboard` workflow 执行类型、SQL/接口单元测试、Mihomo 原生配置校验、构建、D1 本地迁移及 WebKit/Chromium 视觉回归。本地截图使用根 `pnpm visual:zboard --page src/pages/Templates.svelte` 的固定 Linux 镜像生成，审阅后 `pnpm visual:baseline:import-local <运行目录> --reviewed`；随后 PR 必须普通比较通过，详见 [TESTING](../../docs/TESTING.md)。
+仓库根 `pnpm install --frozen-lockfile`；`pnpm dev:zboard`。本地 API 另从此目录启动 `pnpm exec wrangler dev --port 8787`，Vite 开发代理 API。提交前按 [TESTING](../../docs/TESTING.md#运行) 在本地完成视觉清单、typecheck、完整 SQL/接口单元测试、固定版本 Mihomo 原生配置校验、构建和隔离 D1 迁移。`Zboard` workflow 重复这些检查，并执行完整 WebKit/Chromium Playwright 回归。本地截图使用根 `pnpm visual:zboard --page src/pages/Templates.svelte` 的固定 Linux 镜像生成，审阅后 `pnpm visual:baseline:import-local <运行目录> --reviewed`；随后 PR 必须普通比较通过，详见 [TESTING](../../docs/TESTING.md)。
 
 Cloudflare Workers Builds 使用 `hasbai/financial` / main，根目录 `/`，build `pnpm --filter zboard build`，deploy `pnpm --filter zboard exec wrangler deploy`。自定义域名为 `zboard.hasbai.xyz`。监控 `apps/zboard/**`、`packages/auth/**`、`packages/ui/**`、`pnpm-lock.yaml`。复用现有 Worker/D1；禁止创建重复部署流水线。Auth0 setup：从此目录执行 `node scripts/setup-auth0.mjs`，只扩展共享 SPA origins、注册独立 audience 并复用统一 Action；保留其他应用的授权规则。
 
