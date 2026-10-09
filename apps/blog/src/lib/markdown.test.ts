@@ -53,5 +53,5 @@ it("keeps bibliography IDs separate from author footnotes and case-sensitive ref
   expect(html).toContain('作者脚注');
   expect(html).toContain('First reference');
   expect(html).toContain('Second reference');
-  expect(html.match(/data-footnote-backref/g)).toHaveLength(3);
+  expect(html.match(/<li id="md-fn-/g)).toHaveLength(3);
 });
