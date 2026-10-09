@@ -68,6 +68,8 @@ CI 等待统一使用 `node scripts/wait-ci.mjs <owner/repo> <run-id> <full-sha>
 
 提交前在本地跑完受影响应用的全部非 Playwright 检查，包括 typecheck、完整单测及已配置覆盖率、生产 build、视觉清单与各应用运行时/本地迁移检查；失败先修复再提交。页面改动仍须在固定 Linux 镜像生成并审阅受影响截图。完整 Playwright 回归和全部基线比较留在 PR CI，CI 同时重复非浏览器检查。命令、影响范围与纯文档检查见 [TESTING](docs/TESTING.md#运行)。此规则按 2026-10-09 用户要求取代旧的本地禁跑限制。
 
+轻量任务由主代理在本地完成修改、检查和修复，不额外拆分子任务或追加多轮复核；本地可发现的问题先修好，再推送。符合现有直推条件的轻量文档或独立维护改动由主代理直接提交、推送并核验远端，无需另派发布子代理；涉及前端、共享 UI 或 API 契约的发布流程仍按下文执行。详见 [本地迭代](docs/TESTING.md#轻量任务与本地迭代)。
+
 前端、共享 UI、API 契约和影响页面结果的改动由主代理修改，完成本地检查和 Linux 镜像截图审阅、导入需要的基线后提交；随后再派新子代理推送功能分支并创建 PR，跟踪该次 CI。失败后由主代理修复，再派新子代理复核。PR 最新提交的 `check`、`visual`、`blog-check`、`blog-visual` 必需状态成功且分支包含最新 main 才能合并；Zboard 改动还须通过对应工作流。仓库只允许 squash 合并，使用 `gh pr merge --squash`。只有确认与前端输出无关且完成相关本地验证的独立改动可由维护者使用 `pnpm direct:push --validated --backend-reviewed --reviewed-path=<文件>` 快进推送 main；每个非文档文件各列一次，纯文档可省略参数。不得强推，不得将混合改动归为非前端。合并或直推后核验 Cloudflare 自动部署及线上版本。不得使用 `--admin` 绕过 PR 失败。
 
 功能分支 push 和合并后的 main push 不触发测试；只在准备合并时创建 PR，使完整 CI 通常运行一次。个人账号仓库不支持 GitHub merge queue，故 PR 后更新提交或 main 前进仍会重跑必需检查。页面修改维护 `visual-coverage.json` 的页面、状态和设备证据；新增页面未登记会被门禁拒绝。视觉基线只在有意设计变化时由本地固定 Linux 镜像生成并审阅，使用 `pnpm visual:baseline:import-local <运行目录> --reviewed` 导入。CI 不自动接受变化。详见 docs/TESTING.md。
